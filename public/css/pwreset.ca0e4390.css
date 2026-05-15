@@ -1,0 +1,47 @@
+.auth-card {
+  max-width: 500px;
+  margin: auto;
+}
+.auth-card .auth-logo {
+  padding: 30px;
+  text-align: left;
+  margin-bottom: 60px;
+}
+.auth-card h1 {
+  font-size: 20px;
+}
+.p-30px {
+  padding: 30px !important;
+}
+.auth-card-content {
+  padding: 100px 0;
+  max-width: 600px;
+  margin: auto;
+}
+.auth-card-content h2 {
+  text-align: center;
+}
+.right-auth-card {
+  background-size: cover;
+  padding: 40px;
+  background-position: 50%;
+}
+.min-height-100vh {
+  min-height: 100vh;
+}
+.gradient-text {
+  font-size: 36px;
+  font-weight: 700;
+  background: linear-gradient(90deg, #1c3cc0, #4fdbdb, #88f6f6);
+  -webkit-background-clip: text;
+  -webkit-text-fill-color: transparent;
+  letter-spacing: -2px;
+}
+@keyframes glow {
+  0% {
+    text-shadow: 0 0 5px rgba(36, 161, 199, .8), 0 0 10px rgba(36, 161, 199, .6);
+  }
+  to {
+    text-shadow: 0 0 20px #1c3cc0, 0 0 30px rgba(36, 161, 199, .5);
+  }
+}
