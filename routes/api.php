@@ -34,9 +34,14 @@ Route::prefix('v1')->middleware(['api'])->group(function () {
 
         Route::get('/users', [UserController::class, 'index']);
         Route::post('/users', [UserController::class, 'store']);
-        Route::get('/users/me', [UserController::class, 'me']);       
-        Route::get('/users/{id}', [UserController::class, 'show']);   
-        Route::put('/users/{id}', [UserController::class, 'update']); 
+        Route::get('/users/me', [UserController::class, 'me']);
+
+        // Self-service endpoints (geen id nodig — gebruikt Auth::user())
+        Route::put('/user/profile', [UserController::class, 'updateProfile']);
+        Route::put('/user/password', [UserController::class, 'changePassword']);
+
+        Route::get('/users/{id}', [UserController::class, 'show']);
+        Route::put('/users/{id}', [UserController::class, 'update']);
         Route::delete('/users/{id}', [UserController::class, 'destroy']);
     
 
@@ -66,7 +71,3 @@ Route::prefix('v1')->middleware(['api'])->group(function () {
 
     });
 });
-
-
-
-

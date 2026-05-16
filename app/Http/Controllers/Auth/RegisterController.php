@@ -13,6 +13,17 @@ class RegisterController extends Controller
 {
     public function store(Request $request)
     {
+
+           // Check if the user already exists
+           $existingUser = User::where('email', $request->email)->first();
+
+           if ($existingUser) {
+               throw ValidationException::withMessages([
+                   'email' => ['Deze gebruiker is al geregistreerd.'],
+               ]);
+           }
+
+           
         // Validate input data
         $validator = Validator::make($request->all(), [       
             'email' => 'required|string|email|max:255|unique:users,email',

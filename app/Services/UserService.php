@@ -46,13 +46,10 @@ class UserService
         if (isset($data['language'])) {
             $user->language = $data['language'];
         }
-       
-        $user->settings = array_merge(
-            $user->settings ?? [],
-            $data['settings']
-        );
-        
-        
+
+        if (isset($data['settings']) && is_array($data['settings'])) {
+            $user->settings = array_merge($user->settings ?? [], $data['settings']);
+        }
 
         $user->save();
 

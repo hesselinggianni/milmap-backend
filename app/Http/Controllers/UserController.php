@@ -128,7 +128,66 @@ class UserController extends Controller
         if (!$user) {
             return response()->json(['message' => 'Unauthorized'], 401);
         }
-  
+
         return response()->json($user, 200);
+    }
+
+    /**
+     * PUT /api/v1/user/profile
+     * Werkt voornaam, achternaam en taal van de ingelogde gebruiker bij.
+     */
+    public function updateProfile(Request $request)
+    {
+        $user = Auth::user();
+        if (!$user) {
+            return response()->json(['message' => 'Unauthorized'], 401);
+        }
+
+        $validated = $request->validate([
+            'first_name' => ['nullable', 'string', 'max:80'],
+            'last_name'  => ['nullable', 'string', 'max:80'],
+            'language'   => ['nullable', 'string', 'max:5'],
+        ]);
+
+        $updated = $this->userService->updateUser($user->id, $validated);
+
+        return response()->json([
+            'success' => true,
+            'message' => 'Profile updated',
+            'data'    => $updated,
+        ], 200);
+    }
+
+    /**
+     * PUT /api/v1/user/password
+     * Wijzigt het wachtwoord van de ingelogde gebruiker na verificatie
+     * van het huidige wachtwoord.
+     */
+    public function changePassword(Request $request)
+    {
+        $user = Auth::user();
+        if (!$user) {
+            return response()->json(['message' => 'Unauthorized'], 401);
+        }
+
+        $validated = $request->validate([
+            'current_password' => ['required', 'string'],
+            'password'         => ['required', 'string', 'min:8', 'confirmed'],
+        ]);
+
+        if (!\Illuminate\Support\Facades\Hash::check($validated['current_password'], $user->password)) {
+            return response()->json([
+                'success' => false,
+                'message' => 'Huidig wachtwoord is onjuist.',
+                'errors'  => ['current_password' => ['Huidig wachtwoord is onjuist.']],
+            ], 422);
+        }
+
+        $this->userService->updateUser($user->id, ['password' => $validated['password']]);
+
+        return response()->json([
+            'success' => true,
+            'message' => 'Password updated',
+        ], 200);
     }
 }
