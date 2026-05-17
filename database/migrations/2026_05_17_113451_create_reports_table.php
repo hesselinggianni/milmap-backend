@@ -20,7 +20,7 @@ return new class extends Migration
             $table->string('subtype')->nullable(); // fire, move, etc.
             $table->decimal('latitude', 10, 8);
             $table->decimal('longitude', 11, 8);
-            $table->string('urgency')->nullable(); // green, yellow, red
+            $table->string('urgency')->nullable(); // low, medium, high
             $table->string('timing')->nullable(); // now, 5min, 15min, etc.
             $table->integer('size')->nullable(); // unit size (1-5)
             $table->integer('count')->nullable(); // number of units
