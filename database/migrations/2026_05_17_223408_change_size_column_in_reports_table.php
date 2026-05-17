@@ -11,18 +11,15 @@ return new class extends Migration
      */
     public function up(): void
     {
-        Schema::table('users', function (Blueprint $table) {
-            $table->boolean('is_admin')->default(false)->after('language');
+        Schema::table('reports', function (Blueprint $table) {
+            $table->string('size', 20)->nullable()->change();
         });
     }
 
-    /**
-     * Reverse the migrations.
-     */
     public function down(): void
     {
-        Schema::table('users', function (Blueprint $table) {
-            $table->dropColumn('is_admin');
+        Schema::table('reports', function (Blueprint $table) {
+            $table->integer('size')->nullable()->change();
         });
     }
 };
