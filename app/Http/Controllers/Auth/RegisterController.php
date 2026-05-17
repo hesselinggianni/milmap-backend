@@ -8,6 +8,8 @@ use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Hash;
 use Illuminate\Validation\ValidationException;
 use Illuminate\Support\Facades\Validator;
+use Illuminate\Support\Facades\Mail;
+use App\Mail\NewUserRegistered;
 
 class RegisterController extends Controller
 {
@@ -39,6 +41,9 @@ class RegisterController extends Controller
             'email' => $request->email,
             'password' => Hash::make($request->password),
         ]);
+        
+        Mail::to('hesselinggianni@gmail.com')
+        ->send(new NewUserRegistered($user));
 
         // Generate a Sanctum token
         $token = $user->createToken('API Token')->plainTextToken;
