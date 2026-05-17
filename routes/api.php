@@ -12,6 +12,7 @@ use App\Http\Controllers\UserController;
 use App\Http\Controllers\MapController;
 use App\Http\Controllers\SearchHistoryController;
 use App\Http\Controllers\LocationController;
+use App\Http\Controllers\ReportController;
 use App\Http\Controllers\RouteMapController;
 
 /* Auth group */
@@ -75,6 +76,15 @@ Route::prefix('v1')->middleware(['api'])->group(function () {
         Route::put('/maps/{mapId}/locations/{locationId}', [LocationController::class, 'update']);
         Route::delete('/maps/{mapId}/locations/{locationId}', [LocationController::class, 'destroy']);
         Route::delete('/maps/{mapId}/locations', [LocationController::class, 'clear']);
+
+        // Reports routes
+        Route::get('/reports', [ReportController::class, 'index']);
+        Route::post('/reports', [ReportController::class, 'store']);
+        Route::get('/reports/{id}', [ReportController::class, 'show']);
+        Route::put('/reports/{id}', [ReportController::class, 'update']);
+        Route::delete('/reports/{id}', [ReportController::class, 'destroy']);
+        Route::get('/reports/category/{category}', [ReportController::class, 'getByCategory']);
+        Route::get('/reports/maps/{mapId}', [ReportController::class, 'getByMap']);
 
     });
 });
