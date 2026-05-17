@@ -26,4 +26,20 @@ class Map extends Model
     {
         return (string) \Illuminate\Support\Str::uuid();
     }
+
+    /**
+     * Get the route maps for this map.
+     */
+    public function routeMaps()
+    {
+        return $this->hasMany(RouteMap::class, 'map_id');
+    }
+
+    /**
+     * Get the owner of this map.
+     */
+    public function owner()
+    {
+        return $this->belongsTo(User::class, 'owner_id');
+    }
 }

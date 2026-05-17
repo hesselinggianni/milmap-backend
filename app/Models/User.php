@@ -32,12 +32,15 @@ class User extends Authenticatable
             'email_verified_at' => 'datetime',
             'password' => 'hashed',
             'settings' => 'array',
-            
         ];
     }
 
-
-
-
+    /**
+     * Get the maps owned by the user.
+     */
+    public function maps()
+    {
+        return $this->hasMany(Map::class, 'owner_id');
+    }
 
 }

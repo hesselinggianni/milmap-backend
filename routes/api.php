@@ -14,6 +14,9 @@ use App\Http\Controllers\SearchHistoryController;
 use App\Http\Controllers\LocationController;
 use App\Http\Controllers\ReportController;
 use App\Http\Controllers\RouteMapController;
+use App\Http\Controllers\BugReportController;
+use App\Http\Controllers\AdminAuthController;
+use App\Http\Controllers\AdminController;
 
 /* Auth group */
 
@@ -25,6 +28,10 @@ Route::prefix('v1')->middleware(['api'])->group(function () {
 
     Route::post('/password/reset-link', [PasswordResetController::class, 'sendResetLink']);
     Route::post('/password/reset', [PasswordResetController::class, 'resetPassword']);
+
+    // Admin authentication (public endpoints)
+    Route::post('/admin/request-code', [AdminAuthController::class, 'requestCode']);
+    Route::post('/admin/verify-code', [AdminAuthController::class, 'verifyCode']);
 });
 
 
@@ -85,6 +92,17 @@ Route::prefix('v1')->middleware(['api'])->group(function () {
         Route::delete('/reports/{id}', [ReportController::class, 'destroy']);
         Route::get('/reports/category/{category}', [ReportController::class, 'getByCategory']);
         Route::get('/reports/maps/{mapId}', [ReportController::class, 'getByMap']);
+
+        // Bug report route
+        Route::post('/bug-reports', [BugReportController::class, 'store']);
+
+        // Admin routes (protected by AdminAuth middleware)
+        Route::middleware('admin.auth')->group(function () {
+            Route::get('/admin/stats', [AdminController::class, 'getDashboardStats']);
+            Route::delete('/admin/users/{userId}', [AdminController::class, 'deleteUser']);
+            Route::patch('/admin/users/{userId}/admin-status', [AdminController::class, 'toggleAdminStatus']);
+            Route::post('/admin/users/{userId}/reset-password', [AdminController::class, 'resetUserPassword']);
+        });
 
     });
 });

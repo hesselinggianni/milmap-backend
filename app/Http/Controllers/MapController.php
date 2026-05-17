@@ -73,11 +73,20 @@ class MapController extends Controller
             ->where('owner_id', Auth::id())
             ->firstOrFail();
 
-        $map->update([
+        // Prepare settings: merge new settings with existing ones
+        $updatedData = [
             'title' => $request->title ?? $map->title,
-            'settings' => $request->settings ?? $map->settings,
             'status' => $request->status ?? $map->status,
-        ]);
+        ];
+
+        // If settings are provided, merge them with existing settings
+        if ($request->has('settings')) {
+            $currentSettings = is_array($map->settings) ? $map->settings : [];
+            $newSettings = is_array($request->settings) ? $request->settings : [];
+            $updatedData['settings'] = array_merge($currentSettings, $newSettings);
+        }
+
+        $map->update($updatedData);
 
         return response()->json($map);
     }
