@@ -11,7 +11,7 @@ use App\Http\Controllers\Auth\PasswordResetController;
 use App\Http\Controllers\UserController;
 use App\Http\Controllers\MapController;
 use App\Http\Controllers\SearchHistoryController;
-
+use App\Http\Controllers\LocationController;
 use App\Http\Controllers\RouteMapController;
 
 /* Auth group */
@@ -68,6 +68,13 @@ Route::prefix('v1')->middleware(['api'])->group(function () {
         Route::delete('/routemaps', [RouteMapController::class, 'clear']);
         Route::get('/maps/{mapId}routemaps', [RouteMapController::class, 'index']);
 
+        // Location markers routes
+        Route::get('/maps/{mapId}/locations', [LocationController::class, 'index']);
+        Route::post('/maps/{mapId}/locations', [LocationController::class, 'store']);
+        Route::get('/maps/{mapId}/locations/{locationId}', [LocationController::class, 'show']);
+        Route::put('/maps/{mapId}/locations/{locationId}', [LocationController::class, 'update']);
+        Route::delete('/maps/{mapId}/locations/{locationId}', [LocationController::class, 'destroy']);
+        Route::delete('/maps/{mapId}/locations', [LocationController::class, 'clear']);
 
     });
 });
