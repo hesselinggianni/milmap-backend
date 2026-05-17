@@ -50,7 +50,7 @@ class BugReportController extends Controller
      */
     private function sendBugReportEmail(array $data)
     {
-        $adminEmail = env('ADMIN_MAIL', config('mail.from.address'));
+        $adminEmail = config('mail.admin_mail', config('mail.from.address'));
         $data['timestamp'] = now()->setTimezone('Europe/Amsterdam')->format('d-m-Y \o\m H:i:s');
 
         Mail::send('emails.bug-report', ['data' => $data], function ($message) use ($adminEmail, $data) {

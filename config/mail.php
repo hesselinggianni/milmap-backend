@@ -113,4 +113,6 @@ return [
         'name' => env('MAIL_FROM_NAME', 'Example'),
     ],
 
+    'admin_mail' => env('ADMIN_MAIL', 'gianni@onavan.com'),
+
 ];
