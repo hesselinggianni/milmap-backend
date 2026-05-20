@@ -14,10 +14,25 @@ class UserService
 
     public function createUser(array $data)
     {
+        $defaultSettings = [
+            'locationformat' => 'mgrs',
+            'mgrs_precision' => 8,
+            'maxZoom' => 100,
+            'mapExtent' => null,
+            'language' => 'nl',
+            'useCurrentCoordsAsBounds' => false,
+            'locationEnabled' => false,
+            'terrain3D' => false,
+            'terrain3DPitch' => 60,
+            'showMgrsGrid' => false,
+            'showScaleLine' => true,
+        ];
+
         return User::create([
             'name' => $data['name'],
             'email' => $data['email'],
             'password' => Hash::make($data['password']),
+            'settings' => $defaultSettings,
         ]);
     }
 
@@ -48,7 +63,20 @@ class UserService
         }
 
         if (isset($data['settings']) && is_array($data['settings'])) {
-            $user->settings = array_merge($user->settings ?? [], $data['settings']);
+            $defaultSettings = [
+                'locationformat' => 'mgrs',
+                'mgrs_precision' => 8,
+                'maxZoom' => 100,
+                'mapExtent' => null,
+                'language' => 'nl',
+                'useCurrentCoordsAsBounds' => false,
+                'locationEnabled' => false,
+                'terrain3D' => false,
+                'terrain3DPitch' => 60,
+                'showMgrsGrid' => false,
+                'showScaleLine' => true,
+            ];
+            $user->settings = array_merge($defaultSettings, $user->settings ?? [], $data['settings']);
         }
 
         $user->save();
