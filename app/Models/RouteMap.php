@@ -22,6 +22,7 @@ class RouteMap extends Model
         'date',
         'time',
         'color',
+        'declination',
         'equipment',
         'speed',
         'ic',
@@ -41,7 +42,8 @@ class RouteMap extends Model
         'date' => 'date:Y-m-d',
 
         'meta' => 'array',
-           
+
+        'declination' => 'float',
 
         'pause_time' => 'integer',
         'total_time' => 'integer',

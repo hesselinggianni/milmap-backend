@@ -15,8 +15,11 @@ use App\Http\Controllers\LocationController;
 use App\Http\Controllers\ReportController;
 use App\Http\Controllers\RouteMapController;
 use App\Http\Controllers\BugReportController;
+use App\Http\Controllers\FeatureRequestController;
+use App\Http\Controllers\ContactTicketController;
 use App\Http\Controllers\AdminAuthController;
 use App\Http\Controllers\AdminController;
+use App\Http\Controllers\MapShareController;
 
 /* Auth group */
 
@@ -32,6 +35,15 @@ Route::prefix('v1')->middleware(['api'])->group(function () {
     // Admin authentication (public endpoints)
     Route::post('/admin/request-code', [AdminAuthController::class, 'requestCode']);
     Route::post('/admin/verify-code', [AdminAuthController::class, 'verifyCode']);
+
+    // Public share endpoint (no auth required)
+    Route::get('/share/{token}', [MapShareController::class, 'showByToken']);
+
+    // Public feature requests (no auth required)
+    Route::post('/feature-requests', [FeatureRequestController::class, 'store']);
+
+    // Public contact tickets (no auth required)
+    Route::post('/contact-tickets', [ContactTicketController::class, 'store']);
 });
 
 
@@ -92,6 +104,11 @@ Route::prefix('v1')->middleware(['api'])->group(function () {
         Route::delete('/reports/{id}', [ReportController::class, 'destroy']);
         Route::get('/reports/category/{category}', [ReportController::class, 'getByCategory']);
         Route::get('/reports/maps/{mapId}', [ReportController::class, 'getByMap']);
+
+        // Map sharing routes
+        Route::get('/maps/{mapId}/shares', [MapShareController::class, 'index']);
+        Route::post('/maps/{mapId}/shares', [MapShareController::class, 'store']);
+        Route::delete('/maps/{mapId}/shares/{shareId}', [MapShareController::class, 'destroy']);
 
         // Bug report route
         Route::post('/bug-reports', [BugReportController::class, 'store']);

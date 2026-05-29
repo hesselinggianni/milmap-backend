@@ -77,6 +77,8 @@ class RouteMapController extends Controller
 
             'color' => ['nullable', 'string'],
 
+            'declination' => ['nullable', 'numeric', 'between:-180,180'],
+
             'equipment' => ['nullable', 'string'],
 
             'speed' => ['nullable', 'numeric'],
@@ -128,6 +130,8 @@ class RouteMapController extends Controller
 
             'color' => ['nullable', 'string'],
 
+            'declination' => ['nullable', 'numeric', 'between:-180,180'],
+
             'equipment' => ['nullable', 'string'],
 
             'speed' => ['nullable', 'numeric'],
@@ -145,6 +149,20 @@ class RouteMapController extends Controller
 
             'meta' => ['nullable', 'array'],
         ]);
+
+        // Ensure numeric fields are never null (DB columns are NOT NULL)
+        if (array_key_exists('pause_time', $validated)) {
+            $validated['pause_time'] = $validated['pause_time'] ?? 0;
+        }
+        if (array_key_exists('total_time', $validated)) {
+            $validated['total_time'] = $validated['total_time'] ?? 0;
+        }
+        if (array_key_exists('total_distance', $validated)) {
+            $validated['total_distance'] = $validated['total_distance'] ?? 0;
+        }
+        if (array_key_exists('total_elevation', $validated)) {
+            $validated['total_elevation'] = $validated['total_elevation'] ?? 0;
+        }
 
         $routeMap->update($validated);
 
