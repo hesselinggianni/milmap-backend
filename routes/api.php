@@ -12,6 +12,7 @@ use App\Http\Controllers\UserController;
 use App\Http\Controllers\MapController;
 use App\Http\Controllers\SearchHistoryController;
 use App\Http\Controllers\LocationController;
+use App\Http\Controllers\UserLocationController;
 use App\Http\Controllers\ReportController;
 use App\Http\Controllers\RouteMapController;
 use App\Http\Controllers\BugReportController;
@@ -20,6 +21,7 @@ use App\Http\Controllers\ContactTicketController;
 use App\Http\Controllers\AdminAuthController;
 use App\Http\Controllers\AdminController;
 use App\Http\Controllers\MapShareController;
+use App\Http\Controllers\BillingController;
 
 /* Auth group */
 
@@ -44,6 +46,12 @@ Route::prefix('v1')->middleware(['api'])->group(function () {
 
     // Public contact tickets (no auth required)
     Route::post('/contact-tickets', [ContactTicketController::class, 'store']);
+
+    // Stripe webhook — public, verified via signature
+    Route::post('/billing/webhook', [BillingController::class, 'handleWebhook']);
+
+    // Guest checkout — public, maakt account aan als nodig
+    Route::post('/billing/guest-checkout', [BillingController::class, 'guestCheckout']);
 });
 
 
@@ -96,6 +104,11 @@ Route::prefix('v1')->middleware(['api'])->group(function () {
         Route::delete('/maps/{mapId}/locations/{locationId}', [LocationController::class, 'destroy']);
         Route::delete('/maps/{mapId}/locations', [LocationController::class, 'clear']);
 
+        // Live user location sharing routes
+        Route::post('/maps/{mapId}/user-locations/update', [UserLocationController::class, 'update']);
+        Route::get('/maps/{mapId}/user-locations', [UserLocationController::class, 'getLocations']);
+        Route::delete('/maps/{mapId}/user-locations/stop-sharing', [UserLocationController::class, 'stopSharing']);
+
         // Reports routes
         Route::get('/reports', [ReportController::class, 'index']);
         Route::post('/reports', [ReportController::class, 'store']);
@@ -112,6 +125,14 @@ Route::prefix('v1')->middleware(['api'])->group(function () {
 
         // Bug report route
         Route::post('/bug-reports', [BugReportController::class, 'store']);
+
+        // Billing (Stripe)
+        Route::prefix('billing')->group(function () {
+            Route::get('/subscription', [BillingController::class, 'subscription']);
+            Route::post('/checkout', [BillingController::class, 'createCheckout']);
+            Route::post('/portal', [BillingController::class, 'createPortal']);
+            Route::get('/session', [BillingController::class, 'verifySession']);
+        });
 
         // Admin routes (protected by AdminAuth middleware)
         Route::middleware('admin.auth')->group(function () {
