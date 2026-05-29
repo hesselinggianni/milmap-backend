@@ -2,6 +2,7 @@
 
 namespace App\Http\Controllers;
 
+use App\Models\Map;
 use App\Models\RouteMap;
 use Illuminate\Http\Request;
 use Illuminate\Support\Str;
@@ -16,9 +17,19 @@ class RouteMapController extends Controller
 
     public function index(Request $request)
     {
+        // Get all maps the user has access to (owner + collaborated)
+        $mapIds = Map::where('owner_id', auth()->id())
+            ->orWhere(function ($query) {
+                $query->whereHas('collaborators', function ($q) {
+                    $q->where('user_id', auth()->id())
+                        ->where('status', 'accepted');
+                });
+            })
+            ->pluck('id');
+
         $query = RouteMap::query()
             ->with(['owner', 'map'])
-            ->where('owner_id', auth()->id());
+            ->whereIn('map_id', $mapIds);
 
         // optional filter by map_id
         if ($request->has('map_id')) {
@@ -39,18 +50,39 @@ class RouteMapController extends Controller
     public function show(string $id)
     {
         $routeMap = RouteMap::with(['owner', 'map'])
-            ->where('owner_id', auth()->id())
             ->findOrFail($id);
+
+        // Check if user has access to the map
+        $map = $routeMap->map;
+        if ($map->owner_id !== auth()->id()) {
+            // Check if user is an accepted collaborator
+            if (!$map->collaborators()
+                ->where('user_id', auth()->id())
+                ->where('status', 'accepted')
+                ->exists()) {
+                abort(403, 'Unauthorized access to this route map');
+            }
+        }
 
         return response()->json($routeMap);
     }
 
     public function getByMapId(string $mapId)
     {
+        $map = Map::findOrFail($mapId);
+
+        // Check if user has access to the map
+        if ($map->owner_id !== auth()->id()) {
+            if (!$map->collaborators()
+                ->where('user_id', auth()->id())
+                ->where('status', 'accepted')
+                ->exists()) {
+                abort(403, 'Unauthorized access to this map');
+            }
+        }
+
         $routeMaps = RouteMap::with(['owner', 'map'])
-            ->where('owner_id', auth()->id())
             ->where('map_id', $mapId)
-        
             ->get();
 
         return response()->json($routeMaps);
@@ -120,8 +152,18 @@ class RouteMapController extends Controller
 
     public function update(Request $request, string $id)
     {
-        $routeMap = RouteMap::where('owner_id', auth()->id())
-            ->findOrFail($id);
+        $routeMap = RouteMap::findOrFail($id);
+
+        // Check if user has access to the map
+        $map = $routeMap->map;
+        if ($map->owner_id !== auth()->id()) {
+            if (!$map->collaborators()
+                ->where('user_id', auth()->id())
+                ->where('status', 'accepted')
+                ->exists()) {
+                abort(403, 'Unauthorized access to this route map');
+            }
+        }
 
         $validated = $request->validate([
             'title' => ['nullable', 'string'],
@@ -180,8 +222,18 @@ class RouteMapController extends Controller
 
     public function destroy(string $id)
     {
-        $routeMap = RouteMap::where('owner_id', auth()->id())
-            ->findOrFail($id);
+        $routeMap = RouteMap::findOrFail($id);
+
+        // Check if user has access to the map
+        $map = $routeMap->map;
+        if ($map->owner_id !== auth()->id()) {
+            if (!$map->collaborators()
+                ->where('user_id', auth()->id())
+                ->where('status', 'accepted')
+                ->exists()) {
+                abort(403, 'Unauthorized access to this route map');
+            }
+        }
 
         $routeMap->delete();
 

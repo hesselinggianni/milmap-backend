@@ -42,4 +42,12 @@ class Map extends Model
     {
         return $this->belongsTo(User::class, 'owner_id');
     }
+
+    /**
+     * Get all collaborators for this map.
+     */
+    public function collaborators()
+    {
+        return $this->hasMany(MapCollaborator::class, 'map_id');
+    }
 }

@@ -22,6 +22,7 @@ use App\Http\Controllers\AdminAuthController;
 use App\Http\Controllers\AdminController;
 use App\Http\Controllers\MapShareController;
 use App\Http\Controllers\BillingController;
+use App\Http\Controllers\MapCollaboratorController;
 
 /* Auth group */
 
@@ -46,6 +47,9 @@ Route::prefix('v1')->middleware(['api'])->group(function () {
 
     // Public contact tickets (no auth required)
     Route::post('/contact-tickets', [ContactTicketController::class, 'store']);
+
+    // Map collaboration invitations (public - no auth required for acceptance)
+    Route::post('/invitations/{token}/accept', [MapCollaboratorController::class, 'acceptInvitation']);
 
     // Stripe webhook — public, verified via signature
     Route::post('/billing/webhook', [BillingController::class, 'handleWebhook']);
@@ -122,6 +126,12 @@ Route::prefix('v1')->middleware(['api'])->group(function () {
         Route::get('/maps/{mapId}/shares', [MapShareController::class, 'index']);
         Route::post('/maps/{mapId}/shares', [MapShareController::class, 'store']);
         Route::delete('/maps/{mapId}/shares/{shareId}', [MapShareController::class, 'destroy']);
+
+        // Map collaborators routes
+        Route::get('/maps/{mapId}/collaborators', [MapCollaboratorController::class, 'index']);
+        Route::post('/maps/{mapId}/collaborators', [MapCollaboratorController::class, 'store']);
+        Route::delete('/maps/{mapId}/collaborators/{userId}', [MapCollaboratorController::class, 'destroy']);
+        Route::get('/users/search', [MapCollaboratorController::class, 'searchUsers']);
 
         // Bug report route
         Route::post('/bug-reports', [BugReportController::class, 'store']);

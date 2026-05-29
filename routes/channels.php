@@ -15,6 +15,33 @@ use Illuminate\Support\Facades\Broadcast;
 */
 
 /**
+ * Map collaboration channel
+ * - Allows map owner and accepted collaborators to receive real-time updates
+ * - Examples: collaborator.added, collaborator.removed, routemap.updated, location.updated
+ */
+Broadcast::channel('map.{mapId}', function ($user, $mapId) {
+    if (!$user) {
+        return false;
+    }
+
+    $map = Map::find($mapId);
+    if (!$map) {
+        return false;
+    }
+
+    // Owner has access
+    if ($map->owner_id === $user->id) {
+        return true;
+    }
+
+    // Check if user is an accepted collaborator
+    return $map->collaborators()
+        ->where('user_id', $user->id)
+        ->where('status', 'accepted')
+        ->exists();
+});
+
+/**
  * Live user location sharing channel
  * - Authenticated users: must be collaborator on the map
  * - Public shares: allowed without authentication

@@ -32,13 +32,14 @@ class MapController extends Controller
     }
 
     /**
-     * Single map (alleen eigen)
+     * Single map (owner OR collaborator)
      */
     public function show($id)
     {
-        $map = Map::where('id', $id)
-            ->where('owner_id', Auth::id())
-            ->firstOrFail();
+        $map = Map::findOrFail($id);
+
+        // Check if user has access (via policy)
+        $this->authorize('view', $map);
 
         return response()->json($map);
     }
@@ -65,13 +66,14 @@ class MapController extends Controller
     }
 
     /**
-     * Update ONLY eigen map
+     * Update map (owner OR collaborator)
      */
     public function update(Request $request, $id)
     {
-        $map = Map::where('id', $id)
-            ->where('owner_id', Auth::id())
-            ->firstOrFail();
+        $map = Map::findOrFail($id);
+
+        // Check if user has access (via policy)
+        $this->authorize('update', $map);
 
         // Prepare settings: merge new settings with existing ones
         $updatedData = [
@@ -92,13 +94,14 @@ class MapController extends Controller
     }
 
     /**
-     * Delete ONLY eigen map
+     * Delete map (owner only)
      */
     public function destroy($id)
     {
-        $map = Map::where('id', $id)
-            ->where('owner_id', Auth::id())
-            ->firstOrFail();
+        $map = Map::findOrFail($id);
+
+        // Check if user is owner (via policy)
+        $this->authorize('delete', $map);
 
         $map->delete();
 

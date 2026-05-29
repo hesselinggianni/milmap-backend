@@ -14,9 +14,17 @@ class LocationController extends Controller
      */
     public function index($mapId)
     {
-        $map = Map::where('id', $mapId)
-            ->where('owner_id', Auth::id())
-            ->firstOrFail();
+        $map = Map::findOrFail($mapId);
+
+        // Check if user has access to this map
+        if ($map->owner_id !== Auth::id()) {
+            if (!$map->collaborators()
+                ->where('user_id', Auth::id())
+                ->where('status', 'accepted')
+                ->exists()) {
+                abort(403, 'Unauthorized access to this map');
+            }
+        }
 
         return response()->json(
             Location::where('map_id', $mapId)
@@ -30,10 +38,17 @@ class LocationController extends Controller
      */
     public function store(Request $request, $mapId)
     {
-        // Validate that map belongs to user
-        $map = Map::where('id', $mapId)
-            ->where('owner_id', Auth::id())
-            ->firstOrFail();
+        // Validate that map exists and user has access
+        $map = Map::findOrFail($mapId);
+
+        if ($map->owner_id !== Auth::id()) {
+            if (!$map->collaborators()
+                ->where('user_id', Auth::id())
+                ->where('status', 'accepted')
+                ->exists()) {
+                abort(403, 'Unauthorized access to this map');
+            }
+        }
 
         $validated = $request->validate([
             'name' => 'nullable|string|max:255',
@@ -65,10 +80,17 @@ class LocationController extends Controller
      */
     public function show($mapId, $locationId)
     {
-        // Verify user owns the map
-        Map::where('id', $mapId)
-            ->where('owner_id', Auth::id())
-            ->firstOrFail();
+        // Verify user has access to the map
+        $map = Map::findOrFail($mapId);
+
+        if ($map->owner_id !== Auth::id()) {
+            if (!$map->collaborators()
+                ->where('user_id', Auth::id())
+                ->where('status', 'accepted')
+                ->exists()) {
+                abort(403, 'Unauthorized access to this map');
+            }
+        }
 
         $location = Location::where('id', $locationId)
             ->where('map_id', $mapId)
@@ -82,10 +104,17 @@ class LocationController extends Controller
      */
     public function update(Request $request, $mapId, $locationId)
     {
-        // Verify user owns the map
-        Map::where('id', $mapId)
-            ->where('owner_id', Auth::id())
-            ->firstOrFail();
+        // Verify user has access to the map
+        $map = Map::findOrFail($mapId);
+
+        if ($map->owner_id !== Auth::id()) {
+            if (!$map->collaborators()
+                ->where('user_id', Auth::id())
+                ->where('status', 'accepted')
+                ->exists()) {
+                abort(403, 'Unauthorized access to this map');
+            }
+        }
 
         $location = Location::where('id', $locationId)
             ->where('map_id', $mapId)
@@ -111,10 +140,17 @@ class LocationController extends Controller
      */
     public function destroy($mapId, $locationId)
     {
-        // Verify user owns the map
-        Map::where('id', $mapId)
-            ->where('owner_id', Auth::id())
-            ->firstOrFail();
+        // Verify user has access to the map
+        $map = Map::findOrFail($mapId);
+
+        if ($map->owner_id !== Auth::id()) {
+            if (!$map->collaborators()
+                ->where('user_id', Auth::id())
+                ->where('status', 'accepted')
+                ->exists()) {
+                abort(403, 'Unauthorized access to this map');
+            }
+        }
 
         $location = Location::where('id', $locationId)
             ->where('map_id', $mapId)
@@ -130,9 +166,17 @@ class LocationController extends Controller
      */
     public function clear($mapId)
     {
-        Map::where('id', $mapId)
-            ->where('owner_id', Auth::id())
-            ->firstOrFail();
+        // Verify user has access to the map
+        $map = Map::findOrFail($mapId);
+
+        if ($map->owner_id !== Auth::id()) {
+            if (!$map->collaborators()
+                ->where('user_id', Auth::id())
+                ->where('status', 'accepted')
+                ->exists()) {
+                abort(403, 'Unauthorized access to this map');
+            }
+        }
 
         Location::where('map_id', $mapId)->delete();
 

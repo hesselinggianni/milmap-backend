@@ -11,10 +11,12 @@ use Illuminate\Support\Facades\RateLimiter;
 /* Models */
 use App\Models\Post;
 use App\Models\User;
+use App\Models\Map;
 
 /* Policies */
 use App\Policies\PostPolicy;
 use App\Policies\UserPolicy;
+use App\Policies\MapPolicy;
 
 /* Services */
 use App\Services\PostService;
@@ -43,6 +45,7 @@ class AppServiceProvider extends ServiceProvider
     {
         Gate::policy(Post::class, PostPolicy::class);
         Gate::policy(User::class, UserPolicy::class);
+        Gate::policy(Map::class, MapPolicy::class);
 
         RateLimiter::for('api', function (Request $request) {
             return Limit::perMinute(60); // Adjust limit as required
