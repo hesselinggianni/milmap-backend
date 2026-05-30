@@ -99,7 +99,7 @@ class MapCollaborator extends Model
      */
     public function isOwner(): bool
     {
-        return $this->map->owner_id === auth()->id();
+        return (int) $this->map->owner_id === auth()->id();
     }
 
     /**

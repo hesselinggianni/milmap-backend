@@ -24,7 +24,7 @@ class MapCollaboratorController extends Controller
         $map = Map::findOrFail($mapId);
 
         // Only owner can view collaborators
-        if ($map->owner_id !== Auth::id()) {
+        if ((int) $map->owner_id !== Auth::id()) {
             abort(403, 'Only the map owner can view collaborators');
         }
 
@@ -61,32 +61,48 @@ class MapCollaboratorController extends Controller
         $map = Map::findOrFail($mapId);
 
         // Only owner can add collaborators
-        if ($map->owner_id !== Auth::id()) {
+        if ((int) $map->owner_id !== Auth::id()) {
             abort(403, 'Only the map owner can add collaborators');
         }
 
+        // Validate: either email or user_id, but not both
         $request->validate([
-            'email' => 'nullable|email|unique:users,email',
-            'user_id' => 'nullable|exists:users,id',
+            'email' => 'nullable|email|exists:users,email',
+            'user_id' => 'nullable|integer|exists:users,id',
         ]);
+
+        // At least one of email or user_id must be provided
+        if (!$request->filled('email') && !$request->filled('user_id')) {
+            return response()->json([
+                'error' => 'Either email or user_id must be provided',
+            ], 422);
+        }
+
+        // Cannot provide both
+        if ($request->filled('email') && $request->filled('user_id')) {
+            return response()->json([
+                'error' => 'Provide either email or user_id, not both',
+            ], 422);
+        }
 
         // Determine user and invitation type
         $user = null;
         $invitationToken = null;
+        $isEmailInvite = false;
 
         if ($request->filled('user_id')) {
-            // Direct user selection (no invitation needed)
+            // Direct user selection (immediate acceptance)
             $user = User::findOrFail($request->user_id);
-        } elseif ($request->filled('email')) {
-            // Email invitation
+        } else {
+            // Email invitation (pending until user accepts)
             $user = User::where('email', $request->email)->first();
             if (!$user) {
-                // Create a guest user for email-based invitation
                 return response()->json([
-                    'error' => 'User with this email does not exist. User must have an account first.',
+                    'error' => 'User with this email does not exist. User must create an account first.',
                 ], 422);
             }
             $invitationToken = Str::random(64);
+            $isEmailInvite = true;
         }
 
         // Check if already collaborator
@@ -107,7 +123,7 @@ class MapCollaboratorController extends Controller
         }
 
         // Cannot add owner as collaborator
-        if ($user->id === $map->owner_id) {
+        if ($user->id === (int) $map->owner_id) {
             return response()->json([
                 'error' => 'The map owner cannot be added as a collaborator',
             ], 422);
@@ -118,18 +134,20 @@ class MapCollaboratorController extends Controller
             'map_id' => $map->id,
             'user_id' => $user->id,
             'added_by' => Auth::id(),
-            'status' => $invitationToken ? 'pending' : 'accepted',
+            'status' => $isEmailInvite ? 'pending' : 'accepted',
             'invitation_token' => $invitationToken,
             'invited_at' => now(),
-            'accepted_at' => $invitationToken ? null : now(),
+            'accepted_at' => $isEmailInvite ? null : now(),
         ]);
 
-        // Broadcast event to all map viewers
-        broadcast(new MapCollaboratorAdded($collaborator))->toOthers();
+        // Broadcast event to all map viewers (only for immediate collaborators)
+        if (!$isEmailInvite) {
+            broadcast(new MapCollaboratorAdded($collaborator))->toOthers();
+        }
 
-        // Send invitation email if token was generated
-        if ($invitationToken) {
-            Mail::send(new CollaborationInvite(
+        // Send invitation email if email-based invite
+        if ($isEmailInvite) {
+            Mail::queue(new CollaborationInvite(
                 user: $user,
                 map: $map,
                 inviter: Auth::user(),
@@ -158,12 +176,12 @@ class MapCollaboratorController extends Controller
         $map = Map::findOrFail($mapId);
 
         // Only owner can remove collaborators
-        if ($map->owner_id !== Auth::id()) {
+        if ((int) $map->owner_id !== Auth::id()) {
             abort(403, 'Only the map owner can remove collaborators');
         }
 
         // Cannot remove owner
-        if ($userId === $map->owner_id) {
+        if ((int) $userId === (int) $map->owner_id) {
             return response()->json([
                 'error' => 'Cannot remove the map owner',
             ], 422);

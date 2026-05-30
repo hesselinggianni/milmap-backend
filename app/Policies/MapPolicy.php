@@ -22,7 +22,7 @@ class MapPolicy
     public function view(User $user, Map $map)
     {
         // Owner can always view
-        if ($map->owner_id === $user->id) {
+        if ($this->isOwner($user, $map)) {
             return true;
         }
 
@@ -48,7 +48,7 @@ class MapPolicy
     public function update(User $user, Map $map)
     {
         // Owner can update
-        if ($map->owner_id === $user->id) {
+        if ($this->isOwner($user, $map)) {
             return true;
         }
 
@@ -65,7 +65,7 @@ class MapPolicy
     public function delete(User $user, Map $map)
     {
         // Only owner can delete
-        return $map->owner_id === $user->id;
+        return $this->isOwner($user, $map);
     }
 
     /**
@@ -74,7 +74,7 @@ class MapPolicy
     public function addCollaborator(User $user, Map $map)
     {
         // Only owner can add collaborators
-        return $map->owner_id === $user->id;
+        return $this->isOwner($user, $map);
     }
 
     /**
@@ -83,7 +83,7 @@ class MapPolicy
     public function removeCollaborator(User $user, Map $map)
     {
         // Only owner can remove collaborators
-        return $map->owner_id === $user->id;
+        return $this->isOwner($user, $map);
     }
 
     /**
@@ -92,5 +92,16 @@ class MapPolicy
     public function edit(User $user, Map $map)
     {
         return $this->update($user, $map);
+    }
+
+    /**
+     * Whether the given user owns the map.
+     *
+     * owner_id is stored in a uuid (string) column while User ids are
+     * auto-increment integers, so a strict === would fail ("2" === 2).
+     */
+    protected function isOwner(User $user, Map $map): bool
+    {
+        return (string) $map->owner_id === (string) $user->id;
     }
 }

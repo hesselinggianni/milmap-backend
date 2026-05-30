@@ -35,6 +35,13 @@ class RouteMap extends Model
         'total_elevation',
 
         'meta',
+
+        'bijlage',
+        'callsign',
+        'eenheid',
+        'sterkte',
+        'kaartblad',
+        'vtv_vta',
     ];
 
     protected $casts = [
@@ -42,6 +49,8 @@ class RouteMap extends Model
         'date' => 'date:Y-m-d',
 
         'meta' => 'array',
+        'bijlage' => 'array',
+        'sterkte' => 'integer',
 
         'declination' => 'float',
 
@@ -66,6 +75,11 @@ class RouteMap extends Model
     public function map()
     {
         return $this->belongsTo(Map::class, 'map_id');
+    }
+
+    public function generatedRoutes()
+    {
+        return $this->hasMany(GeneratedRoute::class, 'route_map_id');
     }
 
     /*

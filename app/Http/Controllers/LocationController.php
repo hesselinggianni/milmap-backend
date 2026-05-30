@@ -4,6 +4,7 @@ namespace App\Http\Controllers;
 
 use App\Models\Location;
 use App\Models\Map;
+use App\Models\MapShare;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Auth;
 
@@ -12,16 +13,29 @@ class LocationController extends Controller
     /**
      * Get all locations for a specific map
      */
-    public function index($mapId)
+    public function index(Request $request, $mapId)
     {
         $map = Map::findOrFail($mapId);
 
-        // Check if user has access to this map
-        if ($map->owner_id !== Auth::id()) {
-            if (!$map->collaborators()
-                ->where('user_id', Auth::id())
-                ->where('status', 'accepted')
-                ->exists()) {
+        // Check for share token (unauthenticated public access)
+        $shareToken = $request->query('share_token');
+        if ($shareToken) {
+            $share = MapShare::active()
+                ->where('token', $shareToken)
+                ->where('map_id', $mapId)
+                ->first();
+
+            if (!$share) {
+                abort(403, 'Invalid or expired share token');
+            }
+            // Valid share token - allow access
+        } else {
+            // Check if user has access to this map
+            if (!Auth::check() || ((int) $map->owner_id !== Auth::id() &&
+                !$map->collaborators()
+                    ->where('user_id', Auth::id())
+                    ->where('status', 'accepted')
+                    ->exists())) {
                 abort(403, 'Unauthorized access to this map');
             }
         }
@@ -41,7 +55,7 @@ class LocationController extends Controller
         // Validate that map exists and user has access
         $map = Map::findOrFail($mapId);
 
-        if ($map->owner_id !== Auth::id()) {
+        if ((int) $map->owner_id !== Auth::id()) {
             if (!$map->collaborators()
                 ->where('user_id', Auth::id())
                 ->where('status', 'accepted')
@@ -83,7 +97,7 @@ class LocationController extends Controller
         // Verify user has access to the map
         $map = Map::findOrFail($mapId);
 
-        if ($map->owner_id !== Auth::id()) {
+        if ((int) $map->owner_id !== Auth::id()) {
             if (!$map->collaborators()
                 ->where('user_id', Auth::id())
                 ->where('status', 'accepted')
@@ -107,7 +121,7 @@ class LocationController extends Controller
         // Verify user has access to the map
         $map = Map::findOrFail($mapId);
 
-        if ($map->owner_id !== Auth::id()) {
+        if ((int) $map->owner_id !== Auth::id()) {
             if (!$map->collaborators()
                 ->where('user_id', Auth::id())
                 ->where('status', 'accepted')
@@ -143,7 +157,7 @@ class LocationController extends Controller
         // Verify user has access to the map
         $map = Map::findOrFail($mapId);
 
-        if ($map->owner_id !== Auth::id()) {
+        if ((int) $map->owner_id !== Auth::id()) {
             if (!$map->collaborators()
                 ->where('user_id', Auth::id())
                 ->where('status', 'accepted')
@@ -169,7 +183,7 @@ class LocationController extends Controller
         // Verify user has access to the map
         $map = Map::findOrFail($mapId);
 
-        if ($map->owner_id !== Auth::id()) {
+        if ((int) $map->owner_id !== Auth::id()) {
             if (!$map->collaborators()
                 ->where('user_id', Auth::id())
                 ->where('status', 'accepted')

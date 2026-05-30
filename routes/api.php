@@ -23,6 +23,7 @@ use App\Http\Controllers\AdminController;
 use App\Http\Controllers\MapShareController;
 use App\Http\Controllers\BillingController;
 use App\Http\Controllers\MapCollaboratorController;
+use App\Http\Controllers\RouteGenerationController;
 
 /* Auth group */
 
@@ -56,6 +57,10 @@ Route::prefix('v1')->middleware(['api'])->group(function () {
 
     // Guest checkout — public, maakt account aan als nodig
     Route::post('/billing/guest-checkout', [BillingController::class, 'guestCheckout']);
+
+    // Public share access endpoints (no auth required, but must have valid share token)
+    Route::get('/maps/{mapId}/locations', [LocationController::class, 'index']);
+    Route::get('/maps/{mapId}/routemaps', [RouteMapController::class, 'getByMapId']);
 });
 
 
@@ -80,7 +85,7 @@ Route::prefix('v1')->middleware(['api'])->group(function () {
 
         Route::get('/maps', [MapController::class, 'index']);
         Route::get('/maps/me', [MapController::class, 'myMaps']);
-        Route::get('/maps/{id}', [MapController::class, 'show']);
+        Route::get('/maps/{id}/{lonlat}', [MapController::class, 'show']);
         Route::post('/maps', [MapController::class, 'store']);
         Route::put('/maps/{id}', [MapController::class, 'update']);
         Route::delete('/maps/{id}', [MapController::class, 'destroy']);
@@ -100,8 +105,18 @@ Route::prefix('v1')->middleware(['api'])->group(function () {
         Route::delete('/routemaps', [RouteMapController::class, 'clear']);
         Route::get('/maps/{mapId}routemaps', [RouteMapController::class, 'index']);
 
-        // Location markers routes
-        Route::get('/maps/{mapId}/locations', [LocationController::class, 'index']);
+        // Route generation routes
+        Route::post('/routemaps/{routeMapId}/generate-route', [RouteGenerationController::class, 'generateRoute']);
+        Route::get('/routemaps/{routeMapId}/generated-routes', [RouteGenerationController::class, 'listGeneratedRoutes']);
+        Route::get('/generated-routes/{id}', [RouteGenerationController::class, 'getGeneratedRoute']);
+        Route::post('/generated-routes/{id}/apply', [RouteGenerationController::class, 'applyRoute']);
+        Route::delete('/generated-routes/{id}', [RouteGenerationController::class, 'deleteGeneratedRoute']);
+
+        // Checkpoint image upload routes
+        Route::post('/routemaps/{id}/checkpoints/{checkpointId}/upload-image', [RouteMapController::class, 'uploadCheckpointImage']);
+        Route::delete('/routemaps/{id}/checkpoints/{checkpointId}/image', [RouteMapController::class, 'deleteCheckpointImage']);
+
+        // Location markers routes (POST/PUT/DELETE require auth)
         Route::post('/maps/{mapId}/locations', [LocationController::class, 'store']);
         Route::get('/maps/{mapId}/locations/{locationId}', [LocationController::class, 'show']);
         Route::put('/maps/{mapId}/locations/{locationId}', [LocationController::class, 'update']);
