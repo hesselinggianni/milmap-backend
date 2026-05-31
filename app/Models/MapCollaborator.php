@@ -16,6 +16,7 @@ class MapCollaborator extends Model
         'map_id',
         'user_id',
         'added_by',
+        'role',
         'status',
         'invitation_token',
         'invited_at',

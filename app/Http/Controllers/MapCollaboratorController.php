@@ -36,6 +36,7 @@ class MapCollaboratorController extends Controller
                 'user_id' => $c->user_id,
                 'user_name' => $c->user?->full_name ?? $c->user?->email,
                 'email' => $c->user?->email,
+                'role' => $c->role ?? 'editor',
                 'status' => $c->status,
                 'invited_at' => $c->invited_at,
                 'accepted_at' => $c->accepted_at,
@@ -69,6 +70,7 @@ class MapCollaboratorController extends Controller
         $request->validate([
             'email' => 'nullable|email|exists:users,email',
             'user_id' => 'nullable|integer|exists:users,id',
+            'role' => 'nullable|in:viewer,editor,admin',
         ]);
 
         // At least one of email or user_id must be provided
@@ -134,6 +136,7 @@ class MapCollaboratorController extends Controller
             'map_id' => $map->id,
             'user_id' => $user->id,
             'added_by' => Auth::id(),
+            'role' => $request->input('role', 'editor'),
             'status' => $isEmailInvite ? 'pending' : 'accepted',
             'invitation_token' => $invitationToken,
             'invited_at' => now(),
@@ -160,6 +163,7 @@ class MapCollaboratorController extends Controller
             'collaborator' => [
                 'id' => $collaborator->id,
                 'user_id' => $collaborator->user_id,
+                'role' => $collaborator->role,
                 'status' => $collaborator->status,
                 'user_name' => $user->full_name,
                 'email' => $user->email,
