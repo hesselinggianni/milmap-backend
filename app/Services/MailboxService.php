@@ -108,7 +108,7 @@ class MailboxService
             foreach ($client->getFolders(false) as $folder) {
                 $unread = 0;
                 try {
-                    $unread = $folder->query()->unseen()->setFetchBody(false)->get()->count();
+                    $unread = $folder->query()->whereUnseen()->setFetchBody(false)->get()->count();
                 } catch (Throwable $e) {
                     // some special-use folders aren't selectable — skip the count
                 }

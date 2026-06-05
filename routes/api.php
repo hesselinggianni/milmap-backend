@@ -20,6 +20,8 @@ use App\Http\Controllers\FeatureRequestController;
 use App\Http\Controllers\ContactTicketController;
 use App\Http\Controllers\AdminAuthController;
 use App\Http\Controllers\AdminController;
+use App\Http\Controllers\AdminMailAccountController;
+use App\Http\Controllers\AdminMailboxController;
 use App\Http\Controllers\MapShareController;
 use App\Http\Controllers\BillingController;
 use App\Http\Controllers\MapCollaboratorController;
@@ -260,6 +262,22 @@ Route::prefix('v1')->middleware(['api'])->group(function () {
             Route::delete('/admin/users/{userId}', [AdminController::class, 'deleteUser']);
             Route::patch('/admin/users/{userId}/admin-status', [AdminController::class, 'toggleAdminStatus']);
             Route::post('/admin/users/{userId}/reset-password', [AdminController::class, 'resetUserPassword']);
+
+            // ── Admin mail client (IMAP/SMTP inboxes) ───────────────────
+            // Inbox configuration (CRUD). Passwords are write-only.
+            Route::get('/admin/mail/accounts', [AdminMailAccountController::class, 'index']);
+            Route::post('/admin/mail/accounts', [AdminMailAccountController::class, 'store']);
+            Route::put('/admin/mail/accounts/{id}', [AdminMailAccountController::class, 'update']);
+            Route::delete('/admin/mail/accounts/{id}', [AdminMailAccountController::class, 'destroy']);
+            Route::post('/admin/mail/accounts/{id}/test', [AdminMailAccountController::class, 'test']);
+
+            // Live mailbox operations (read / flag / send) per inbox.
+            Route::get('/admin/mail/accounts/{id}/folders', [AdminMailboxController::class, 'folders']);
+            Route::get('/admin/mail/accounts/{id}/messages', [AdminMailboxController::class, 'messages']);
+            Route::get('/admin/mail/accounts/{id}/messages/{uid}', [AdminMailboxController::class, 'show']);
+            Route::get('/admin/mail/accounts/{id}/messages/{uid}/attachments/{index}', [AdminMailboxController::class, 'attachment']);
+            Route::post('/admin/mail/accounts/{id}/messages/{uid}/flag', [AdminMailboxController::class, 'flag']);
+            Route::post('/admin/mail/accounts/{id}/send', [AdminMailboxController::class, 'send']);
         });
 
     });
