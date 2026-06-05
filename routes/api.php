@@ -24,6 +24,11 @@ use App\Http\Controllers\MapShareController;
 use App\Http\Controllers\BillingController;
 use App\Http\Controllers\MapCollaboratorController;
 use App\Http\Controllers\RouteGenerationController;
+use App\Http\Controllers\ChatKeyController;
+use App\Http\Controllers\ConversationController;
+use App\Http\Controllers\MessageController;
+use App\Http\Controllers\MissionController;
+use App\Http\Controllers\MissionCollaboratorController;
 
 /* Auth group */
 
@@ -145,8 +150,43 @@ Route::prefix('v1')->middleware(['api'])->group(function () {
         // Map collaborators routes
         Route::get('/maps/{mapId}/collaborators', [MapCollaboratorController::class, 'index']);
         Route::post('/maps/{mapId}/collaborators', [MapCollaboratorController::class, 'store']);
+        Route::put('/maps/{mapId}/collaborators/{userId}', [MapCollaboratorController::class, 'updateRole']);
         Route::delete('/maps/{mapId}/collaborators/{userId}', [MapCollaboratorController::class, 'destroy']);
         Route::get('/users/search', [MapCollaboratorController::class, 'searchUsers']);
+
+        // ── Missions (owner + collaborators with roles) ──────────────────
+        // Literal invitation routes first so they aren't captured by {id}.
+        Route::get('/missions/invitations/pending', [MissionCollaboratorController::class, 'myInvitations']);
+        Route::post('/missions/invitations/{id}/accept', [MissionCollaboratorController::class, 'accept']);
+        Route::delete('/missions/invitations/{id}', [MissionCollaboratorController::class, 'decline']);
+
+        Route::get('/missions', [MissionController::class, 'index']);
+        Route::post('/missions', [MissionController::class, 'store']);
+        Route::get('/missions/{id}', [MissionController::class, 'show']);
+        Route::put('/missions/{id}', [MissionController::class, 'update']);
+        Route::delete('/missions/{id}', [MissionController::class, 'destroy']);
+
+        // Mission collaborators (invite with roles, manage rights)
+        Route::get('/missions/{missionId}/collaborators', [MissionCollaboratorController::class, 'index']);
+        Route::post('/missions/{missionId}/collaborators', [MissionCollaboratorController::class, 'store']);
+        Route::put('/missions/{missionId}/collaborators/{userId}', [MissionCollaboratorController::class, 'updateRole']);
+        Route::delete('/missions/{missionId}/collaborators/{userId}', [MissionCollaboratorController::class, 'destroy']);
+
+        // ── Chat (E2EE 1-on-1) ──────────────────────────────────
+        // Public-key exchange for sealed-box encryption
+        Route::put('/chat/keys/me', [ChatKeyController::class, 'store']);
+        Route::get('/chat/keys/me', [ChatKeyController::class, 'me']);
+        Route::get('/chat/keys/{id}', [ChatKeyController::class, 'show']);
+
+        // Conversations
+        Route::get('/chat/conversations', [ConversationController::class, 'index']);
+        Route::post('/chat/conversations', [ConversationController::class, 'store']);
+        Route::get('/chat/conversations/{id}', [ConversationController::class, 'show']);
+        Route::post('/chat/conversations/{id}/read', [ConversationController::class, 'markRead']);
+
+        // Messages
+        Route::get('/chat/conversations/{id}/messages', [MessageController::class, 'index']);
+        Route::post('/chat/conversations/{id}/messages', [MessageController::class, 'store']);
 
         // Bug report route
         Route::post('/bug-reports', [BugReportController::class, 'store']);

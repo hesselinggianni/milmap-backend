@@ -19,6 +19,7 @@ class User extends Authenticatable
         'password',
         'language',
         'settings',
+        'public_key',
         'stripe_id',
         'pm_type',
         'pm_last_four',
@@ -50,6 +51,13 @@ class User extends Authenticatable
     public function subscriptions()
     {
         return $this->hasMany(Subscription::class)->orderByDesc('created_at');
+    }
+
+    public function conversations()
+    {
+        return $this->belongsToMany(Conversation::class, 'conversation_user')
+            ->withPivot('last_read_at')
+            ->withTimestamps();
     }
 
     // ── Subscription helpers ────────────────────────────────────────

@@ -172,6 +172,47 @@ class MapCollaboratorController extends Controller
     }
 
     /**
+     * Update a collaborator's role
+     * PUT /api/v1/maps/{mapId}/collaborators/{userId}
+     *
+     * Request body: { "role": "viewer|editor|admin" }
+     */
+    public function updateRole(Request $request, $mapId, $userId)
+    {
+        $map = Map::findOrFail($mapId);
+
+        // Only owner can change roles
+        if ((int) $map->owner_id !== Auth::id()) {
+            abort(403, 'Only the map owner can change collaborator roles');
+        }
+
+        $request->validate([
+            'role' => 'required|in:viewer,editor,admin',
+        ]);
+
+        // Cannot change the owner's role
+        if ((int) $userId === (int) $map->owner_id) {
+            return response()->json([
+                'error' => 'The map owner role cannot be changed',
+            ], 422);
+        }
+
+        $collaborator = $map->collaborators()
+            ->where('user_id', $userId)
+            ->firstOrFail();
+
+        $collaborator->update(['role' => $request->role]);
+
+        return response()->json([
+            'message' => 'Role updated successfully',
+            'collaborator' => [
+                'user_id' => $collaborator->user_id,
+                'role' => $collaborator->role,
+            ],
+        ]);
+    }
+
+    /**
      * Remove a collaborator from a map
      * DELETE /api/v1/maps/{mapId}/collaborators/{userId}
      */
