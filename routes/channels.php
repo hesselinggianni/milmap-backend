@@ -2,6 +2,7 @@
 
 use App\Models\Conversation;
 use App\Models\Map;
+use App\Models\Mission;
 use Illuminate\Support\Facades\Broadcast;
 
 /*
@@ -81,4 +82,29 @@ Broadcast::channel('conversation.{conversationId}', function ($user, $conversati
     }
 
     return $conversation->hasParticipant($user->id);
+});
+
+/**
+ * Mission navigation channel
+ * - All participants (owner + accepted collaborators + linked-team members when active)
+ *   may subscribe to receive live participant positions.
+ */
+Broadcast::channel('mission.{missionId}', function ($user, $missionId) {
+    if (! $user) {
+        return false;
+    }
+
+    $mission = Mission::find($missionId);
+    if (! $mission) {
+        return false;
+    }
+
+    if (! $mission->hasAccess($user->id)) {
+        return false;
+    }
+
+    return [
+        'id'   => $user->id,
+        'name' => trim(($user->first_name ?? '') . ' ' . ($user->last_name ?? '')) ?: $user->email,
+    ];
 });

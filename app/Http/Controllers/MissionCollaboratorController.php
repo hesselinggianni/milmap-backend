@@ -5,6 +5,7 @@ namespace App\Http\Controllers;
 use App\Models\Mission;
 use App\Models\User;
 use App\Models\MissionCollaborator;
+use App\Services\InvitationService;
 use Illuminate\Http\Request;
 use Illuminate\Support\Str;
 use Illuminate\Support\Facades\Auth;
@@ -56,7 +57,7 @@ class MissionCollaboratorController extends Controller
         }
 
         $request->validate([
-            'email' => 'nullable|email|exists:users,email',
+            'email' => 'nullable|email',
             'user_id' => 'nullable|integer|exists:users,id',
             'role' => 'nullable|in:viewer,editor,admin',
         ]);
@@ -68,19 +69,40 @@ class MissionCollaboratorController extends Controller
             return response()->json(['error' => 'Provide either email or user_id, not both'], 422);
         }
 
-        // Resolve the invited user.
-        $isEmailInvite = false;
-        if ($request->filled('user_id')) {
-            $user = User::findOrFail($request->user_id);
-        } else {
-            $user = User::where('email', $request->email)->first();
-            if (!$user) {
-                return response()->json([
-                    'error' => 'No user with this email. They must create an account first.',
-                ], 422);
+        // ── E-mail invitation (existing user OR brand-new recipient) ──
+        // Routed through the polymorphic invitations table so it works even
+        // when the e-mail does not belong to a MilMap user yet.
+        if ($request->filled('email')) {
+            $result = app(InvitationService::class)->createInvite(
+                $mission,
+                $request->email,
+                $request->input('role', 'viewer'),
+                Auth::user()
+            );
+
+            if (!$result['ok']) {
+                return response()->json(['error' => $result['error']], $result['status'] ?? 422);
             }
-            $isEmailInvite = true;
+
+            $inv = $result['invitation'];
+
+            return response()->json([
+                'message' => $result['email_sent']
+                    ? 'Uitnodiging verzonden naar ' . $inv->email
+                    : 'Uitnodiging aangemaakt (e-mail kon niet worden verzonden).',
+                'email_sent' => $result['email_sent'],
+                'invitation' => [
+                    'id' => $inv->id,
+                    'email' => $inv->email,
+                    'role' => $inv->role,
+                    'status' => $inv->status,
+                    'is_new_user' => $result['isNewUser'],
+                ],
+            ], 201);
         }
+
+        // ── Direct add of a known contact (instant access) ──
+        $user = User::findOrFail($request->user_id);
 
         // Owner cannot be added as collaborator.
         if ($mission->isOwnedBy($user->id)) {
@@ -102,17 +124,13 @@ class MissionCollaboratorController extends Controller
             'user_id' => $user->id,
             'added_by' => Auth::id(),
             'role' => $request->input('role', 'editor'),
-            // Direct user picks accept immediately; email invites stay pending.
-            'status' => $isEmailInvite ? 'pending' : 'accepted',
-            'invitation_token' => $isEmailInvite ? Str::random(64) : null,
+            'status' => 'accepted',
             'invited_at' => now(),
-            'accepted_at' => $isEmailInvite ? null : now(),
+            'accepted_at' => now(),
         ]);
 
         return response()->json([
-            'message' => $isEmailInvite
-                ? 'Invitation sent to ' . $user->email
-                : 'Collaborator added',
+            'message' => 'Collaborator added',
             'collaborator' => [
                 'id' => $collaborator->id,
                 'user_id' => $collaborator->user_id,

@@ -29,11 +29,22 @@ use App\Http\Controllers\ConversationController;
 use App\Http\Controllers\MessageController;
 use App\Http\Controllers\MissionController;
 use App\Http\Controllers\MissionCollaboratorController;
+use App\Http\Controllers\ClientErrorController;
+use App\Http\Controllers\InvitationController;
+use App\Http\Controllers\TeamController;
+use App\Http\Controllers\ChatAttachmentController;
+use App\Http\Controllers\ChatInviteController;
+use App\Http\Controllers\MissionTrackController;
+use App\Http\Controllers\MissionEvaluationController;
+use App\Http\Controllers\MissionCommsController;
 
 /* Auth group */
 
 Route::prefix('v1')->middleware(['api'])->group(function () {
     Route::post('/register', [RegisterController::class, 'store']);
+    // ── Client-side error reporting (no auth required) ───────────
+    Route::post('/client-errors', [ClientErrorController::class, 'store'])
+        ->middleware('throttle:30,1');
     Route::post('/login', [LoginController::class, 'store']);
     Route::post('/logout', [LogoutController::class, 'destroy'])->middleware('auth:sanctum');
     Route::post('/logout-all', [LogoutController::class, 'logoutFromAllDevices'])->middleware('auth:sanctum');
@@ -56,6 +67,9 @@ Route::prefix('v1')->middleware(['api'])->group(function () {
 
     // Map collaboration invitations (public - no auth required for acceptance)
     Route::post('/invitations/{token}/accept', [MapCollaboratorController::class, 'acceptInvitation']);
+
+    // Invitation preview — the /invite/{token} page reads this before login/registration.
+    Route::get('/invitations/token/{token}', [InvitationController::class, 'preview']);
 
     // Stripe webhook — public, verified via signature
     Route::post('/billing/webhook', [BillingController::class, 'handleWebhook']);
@@ -88,7 +102,26 @@ Route::prefix('v1')->middleware(['api'])->group(function () {
         Route::get('/users/{id}', [UserController::class, 'show']);
         Route::put('/users/{id}', [UserController::class, 'update']);
         Route::delete('/users/{id}', [UserController::class, 'destroy']);
-    
+
+        // ── Invitations & activity (Hub inbox / timeline) ──────────────
+        // Literal routes first so they aren't captured by the {id} param.
+        Route::get('/invitations/incoming', [InvitationController::class, 'incoming']);
+        Route::get('/invitations/outgoing', [InvitationController::class, 'outgoing']);
+        Route::post('/invitations/token/{token}/accept', [InvitationController::class, 'accept']);
+        Route::post('/invitations/token/{token}/decline', [InvitationController::class, 'decline']);
+        Route::delete('/invitations/{id}', [InvitationController::class, 'revoke']);
+        Route::get('/activity/timeline', [InvitationController::class, 'timeline']);
+
+        // ── Teams (curated rosters → invite a whole group at once) ─────
+        Route::get('/teams', [TeamController::class, 'index']);
+        Route::post('/teams', [TeamController::class, 'store']);
+        Route::post('/teams/{team}/members', [TeamController::class, 'addMember']);
+        Route::delete('/teams/{team}/members/{member}', [TeamController::class, 'removeMember']);
+        Route::post('/teams/{team}/invite', [TeamController::class, 'invite']);
+        Route::get('/teams/{team}', [TeamController::class, 'show']);
+        Route::put('/teams/{team}', [TeamController::class, 'update']);
+        Route::delete('/teams/{team}', [TeamController::class, 'destroy']);
+
 
 
         Route::get('/maps', [MapController::class, 'index']);
@@ -174,6 +207,20 @@ Route::prefix('v1')->middleware(['api'])->group(function () {
         Route::put('/missions/{missionId}/collaborators/{userId}', [MissionCollaboratorController::class, 'updateRole']);
         Route::delete('/missions/{missionId}/collaborators/{userId}', [MissionCollaboratorController::class, 'destroy']);
 
+        // Mission GPS tracking (navigation feature)
+        Route::post('/missions/{id}/tracks', [MissionTrackController::class, 'store']);
+        Route::get('/missions/{id}/tracks/live', [MissionTrackController::class, 'live']);
+        Route::get('/missions/{id}/tracks/{userId}', [MissionTrackController::class, 'userTrack']);
+
+        // Mission hot-debrief evaluations
+        Route::get('/missions/{id}/evaluations/mine', [MissionEvaluationController::class, 'mine']);
+        Route::get('/missions/{id}/evaluations', [MissionEvaluationController::class, 'index']);
+        Route::post('/missions/{id}/evaluations', [MissionEvaluationController::class, 'store']);
+
+        // Mission comms (group chat + participant roster for the Comms tab)
+        Route::get('/missions/{id}/comms/participants', [MissionCommsController::class, 'participants']);
+        Route::get('/missions/{id}/comms/conversation', [MissionCommsController::class, 'conversation']);
+
         // ── Chat (E2EE 1-on-1) ──────────────────────────────────
         // Public-key exchange for sealed-box encryption
         Route::put('/chat/keys/me', [ChatKeyController::class, 'store']);
@@ -189,6 +236,12 @@ Route::prefix('v1')->middleware(['api'])->group(function () {
         // Messages
         Route::get('/chat/conversations/{id}/messages', [MessageController::class, 'index']);
         Route::post('/chat/conversations/{id}/messages', [MessageController::class, 'store']);
+
+        // Chat attachments
+        Route::post('/chat/attachments', [ChatAttachmentController::class, 'store']);
+
+        // Chat invite link
+        Route::post('/chat/invite', [ChatInviteController::class, 'store']);
 
         // Bug report route
         Route::post('/bug-reports', [BugReportController::class, 'store']);

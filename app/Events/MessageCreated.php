@@ -44,9 +44,12 @@ class MessageCreated implements ShouldBroadcastNow
             'id'              => $this->message->id,
             'conversation_id' => $this->message->conversation_id,
             'sender_id'       => $this->message->sender_id,
+            'type'            => $this->message->type ?? 'text',
             'encryption'      => $this->message->encryption,
             'ciphertext'      => $this->message->ciphertext,
             'ciphertext_self' => $this->message->ciphertext_self,
+            // Group message: each client picks the box sealed to its own user id.
+            'ciphertexts'     => $this->message->ciphertexts,
             'created_at'      => $this->message->created_at?->toIso8601String(),
         ];
     }

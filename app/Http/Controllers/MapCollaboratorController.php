@@ -8,6 +8,7 @@ use App\Models\MapCollaborator;
 use App\Mail\CollaborationInvite;
 use App\Events\MapCollaboratorAdded;
 use App\Events\MapCollaboratorRemoved;
+use App\Services\InvitationService;
 use Illuminate\Http\Request;
 use Illuminate\Support\Str;
 use Illuminate\Support\Facades\Auth;
@@ -68,7 +69,7 @@ class MapCollaboratorController extends Controller
 
         // Validate: either email or user_id, but not both
         $request->validate([
-            'email' => 'nullable|email|exists:users,email',
+            'email' => 'nullable|email',
             'user_id' => 'nullable|integer|exists:users,id',
             'role' => 'nullable|in:viewer,editor,admin',
         ]);
@@ -87,42 +88,40 @@ class MapCollaboratorController extends Controller
             ], 422);
         }
 
-        // Determine user and invitation type
-        $user = null;
-        $invitationToken = null;
-        $isEmailInvite = false;
+        // ── E-mail invitation (existing user OR brand-new recipient) ──
+        // Routed through the polymorphic invitations table so it works even
+        // when the e-mail does not belong to a MilMap user yet.
+        if ($request->filled('email')) {
+            $result = app(InvitationService::class)->createInvite(
+                $map,
+                $request->email,
+                $request->input('role', 'viewer'),
+                Auth::user()
+            );
 
-        if ($request->filled('user_id')) {
-            // Direct user selection (immediate acceptance)
-            $user = User::findOrFail($request->user_id);
-        } else {
-            // Email invitation (pending until user accepts)
-            $user = User::where('email', $request->email)->first();
-            if (!$user) {
-                return response()->json([
-                    'error' => 'User with this email does not exist. User must create an account first.',
-                ], 422);
+            if (!$result['ok']) {
+                return response()->json(['error' => $result['error']], $result['status'] ?? 422);
             }
-            $invitationToken = Str::random(64);
-            $isEmailInvite = true;
+
+            $inv = $result['invitation'];
+
+            return response()->json([
+                'message' => $result['email_sent']
+                    ? 'Uitnodiging verzonden naar ' . $inv->email
+                    : 'Uitnodiging aangemaakt (e-mail kon niet worden verzonden).',
+                'email_sent' => $result['email_sent'],
+                'invitation' => [
+                    'id' => $inv->id,
+                    'email' => $inv->email,
+                    'role' => $inv->role,
+                    'status' => $inv->status,
+                    'is_new_user' => $result['isNewUser'],
+                ],
+            ], 201);
         }
 
-        // Check if already collaborator
-        $existing = $map->collaborators()
-            ->where('user_id', $user->id)
-            ->first();
-
-        if ($existing) {
-            if ($existing->isAccepted()) {
-                return response()->json([
-                    'error' => 'This user is already a collaborator on this map',
-                ], 422);
-            } else {
-                return response()->json([
-                    'error' => 'An invitation is already pending for this user',
-                ], 422);
-            }
-        }
+        // ── Direct add of a known contact (instant access) ──
+        $user = User::findOrFail($request->user_id);
 
         // Cannot add owner as collaborator
         if ($user->id === (int) $map->owner_id) {
@@ -131,35 +130,34 @@ class MapCollaboratorController extends Controller
             ], 422);
         }
 
-        // Create collaboration record
+        // Check if already collaborator
+        $existing = $map->collaborators()
+            ->where('user_id', $user->id)
+            ->first();
+
+        if ($existing) {
+            return response()->json([
+                'error' => $existing->isAccepted()
+                    ? 'This user is already a collaborator on this map'
+                    : 'An invitation is already pending for this user',
+            ], 422);
+        }
+
+        // Create collaboration record (immediate access)
         $collaborator = MapCollaborator::create([
             'map_id' => $map->id,
             'user_id' => $user->id,
             'added_by' => Auth::id(),
             'role' => $request->input('role', 'editor'),
-            'status' => $isEmailInvite ? 'pending' : 'accepted',
-            'invitation_token' => $invitationToken,
+            'status' => 'accepted',
             'invited_at' => now(),
-            'accepted_at' => $isEmailInvite ? null : now(),
+            'accepted_at' => now(),
         ]);
 
-        // Broadcast event to all map viewers (only for immediate collaborators)
-        if (!$isEmailInvite) {
-            broadcast(new MapCollaboratorAdded($collaborator))->toOthers();
-        }
-
-        // Send invitation email if email-based invite
-        if ($isEmailInvite) {
-            Mail::queue(new CollaborationInvite(
-                user: $user,
-                map: $map,
-                inviter: Auth::user(),
-                invitationToken: $invitationToken,
-            ));
-        }
+        broadcast(new MapCollaboratorAdded($collaborator))->toOthers();
 
         return response()->json([
-            'message' => $invitationToken ? 'Invitation sent to ' . $user->email : 'Collaborator added successfully',
+            'message' => 'Collaborator added successfully',
             'collaborator' => [
                 'id' => $collaborator->id,
                 'user_id' => $collaborator->user_id,
@@ -272,22 +270,36 @@ class MapCollaboratorController extends Controller
     }
 
     /**
-     * Search for users to add as collaborators
+     * Search for users to add as collaborators.
+     *
+     * Privacy: only returns people the current user has *already collaborated
+     * with* (an accepted collaboration on any mission or map). Strangers are
+     * never disclosed — to add someone new you invite them by e-mail instead.
+     *
      * GET /api/v1/users/search?q={query}
      */
     public function searchUsers(Request $request)
     {
-        $query = $request->query('q', '');
+        $query = trim($request->query('q', ''));
 
         if (strlen($query) < 2) {
-            return response()->json([
-                'users' => [],
-            ]);
+            return response()->json(['users' => []]);
         }
 
-        $users = User::where('email', 'like', "%{$query}%")
-            ->orWhere('first_name', 'like', "%{$query}%")
-            ->orWhere('last_name', 'like', "%{$query}%")
+        $contactIds = InvitationService::knownContactIds(Auth::id());
+
+        if (empty($contactIds)) {
+            return response()->json(['users' => []]);
+        }
+
+        $like = "%{$query}%";
+
+        $users = User::whereIn('id', $contactIds)
+            ->where(function ($q) use ($like) {
+                $q->where('email', 'like', $like)
+                    ->orWhere('first_name', 'like', $like)
+                    ->orWhere('last_name', 'like', $like);
+            })
             ->select('id', 'first_name', 'last_name', 'email')
             ->limit(20)
             ->get()
@@ -297,8 +309,6 @@ class MapCollaboratorController extends Controller
                 'email' => $u->email,
             ]);
 
-        return response()->json([
-            'users' => $users,
-        ]);
+        return response()->json(['users' => $users]);
     }
 }

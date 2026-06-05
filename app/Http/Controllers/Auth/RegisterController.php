@@ -10,6 +10,7 @@ use Illuminate\Validation\ValidationException;
 use Illuminate\Support\Facades\Validator;
 use Illuminate\Support\Facades\Mail;
 use App\Mail\NewUserRegistered;
+use App\Services\InvitationService;
 
 class RegisterController extends Controller
 {
@@ -37,11 +38,16 @@ class RegisterController extends Controller
         }
 
         // Create the user
-        $user = User::create([      
+        $user = User::create([
             'email' => $request->email,
             'password' => Hash::make($request->password),
         ]);
-        
+
+        // If this e-mail was invited to any mission/map, accept those invitations
+        // now. Such accounts become free / view-only until they upgrade.
+        $invitesAccepted = app(InvitationService::class)->convertForNewUser($user);
+        $user->refresh();
+
         Mail::to('hesselinggianni@gmail.com')
         ->send(new NewUserRegistered($user));
 
@@ -52,6 +58,7 @@ class RegisterController extends Controller
             'message' => 'User registered successfully.',
             'user' => $user,
             'token' => $token,
+            'invites_accepted' => $invitesAccepted,
         ], 201);
     }
 }

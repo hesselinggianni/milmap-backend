@@ -3,6 +3,7 @@
 namespace App\Http\Controllers;
 
 use App\Models\Mission;
+use App\Models\TeamMember;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Auth;
 
@@ -17,16 +18,26 @@ class MissionController extends Controller
     {
         $userId = Auth::id();
 
+        // Team IDs the user belongs to (for auto-viewer access)
+        $teamIds = TeamMember::where('user_id', $userId)->pluck('team_id');
+
         $missions = Mission::query()
             ->where('owner_id', $userId)
             ->orWhereHas('collaborators', function ($q) use ($userId) {
                 $q->where('user_id', $userId)->where('status', 'accepted');
             })
+            ->orWhere(function ($q) use ($teamIds) {
+                // Auto-viewer: active missions whose linked team includes the user
+                $q->where('status', 'active')
+                  ->whereIn('linked_team_id', $teamIds);
+            })
             ->latest('updated_at')
             ->get();
 
         return response()->json([
-            'data' => $missions->map(fn ($m) => $this->present($m, $userId)),
+            // Logo data-URLs are omitted from the list to keep the payload lean;
+            // they are only included when a single mission is opened.
+            'data' => $missions->map(fn ($m) => $this->present($m, $userId, false)),
         ]);
     }
 
@@ -60,6 +71,7 @@ class MissionController extends Controller
             'time' => 'nullable|string',
             'ogroup' => 'nullable|array',
             'map' => 'nullable|array',
+            'logo' => 'nullable|string|max:5000000',
         ]);
 
         $mission = Mission::create([
@@ -71,6 +83,7 @@ class MissionController extends Controller
             'time' => $data['time'] ?? null,
             'ogroup' => $data['ogroup'] ?? null,
             'map' => $data['map'] ?? null,
+            'logo' => $data['logo'] ?? null,
         ]);
 
         return response()->json(['data' => $this->present($mission, Auth::id())], 201);
@@ -97,7 +110,14 @@ class MissionController extends Controller
             'time' => 'nullable|string',
             'ogroup' => 'nullable|array',
             'map' => 'nullable|array',
+            'logo' => 'nullable|string|max:5000000',
+            'linked_team_id' => 'nullable|uuid|exists:teams,id',
         ]);
+
+        // Linking / unlinking a team is a management action (owner or admin only)
+        if (array_key_exists('linked_team_id', $data) && !$mission->canManage($userId)) {
+            abort(403, 'Only the mission owner or admin can link a team');
+        }
 
         $mission->fill($data);
         $mission->save();
@@ -125,13 +145,29 @@ class MissionController extends Controller
     /**
      * Shape a mission for the frontend, including the viewer's role + rights.
      */
-    private function present(Mission $mission, int $userId): array
+    private function present(Mission $mission, int $userId, bool $includeLogo = true): array
     {
         $role = $mission->roleFor($userId);
 
-        return [
+        // Linked team summary (id, name, color, member count)
+        $linkedTeam = null;
+        if ($mission->linked_team_id) {
+            $team = $mission->linkedTeam()->withCount('members')->first();
+            if ($team) {
+                $linkedTeam = [
+                    'id'            => $team->id,
+                    'name'          => $team->name,
+                    'color'         => $team->color,
+                    'members_count' => $team->members_count,
+                ];
+            }
+        }
+
+        $out = [
             'id' => $mission->id,
             'owner_id' => $mission->owner_id,
+            'linked_team_id' => $mission->linked_team_id,
+            'linked_team' => $linkedTeam,
             'name' => $mission->name,
             'description' => $mission->description,
             'status' => $mission->status,
@@ -147,5 +183,11 @@ class MissionController extends Controller
             'can_edit' => in_array($role, ['owner', 'editor', 'admin'], true),
             'can_manage' => in_array($role, ['owner', 'admin'], true),
         ];
+
+        if ($includeLogo) {
+            $out['logo'] = $mission->logo;
+        }
+
+        return $out;
     }
 }
