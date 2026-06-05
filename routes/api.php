@@ -82,6 +82,9 @@ Route::prefix('v1')->middleware(['api'])->group(function () {
         Route::put('/user/profile', [UserController::class, 'updateProfile']);
         Route::put('/user/password', [UserController::class, 'changePassword']);
 
+        // Literal route MUST come before /users/{id} or "search" is captured as an id.
+        Route::get('/users/search', [MapCollaboratorController::class, 'searchUsers']);
+
         Route::get('/users/{id}', [UserController::class, 'show']);
         Route::put('/users/{id}', [UserController::class, 'update']);
         Route::delete('/users/{id}', [UserController::class, 'destroy']);
@@ -152,7 +155,6 @@ Route::prefix('v1')->middleware(['api'])->group(function () {
         Route::post('/maps/{mapId}/collaborators', [MapCollaboratorController::class, 'store']);
         Route::put('/maps/{mapId}/collaborators/{userId}', [MapCollaboratorController::class, 'updateRole']);
         Route::delete('/maps/{mapId}/collaborators/{userId}', [MapCollaboratorController::class, 'destroy']);
-        Route::get('/users/search', [MapCollaboratorController::class, 'searchUsers']);
 
         // ── Missions (owner + collaborators with roles) ──────────────────
         // Literal invitation routes first so they aren't captured by {id}.
