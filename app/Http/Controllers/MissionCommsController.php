@@ -65,25 +65,7 @@ class MissionCommsController extends Controller
             return response()->json(['message' => 'Forbidden.'], 403);
         }
 
-        $conversation = Conversation::where('mission_id', $mission->id)
-            ->where('type', 'channel')
-            ->first();
-
-        if (! $conversation) {
-            $conversation = Conversation::create([
-                'type'       => 'channel',
-                'name'       => $mission->name ?: 'Missie',
-                'mission_id' => $mission->id,
-                'created_by' => $mission->owner_id,
-            ]);
-        } elseif ($conversation->name !== ($mission->name ?: 'Missie')) {
-            // Keep the group title in step with the mission name.
-            $conversation->update(['name' => $mission->name ?: 'Missie']);
-        }
-
-        // Keep the group roster aligned with mission membership.
-        $conversation->participants()->sync($mission->participantUserIds());
-
+        $conversation = $mission->syncGroupConversation();
         $conversation->load('participants:id,first_name,last_name,email,public_key');
 
         return response()->json([

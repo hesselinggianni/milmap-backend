@@ -4,6 +4,7 @@ namespace App\Http\Controllers;
 
 use App\Models\Conversation;
 use App\Models\Message;
+use App\Models\Mission;
 use App\Models\User;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Auth;
@@ -18,6 +19,13 @@ class ConversationController extends Controller
     {
         $userId = Auth::id();
 
+        // Make sure the group ('channel') chat exists — and lists the user as a
+        // participant — for every mission they're part of, so mission groups show
+        // up here automatically instead of only after someone opens the mission's
+        // Comms tab. Runs on list load (init / opening the chat list), not on the
+        // hot message-poll, so the cost stays bounded by the user's mission count.
+        $this->ensureMissionConversations($userId);
+
         $conversations = Conversation::query()
             ->whereHas('participants', fn ($q) => $q->where('users.id', $userId))
             ->with(['participants:id,first_name,last_name,email,public_key'])
@@ -29,6 +37,18 @@ class ConversationController extends Controller
                 fn (Conversation $c) => $this->present($c, $userId)
             )->values(),
         ]);
+    }
+
+    /**
+     * Reconcile the mission group conversations for every mission the user
+     * participates in (find-or-create + roster sync). Delegated to the Mission
+     * model so the mission Comms tab and the chat list share one code path.
+     */
+    protected function ensureMissionConversations(int $userId): void
+    {
+        Mission::participatedBy($userId)
+            ->get(['id', 'name', 'owner_id', 'status', 'linked_team_id'])
+            ->each(fn (Mission $m) => $m->syncGroupConversation());
     }
 
     /**
@@ -137,6 +157,7 @@ class ConversationController extends Controller
             'id'              => $c->id,
             'type'            => $c->type,
             'title'           => $title,
+            'mission_id'      => $c->mission_id,
             'last_message_at' => $c->last_message_at?->toIso8601String(),
             'unread'          => $unread,
             'participants'    => $c->participants->map(fn (User $u) => [

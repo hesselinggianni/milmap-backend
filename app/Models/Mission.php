@@ -156,4 +156,60 @@ class Mission extends Model
     {
         return in_array($this->roleFor($userId), ['owner', 'admin'], true);
     }
+
+    /**
+     * Scope: missions a user participates in — ones they own, ones they were
+     * invited to and accepted, and (while active) ones whose linked team they
+     * belong to. Single source of truth for "missions you're in", shared by the
+     * mission list and the chat list's mission group chats.
+     */
+    public function scopeParticipatedBy($query, int $userId)
+    {
+        $teamIds = TeamMember::where('user_id', $userId)->pluck('team_id');
+
+        return $query->where(function ($q) use ($userId, $teamIds) {
+            $q->where('owner_id', $userId)
+                ->orWhereHas('collaborators', function ($c) use ($userId) {
+                    $c->where('user_id', $userId)->where('status', 'accepted');
+                })
+                ->orWhere(function ($c) use ($teamIds) {
+                    // Auto-viewer: active missions whose linked team includes the user.
+                    $c->where('status', 'active')->whereIn('linked_team_id', $teamIds);
+                });
+        });
+    }
+
+    /**
+     * Find-or-create this mission's single group ('channel') conversation, keep
+     * its title in step with the mission name, and sync its participant set to
+     * the current mission roster. Returns the conversation.
+     *
+     * This is the one place mission ↔ group-chat membership is reconciled, so
+     * both the mission Comms tab and the chat list stay consistent.
+     */
+    public function syncGroupConversation(): Conversation
+    {
+        $title = $this->name ?: 'Missie';
+
+        $conversation = Conversation::where('mission_id', $this->id)
+            ->where('type', 'channel')
+            ->first();
+
+        if (! $conversation) {
+            $conversation = Conversation::create([
+                'type'       => 'channel',
+                'name'       => $title,
+                'mission_id' => $this->id,
+                'created_by' => $this->owner_id,
+            ]);
+        } elseif ($conversation->name !== $title) {
+            // Keep the group title in step with the mission name.
+            $conversation->update(['name' => $title]);
+        }
+
+        // Keep the group roster aligned with mission membership.
+        $conversation->participants()->sync($this->participantUserIds());
+
+        return $conversation;
+    }
 }

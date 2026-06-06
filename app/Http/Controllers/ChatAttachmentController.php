@@ -17,6 +17,17 @@ class ChatAttachmentController extends Controller
         'audio/webm', 'audio/ogg', 'audio/mp4', 'audio/mpeg', 'audio/aac', 'audio/wav', 'audio/x-m4a',
     ];
 
+    // Container formats whose magic bytes are ambiguous: PHP's fileinfo sniffs an
+    // audio-only MediaRecorder clip as "video/webm", "video/mp4" or
+    // "application/ogg" because the container header is shared with video. We
+    // accept these ONLY when the browser-declared type or the file extension
+    // confirms audio, so we never silently allow a real video upload.
+    private const AMBIGUOUS_AUDIO_CONTAINERS = [
+        'video/webm', 'video/x-matroska', 'video/mp4', 'video/ogg', 'application/ogg',
+    ];
+
+    private const AUDIO_EXTENSIONS = ['webm', 'ogg', 'oga', 'mp4', 'm4a', 'mp3', 'aac', 'wav'];
+
     private const MAX_SIZE = 15 * 1024 * 1024; // 15 MB
 
     public function store(Request $request)
@@ -27,7 +38,24 @@ class ChatAttachmentController extends Controller
 
         $file = $request->file('file');
 
-        if (!in_array($file->getMimeType(), self::ALLOWED_MIME)) {
+        $detected = $file->getMimeType();                 // content-sniffed (fileinfo)
+        $declared = (string) $file->getClientMimeType();  // browser-sent Content-Type
+        $ext      = strtolower($file->getClientOriginalExtension() ?: '');
+
+        $isAllowed = in_array($detected, self::ALLOWED_MIME, true);
+        $isAudio   = str_starts_with($detected, 'audio/');
+
+        // Rescue voice notes that fileinfo reports as video/* or application/ogg
+        // (audio-only WebM/MP4/Ogg recordings) — but only if the browser or the
+        // extension confirms audio, so real video files stay blocked.
+        if (!$isAllowed && in_array($detected, self::AMBIGUOUS_AUDIO_CONTAINERS, true)) {
+            if (str_starts_with($declared, 'audio/') || in_array($ext, self::AUDIO_EXTENSIONS, true)) {
+                $isAllowed = true;
+                $isAudio   = true;
+            }
+        }
+
+        if (!$isAllowed) {
             return response()->json(['message' => 'Bestandstype niet toegestaan.'], 422);
         }
 
@@ -35,11 +63,8 @@ class ChatAttachmentController extends Controller
             return response()->json(['message' => 'Bestand te groot (max 15 MB).'], 422);
         }
 
-        $mime    = $file->getMimeType();
-        $isImage = str_starts_with($mime, 'image/');
-        $isAudio = str_starts_with($mime, 'audio/');
-        $ext = $file->getClientOriginalExtension()
-            ?: ($isImage ? 'jpg' : ($isAudio ? 'webm' : 'bin'));
+        $isImage = str_starts_with($detected, 'image/');
+        $ext = $ext ?: ($isImage ? 'jpg' : ($isAudio ? 'webm' : 'bin'));
         $filename = Str::uuid() . '.' . strtolower($ext);
         $folder = 'chat/' . date('Y/m');
 
@@ -50,7 +75,7 @@ class ChatAttachmentController extends Controller
         return response()->json([
             'url'      => $url,
             'filename' => $file->getClientOriginalName(),
-            'mime'     => $mime,
+            'mime'     => $detected,
             'size'     => $file->getSize(),
             'is_image' => $isImage,
             'is_audio' => $isAudio,

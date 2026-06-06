@@ -440,21 +440,111 @@ class MailboxService
 
     /**
      * Convert a webklex address attribute into [{name, email}] entries.
+     *
+     * Robust against the several shapes webklex/php-imap returns across versions:
+     * an iterable Attribute of Address objects, a single Address, a plain header
+     * string ("Name <a@b>, c@d"), or an array. Crucially we read mail/personal
+     * via null-coalescing property access (which triggers the Address __get) and
+     * fall back to getters / __toString — the old property_exists() check
+     * returned false on builds that expose those via magic, silently dropping the
+     * sender so the inbox showed no "from".
      */
     protected function addressList($attribute): array
     {
-        $out = [];
         if (! $attribute) {
-            return $out;
+            return [];
         }
 
-        foreach ($attribute as $addr) {
-            $email = property_exists($addr, 'mail') ? $addr->mail : (string) $addr;
-            $name  = property_exists($addr, 'personal') ? $addr->personal : null;
-            if (! $email) {
+        if (is_string($attribute)) {
+            return $this->parseAddressStrings($attribute);
+        }
+
+        $items = is_iterable($attribute) ? $attribute : [$attribute];
+
+        $out = [];
+        foreach ($items as $addr) {
+            $entry = $this->extractAddress($addr);
+            if ($entry) {
+                $out[] = $entry;
+            }
+        }
+
+        return $out;
+    }
+
+    /**
+     * Pull a single {name, email} pair out of whatever an address entry is.
+     */
+    protected function extractAddress($addr): ?array
+    {
+        if ($addr === null) {
+            return null;
+        }
+
+        if (is_string($addr)) {
+            return $this->parseAddressStrings($addr)[0] ?? null;
+        }
+
+        $email = null;
+        $name  = null;
+
+        if (is_object($addr)) {
+            // ?? uses isset() semantics, so undeclared properties resolved via a
+            // magic __get still work and undefined ones don't warn.
+            $email = $addr->mail ?? $addr->email ?? $addr->address ?? null;
+            $name  = $addr->personal ?? $addr->name ?? null;
+
+            if (! $email && method_exists($addr, 'getEmail')) {
+                $email = $addr->getEmail();
+            }
+            if (! $name && method_exists($addr, 'getName')) {
+                $name = $addr->getName();
+            }
+            // Last resort: __toString() yields the full "Name <email>".
+            if (! $email && method_exists($addr, '__toString')) {
+                $parsed = $this->parseAddressStrings((string) $addr)[0] ?? null;
+                if ($parsed) {
+                    $email = $parsed['email'];
+                    $name  = $name ?: $parsed['name'];
+                }
+            }
+        } elseif (is_array($addr)) {
+            $email = $addr['mail'] ?? $addr['email'] ?? $addr['address'] ?? null;
+            $name  = $addr['personal'] ?? $addr['name'] ?? null;
+        }
+
+        $email = is_string($email) ? trim($email) : null;
+        $name  = is_string($name) ? trim($name) : null;
+
+        if (! $email) {
+            return null;
+        }
+
+        return ['name' => ($name !== null && $name !== '' ? $name : null), 'email' => $email];
+    }
+
+    /**
+     * Parse a raw header value ("Name <a@b>, c@d") into [{name, email}] entries.
+     */
+    protected function parseAddressStrings(string $raw): array
+    {
+        $out = [];
+        // Split on commas that aren't inside a <...> bracket.
+        foreach (preg_split('/,(?![^<]*>)/', $raw) as $part) {
+            $part = trim($part);
+            if ($part === '') {
                 continue;
             }
-            $out[] = ['name' => $name ?: null, 'email' => $email];
+            if (preg_match('/^(.*)<([^>]+)>\s*$/', $part, $m)) {
+                $name  = trim($m[1], " \t\"'");
+                $email = trim($m[2]);
+            } else {
+                $name  = null;
+                $email = $part;
+            }
+            if ($email !== '') {
+                $out[] = ['name' => ($name !== null && $name !== '' ? $name : null), 'email' => $email];
+            }
         }
 
         return $out;
