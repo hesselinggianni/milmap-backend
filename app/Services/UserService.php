@@ -36,12 +36,12 @@ class UserService
         ]);
     }
 
-    public function getUserById(int $id)
+    public function getUserById(int|string $id)
     {
         return User::findOrFail($id);
     }
 
-    public function updateUser(int $id, array $data)
+    public function updateUser(int|string $id, array $data)
     {
         $user = User::findOrFail($id);
 
@@ -84,7 +84,7 @@ class UserService
         return $user;
     }
 
-    public function deleteUser(int $id)
+    public function deleteUser(int|string $id)
     {
         $user = User::findOrFail($id);
         $user->delete();

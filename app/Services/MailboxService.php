@@ -144,7 +144,10 @@ class MailboxService
                 $total = 0;
             }
 
+            // whereAll() sets the "ALL" search key — without any criterion the
+            // server rejects the bare "UID SEARCH" with "Missing search parameters".
             $messages = $folder->query()
+                ->whereAll()
                 ->setFetchOrder('desc')
                 ->setFetchBody(false)
                 ->limit($perPage, max(1, $page))

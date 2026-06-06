@@ -2,9 +2,11 @@
 
 namespace App\Http\Controllers;
 
+use App\Models\Conversation;
 use App\Models\Invitation;
 use App\Models\MapCollaborator;
 use App\Models\MissionCollaborator;
+use App\Models\TeamMember;
 use App\Models\User;
 use App\Services\InvitationService;
 use Illuminate\Http\Request;
@@ -194,6 +196,56 @@ class InvitationController extends Controller
                     'resource_type' => $i->resourceType(),
                     'resource_id'   => $i->invitable_id,
                     'at'      => ($i->status === 'accepted' ? ($i->accepted_at ?? $i->updated_at) : $i->created_at)?->toIso8601String(),
+                ]);
+            });
+
+        // Team memberships involving me: teams I joined, or members added to
+        // a team I own.
+        TeamMember::with(['team:id,name,owner_id', 'user:id,first_name,last_name'])
+            ->where(function ($q) use ($user) {
+                $q->where('user_id', $user)
+                    ->orWhereHas('team', fn ($t) => $t->where('owner_id', $user));
+            })
+            ->latest()->limit(40)->get()
+            ->each(function ($m) use (&$events, $user) {
+                $teamName = $m->team?->name ?? 'een team';
+                $iAmOwner = $m->team && (int) $m->team->owner_id === (int) $user;
+                $isMe     = (int) $m->user_id === (int) $user;
+
+                if ($isMe && ! $iAmOwner) {
+                    $title = 'Toegevoegd aan team';
+                    $sub   = 'Team "' . $teamName . '"';
+                } elseif ($iAmOwner && ! $isMe) {
+                    $title = 'Teamlid toegevoegd';
+                    $sub   = $m->displayName() . ' · team "' . $teamName . '"';
+                } else {
+                    return; // me in my own team — not noteworthy
+                }
+
+                $events->push([
+                    'type'          => 'team_member',
+                    'title'         => $title,
+                    'subtitle'      => $sub,
+                    'resource_type' => 'team',
+                    'resource_id'   => $m->team_id,
+                    'at'            => $m->created_at?->toIso8601String(),
+                ]);
+            });
+
+        // Chats I'm part of (direct conversations) — surfaced as activity.
+        Conversation::where('type', 'direct')
+            ->whereHas('participants', fn ($q) => $q->where('users.id', $user))
+            ->with(['participants:id,first_name,last_name'])
+            ->latest()->limit(20)->get()
+            ->each(function ($c) use (&$events, $user) {
+                $other = $c->participants->firstWhere('id', '!=', $user);
+                $events->push([
+                    'type'          => 'chat_started',
+                    'title'         => 'Nieuw gesprek',
+                    'subtitle'      => 'Chat met ' . ($other?->full_name ?? 'een deelnemer'),
+                    'resource_type' => 'chat',
+                    'resource_id'   => $c->id,
+                    'at'            => $c->created_at?->toIso8601String(),
                 ]);
             });
 

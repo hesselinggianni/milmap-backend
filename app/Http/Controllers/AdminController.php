@@ -174,4 +174,39 @@ class AdminController extends Controller
             ], 500);
         }
     }
+
+    /**
+     * GET /api/v1/admin/client-errors
+     * Recent front-end errors captured from the browser (rolling JSON log),
+     * so an admin can review them and forward them to Claude for a fix.
+     */
+    public function clientErrors()
+    {
+        $file = storage_path('logs/frontend-errors.json');
+        $errors = [];
+
+        if (file_exists($file)) {
+            $raw = @file_get_contents($file);
+            $errors = $raw ? (json_decode($raw, true) ?: []) : [];
+        }
+
+        return response()->json([
+            'errors' => $errors,
+            'count'  => count($errors),
+        ]);
+    }
+
+    /**
+     * DELETE /api/v1/admin/client-errors
+     * Clear the captured front-end error log.
+     */
+    public function clearClientErrors()
+    {
+        $file = storage_path('logs/frontend-errors.json');
+        if (file_exists($file)) {
+            @file_put_contents($file, json_encode([]));
+        }
+
+        return response()->json(['ok' => true]);
+    }
 }

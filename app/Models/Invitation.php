@@ -87,9 +87,11 @@ class Invitation extends Model
     public function resourceLabel(): string
     {
         return match ($this->resourceType()) {
-            'mission' => 'missie',
-            'map'     => 'kaart',
-            default   => 'werkruimte',
+            'mission'      => 'missie',
+            'map'          => 'kaart',
+            'team'         => 'team',
+            'conversation' => 'chat',
+            default        => 'werkruimte',
         };
     }
 

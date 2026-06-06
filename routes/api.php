@@ -259,6 +259,8 @@ Route::prefix('v1')->middleware(['api'])->group(function () {
         // Admin routes (protected by AdminAuth middleware)
         Route::middleware('admin.auth')->group(function () {
             Route::get('/admin/stats', [AdminController::class, 'getDashboardStats']);
+            Route::get('/admin/client-errors', [AdminController::class, 'clientErrors']);
+            Route::delete('/admin/client-errors', [AdminController::class, 'clearClientErrors']);
             Route::delete('/admin/users/{userId}', [AdminController::class, 'deleteUser']);
             Route::patch('/admin/users/{userId}/admin-status', [AdminController::class, 'toggleAdminStatus']);
             Route::post('/admin/users/{userId}/reset-password', [AdminController::class, 'resetUserPassword']);
