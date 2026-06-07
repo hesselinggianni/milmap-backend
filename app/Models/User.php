@@ -138,9 +138,49 @@ class User extends Authenticatable
         $sub = $this->activeSubscription();
         if (! $sub) return 'starter';
 
-        $price = $sub->stripe_price ?? '';
-        if (str_contains($price, 'team')) return 'team';
-        if (str_contains($price, 'pro'))  return 'pro';
+        return self::tierForPrice($sub->stripe_price);
+    }
+
+    /**
+     * Reverse-map a Stripe Price ID to its MilMap plan key
+     * (pro_monthly | pro_yearly | team_monthly | team_yearly) using the
+     * admin-configured effective price map. Returns null when the price
+     * matches no configured slot.
+     *
+     * This is the fix for paid subscriptions showing as "starter": the
+     * stored value is a Stripe Price ID (e.g. price_1Tf…), which never
+     * literally contains "pro"/"team", so a substring match always failed.
+     */
+    public static function planKeyForPrice(?string $price): ?string
+    {
+        if (! $price) return null;
+
+        foreach (\App\Http\Controllers\AdminBillingController::effectiveMap() as $key => $priceId) {
+            if ($priceId && $priceId === $price) {
+                return $key;
+            }
+        }
+
+        return null;
+    }
+
+    /**
+     * Resolve a Stripe Price ID to a coarse plan tier
+     * ('pro' | 'team' | 'starter'). Prefers the admin-configured price map;
+     * falls back to a substring match for legacy/manually-created prices.
+     */
+    public static function tierForPrice(?string $price): string
+    {
+        if (! $price) return 'starter';
+
+        $key = self::planKeyForPrice($price);
+        if ($key) {
+            return str_starts_with($key, 'team') ? 'team' : 'pro';
+        }
+
+        // Fallback for legacy prices whose ID/nickname encodes the tier.
+        if (stripos($price, 'team') !== false) return 'team';
+        if (stripos($price, 'pro')  !== false) return 'pro';
 
         return 'starter';
     }

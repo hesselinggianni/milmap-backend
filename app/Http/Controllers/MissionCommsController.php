@@ -106,6 +106,11 @@ class MissionCommsController extends Controller
                 'email'        => $u->email,
                 'public_key'   => $u->public_key,
                 'last_seen_at' => $u->publicLastSeen(),
+                // Read-receipt cursor: lets clients tick a sent message blue once
+                // every other participant's last_read_at has passed it.
+                'last_read_at' => ($u->pivot && $u->pivot->last_read_at)
+                    ? \Illuminate\Support\Carbon::parse($u->pivot->last_read_at)->toIso8601String()
+                    : null,
             ])->values(),
         ];
     }

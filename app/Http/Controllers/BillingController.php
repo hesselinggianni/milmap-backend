@@ -31,7 +31,10 @@ class BillingController extends Controller
 
     public function __construct()
     {
-        $this->stripe = new StripeClient(config('billing.stripe_secret'));
+        // Cast naar string: ontbreekt STRIPE_SECRET (null), dan zou Stripe
+        // anders al in de constructor "$config must be a string or an array"
+        // gooien — waardoor élk billing-endpoint (ook publieke) 500't.
+        $this->stripe = new StripeClient((string) config('billing.stripe_secret'));
     }
 
     // ── Plan labels ────────────────────────────────────────────────
@@ -128,6 +131,23 @@ class BillingController extends Controller
         ]);
     }
 
+    // ── POST /billing/check-email ──────────────────────────────────
+    // Public — used by the checkout page to detect an existing account before
+    // starting a guest checkout. If the e-mail already belongs to a user, the
+    // frontend redirects them to log in and up-/downgrade instead of creating a
+    // duplicate subscription. Rate-limited at the route to blunt enumeration.
+    public function checkEmail(Request $request)
+    {
+        $request->validate(['email' => 'required|email|max:255']);
+
+        $user = User::where('email', $request->email)->first();
+
+        return response()->json([
+            'exists'           => (bool) $user,
+            'has_subscription' => $user ? $user->subscribed() : false,
+        ]);
+    }
+
     // ── GET /billing/subscription ──────────────────────────────────
     public function subscription(Request $request)
     {
@@ -150,6 +170,7 @@ class BillingController extends Controller
         return response()->json([
             'subscribed'           => true,
             'plan'                 => $user->plan(),
+            'plan_key'             => User::planKeyForPrice($sub->stripe_price),
             'status'               => $sub->stripe_status,
             'stripe_price'         => $sub->stripe_price,
             'ends_at'              => $sub->ends_at?->toISOString(),
@@ -352,6 +373,79 @@ class BillingController extends Controller
         return response()->json(['ok' => true, 'message' => 'Abonnement hervat.']);
     }
 
+    // ── POST /billing/change-plan ──────────────────────────────────
+    // Up-/downgrade an existing subscription. The new plan takes effect
+    // immediately; Stripe proration ('create_prorations') credits the unused
+    // portion of the old plan against the new one and settles the difference on
+    // the next invoice — so the customer is never double-charged.
+    public function changePlan(Request $request)
+    {
+        $request->validate([
+            'plan' => 'required|string|in:pro_monthly,pro_yearly,team_monthly,team_yearly',
+        ]);
+
+        $user    = $request->user();
+        $priceId = $this->plans()[$request->plan] ?? null;
+
+        if (! $priceId) {
+            return response()->json(['message' => 'Ongeldig plan geselecteerd.'], 422);
+        }
+
+        // Reconcile first so we act on the real current subscription.
+        $this->syncFromStripe($user);
+        $sub = $user->fresh()->activeSubscription();
+
+        if (! $sub || ! $sub->stripe_id) {
+            return response()->json([
+                'message' => 'Geen actief abonnement gevonden. Sluit eerst een abonnement af.',
+            ], 404);
+        }
+
+        if ($sub->stripe_price === $priceId) {
+            return response()->json(['message' => 'Je hebt dit plan al.', 'already' => true], 422);
+        }
+
+        try {
+            $stripeSub = $this->stripe->subscriptions->retrieve($sub->stripe_id, [
+                'expand' => ['items.data.price'],
+            ]);
+            $itemId = $stripeSub->items->data[0]->id ?? null;
+
+            if (! $itemId) {
+                return response()->json(['message' => 'Abonnementsregel niet gevonden.'], 422);
+            }
+
+            $updated = $this->stripe->subscriptions->update($sub->stripe_id, [
+                'items' => [[
+                    'id'    => $itemId,
+                    'price' => $priceId,
+                ]],
+                // Invoice the proration immediately so an upgrade charges the
+                // difference right away (and a downgrade credits the difference).
+                'proration_behavior'   => 'always_invoice',
+                'payment_behavior'     => 'error_if_incomplete',
+                'cancel_at_period_end' => false,
+            ]);
+        } catch (\Throwable $e) {
+            return response()->json(['message' => 'Wijzigen mislukt: ' . $e->getMessage()], 422);
+        }
+
+        $sub->update([
+            'stripe_status' => $updated->status,
+            'stripe_price'  => $priceId,
+            'ends_at'       => null,
+        ]);
+
+        return response()->json([
+            'ok'       => true,
+            'plan'     => $user->fresh()->plan(),
+            'plan_key' => $request->plan,
+            'status'   => $updated->status,
+            'message'  => 'Abonnement gewijzigd. De wijziging gaat direct in en '
+                . 'het prijsverschil is meteen verrekend.',
+        ]);
+    }
+
     // ── GET /billing/invoices ──────────────────────────────────────
     // The customer's invoices straight from Stripe.
     public function invoices(Request $request)
@@ -386,6 +480,43 @@ class BillingController extends Controller
         }
 
         return response()->json(['invoices' => $out]);
+    }
+
+    // ── GET /billing/plans ─────────────────────────────────────────
+    // Selectable plans with LIVE prices from Stripe (never hardcoded).
+    public function availablePlans()
+    {
+        $map   = $this->plans(); // [planKey => priceId] (admin-configured)
+        $names = [
+            'pro_monthly'  => 'Pro',
+            'pro_yearly'   => 'Pro',
+            'team_monthly' => 'Team',
+            'team_yearly'  => 'Team',
+        ];
+
+        $out = [];
+        foreach ($map as $key => $priceId) {
+            if (! $priceId) {
+                continue;
+            }
+            try {
+                $price = $this->stripe->prices->retrieve($priceId, ['expand' => ['product']]);
+            } catch (\Throwable $e) {
+                Log::warning('Stripe-prijs ophalen mislukt', ['plan' => $key, 'price' => $priceId, 'error' => $e->getMessage()]);
+                continue;
+            }
+
+            $out[] = [
+                'key'      => $key,
+                'name'     => is_object($price->product) ? ($price->product->name ?? ($names[$key] ?? 'Plan')) : ($names[$key] ?? 'Plan'),
+                'price_id' => $price->id,
+                'amount'   => $price->unit_amount,                 // cents
+                'currency' => strtoupper($price->currency ?? 'eur'),
+                'interval' => $price->recurring->interval ?? null, // month | year
+            ];
+        }
+
+        return response()->json(['plans' => $out]);
     }
 
     // ── GET /billing/session ───────────────────────────────────────

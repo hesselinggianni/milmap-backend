@@ -32,8 +32,17 @@ class ChatAttachmentController extends Controller
 
     public function store(Request $request)
     {
+        // Custom messages so users never see the raw "validation.uploaded" key
+        // (this app ships no lang/ dir, so untranslated keys would leak through).
+        // The implicit `uploaded` rule fires when PHP itself rejects the file —
+        // almost always because it exceeded the host's upload_max_filesize.
         $request->validate([
             'file' => ['required', 'file', 'max:15360'],
+        ], [
+            'file.required' => 'Geen bestand ontvangen.',
+            'file.file'     => 'Het geüploade item is geen geldig bestand.',
+            'file.uploaded' => 'Uploaden mislukt — het bestand is te groot voor de server of de verbinding viel weg. Probeer een kleiner bestand (max 15 MB).',
+            'file.max'      => 'Bestand te groot (max 15 MB).',
         ]);
 
         $file = $request->file('file');

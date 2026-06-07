@@ -80,6 +80,11 @@ Route::prefix('v1')->middleware(['api'])->group(function () {
     // Guest checkout — public, maakt account aan als nodig
     Route::post('/billing/guest-checkout', [BillingController::class, 'guestCheckout']);
 
+    // Check of er al een account bestaat met dit e-mailadres (vóór guest-checkout).
+    // Rate-limited om enumeratie af te remmen.
+    Route::post('/billing/check-email', [BillingController::class, 'checkEmail'])
+        ->middleware('throttle:10,1');
+
     // Public share access endpoints (no auth required, but must have valid share token)
     Route::get('/maps/{mapId}/locations', [LocationController::class, 'index']);
     Route::get('/maps/{mapId}/routemaps', [RouteMapController::class, 'getByMapId']);
@@ -257,10 +262,12 @@ Route::prefix('v1')->middleware(['api'])->group(function () {
         // Billing (Stripe)
         Route::prefix('billing')->group(function () {
             Route::get('/subscription', [BillingController::class, 'subscription']);
+            Route::get('/plans', [BillingController::class, 'availablePlans']);
             Route::post('/checkout', [BillingController::class, 'createCheckout']);
             Route::post('/portal', [BillingController::class, 'createPortal']);
             Route::post('/cancel', [BillingController::class, 'cancel']);
             Route::post('/resume', [BillingController::class, 'resume']);
+            Route::post('/change-plan', [BillingController::class, 'changePlan']);
             Route::get('/invoices', [BillingController::class, 'invoices']);
             Route::get('/session', [BillingController::class, 'verifySession']);
         });

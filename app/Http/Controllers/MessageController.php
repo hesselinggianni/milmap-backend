@@ -65,7 +65,7 @@ class MessageController extends Controller
             'ciphertexts'     => ['nullable', 'array'],
             'ciphertexts.*'   => ['string', 'max:20000'],
             'encryption'      => ['nullable', 'in:sealed,none'],
-            'type'            => ['nullable', 'in:text,location,mission,image,file,voice'],
+            'type'            => ['nullable', 'in:text,location,mission,image,file,voice,poll,event,contact'],
         ]);
 
         $message = Message::create([

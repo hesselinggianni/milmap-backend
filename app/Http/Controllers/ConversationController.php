@@ -128,9 +128,22 @@ class ConversationController extends Controller
             return response()->json(['message' => 'Forbidden.'], 403);
         }
 
+        $now = now();
         $conversation->participants()->updateExistingPivot($userId, [
-            'last_read_at' => now(),
+            'last_read_at' => $now,
         ]);
+
+        // Tell the other participants (live) that this user has caught up, so
+        // their read-receipt ticks can turn blue without waiting for a poll.
+        try {
+            broadcast(new \App\Events\ConversationRead(
+                (string) $conversation->id,
+                $userId,
+                $now->toIso8601String()
+            ))->toOthers();
+        } catch (\Throwable $e) {
+            \Illuminate\Support\Facades\Log::warning('[chat] read broadcast failed: ' . $e->getMessage());
+        }
 
         return response()->json(['ok' => true]);
     }
@@ -166,6 +179,11 @@ class ConversationController extends Controller
                 'email'        => $u->email,
                 'public_key'   => $u->public_key,
                 'last_seen_at' => $u->publicLastSeen(),
+                // Read-receipt cursor: lets clients tick a sent message blue once
+                // every other participant's last_read_at has passed it.
+                'last_read_at' => ($u->pivot && $u->pivot->last_read_at)
+                    ? \Illuminate\Support\Carbon::parse($u->pivot->last_read_at)->toIso8601String()
+                    : null,
             ])->values(),
         ];
     }
