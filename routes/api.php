@@ -259,6 +259,9 @@ Route::prefix('v1')->middleware(['api'])->group(function () {
             Route::get('/subscription', [BillingController::class, 'subscription']);
             Route::post('/checkout', [BillingController::class, 'createCheckout']);
             Route::post('/portal', [BillingController::class, 'createPortal']);
+            Route::post('/cancel', [BillingController::class, 'cancel']);
+            Route::post('/resume', [BillingController::class, 'resume']);
+            Route::get('/invoices', [BillingController::class, 'invoices']);
             Route::get('/session', [BillingController::class, 'verifySession']);
         });
 

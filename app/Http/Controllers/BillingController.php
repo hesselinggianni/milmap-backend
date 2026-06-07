@@ -132,7 +132,11 @@ class BillingController extends Controller
     public function subscription(Request $request)
     {
         $user = $request->user();
-        $sub  = $user->activeSubscription();
+
+        // Reconcile with Stripe so a subscription created or changed directly in
+        // Stripe (or after a missed webhook) is still reflected in the app.
+        $stripeSub = $this->syncFromStripe($user);
+        $sub = $user->fresh()->activeSubscription();
 
         if (! $sub) {
             return response()->json([
@@ -141,15 +145,75 @@ class BillingController extends Controller
             ]);
         }
 
+        $user->refresh();
+
         return response()->json([
-            'subscribed'     => true,
-            'plan'           => $user->plan(),
-            'status'         => $sub->stripe_status,
-            'stripe_price'   => $sub->stripe_price,
-            'ends_at'        => $sub->ends_at?->toISOString(),
-            'trial_ends_at'  => $sub->trial_ends_at?->toISOString(),
-            'canceled'       => $sub->canceled(),
+            'subscribed'           => true,
+            'plan'                 => $user->plan(),
+            'status'               => $sub->stripe_status,
+            'stripe_price'         => $sub->stripe_price,
+            'ends_at'              => $sub->ends_at?->toISOString(),
+            'trial_ends_at'        => $sub->trial_ends_at?->toISOString(),
+            'canceled'             => $sub->canceled() || (bool) ($stripeSub->cancel_at_period_end ?? false),
+            'cancel_at_period_end' => (bool) ($stripeSub->cancel_at_period_end ?? false),
+            'current_period_end'   => isset($stripeSub->current_period_end)
+                ? \Carbon\Carbon::createFromTimestamp($stripeSub->current_period_end)->toISOString()
+                : null,
         ]);
+    }
+
+    /**
+     * Pull the customer's subscriptions from Stripe and upsert them locally so
+     * the app's view always matches Stripe. Returns the primary (active/trialing)
+     * Stripe subscription object, or null.
+     */
+    private function syncFromStripe($user)
+    {
+        if (! $user->stripe_id) {
+            return null;
+        }
+
+        try {
+            $subs = $this->stripe->subscriptions->all([
+                'customer' => $user->stripe_id,
+                'status'   => 'all',
+                'limit'    => 10,
+                'expand'   => ['data.items.data.price'],
+            ]);
+        } catch (\Throwable $e) {
+            Log::warning('Stripe-synchronisatie mislukt', ['user' => $user->id, 'error' => $e->getMessage()]);
+            return null;
+        }
+
+        $primary = null;
+        foreach ($subs->data as $s) {
+            $priceId = $s->items->data[0]->price->id ?? null;
+            $endsAt  = null;
+            if (! empty($s->cancel_at)) {
+                $endsAt = \Carbon\Carbon::createFromTimestamp($s->cancel_at);
+            } elseif ($s->status === 'canceled' && ! empty($s->ended_at)) {
+                $endsAt = \Carbon\Carbon::createFromTimestamp($s->ended_at);
+            }
+
+            Subscription::updateOrCreate(
+                ['stripe_id' => $s->id],
+                [
+                    'user_id'       => $user->id,
+                    'type'          => 'default',
+                    'stripe_status' => $s->status,
+                    'stripe_price'  => $priceId,
+                    'quantity'      => $s->items->data[0]->quantity ?? 1,
+                    'trial_ends_at' => ! empty($s->trial_end) ? \Carbon\Carbon::createFromTimestamp($s->trial_end) : null,
+                    'ends_at'       => $endsAt,
+                ]
+            );
+
+            if (! $primary && in_array($s->status, ['active', 'trialing', 'past_due'], true)) {
+                $primary = $s;
+            }
+        }
+
+        return $primary ?: ($subs->data[0] ?? null);
     }
 
     // ── POST /billing/checkout ─────────────────────────────────────
@@ -229,6 +293,99 @@ class BillingController extends Controller
         ]);
 
         return response()->json(['portal_url' => $session->url]);
+    }
+
+    // ── POST /billing/cancel ───────────────────────────────────────
+    // Cancel at period end via Stripe (the user keeps access until then).
+    public function cancel(Request $request)
+    {
+        $user = $request->user();
+        $this->syncFromStripe($user);
+        $sub = $user->fresh()->activeSubscription();
+
+        if (! $sub || ! $sub->stripe_id) {
+            return response()->json(['message' => 'Geen actief abonnement gevonden.'], 404);
+        }
+
+        try {
+            $stripeSub = $this->stripe->subscriptions->update($sub->stripe_id, [
+                'cancel_at_period_end' => true,
+            ]);
+        } catch (\Throwable $e) {
+            return response()->json(['message' => 'Opzeggen mislukt: ' . $e->getMessage()], 422);
+        }
+
+        $endsAt = isset($stripeSub->current_period_end)
+            ? \Carbon\Carbon::createFromTimestamp($stripeSub->current_period_end)
+            : now();
+        $sub->update(['ends_at' => $endsAt]);
+
+        return response()->json([
+            'ok'      => true,
+            'ends_at' => $endsAt->toISOString(),
+            'message' => 'Abonnement opgezegd. Het blijft actief tot het einde van de huidige periode.',
+        ]);
+    }
+
+    // ── POST /billing/resume ───────────────────────────────────────
+    // Undo a pending cancellation.
+    public function resume(Request $request)
+    {
+        $user = $request->user();
+        $this->syncFromStripe($user);
+        $sub = $user->fresh()->activeSubscription();
+
+        if (! $sub || ! $sub->stripe_id) {
+            return response()->json(['message' => 'Geen abonnement gevonden.'], 404);
+        }
+
+        try {
+            $this->stripe->subscriptions->update($sub->stripe_id, [
+                'cancel_at_period_end' => false,
+            ]);
+        } catch (\Throwable $e) {
+            return response()->json(['message' => 'Hervatten mislukt: ' . $e->getMessage()], 422);
+        }
+
+        $sub->update(['ends_at' => null]);
+
+        return response()->json(['ok' => true, 'message' => 'Abonnement hervat.']);
+    }
+
+    // ── GET /billing/invoices ──────────────────────────────────────
+    // The customer's invoices straight from Stripe.
+    public function invoices(Request $request)
+    {
+        $user = $request->user();
+        if (! $user->stripe_id) {
+            return response()->json(['invoices' => []]);
+        }
+
+        try {
+            $list = $this->stripe->invoices->all([
+                'customer' => $user->stripe_id,
+                'limit'    => 24,
+            ]);
+        } catch (\Throwable $e) {
+            return response()->json(['invoices' => [], 'error' => 'Facturen konden niet geladen worden.']);
+        }
+
+        $out = [];
+        foreach ($list->data as $inv) {
+            $out[] = [
+                'id'                 => $inv->id,
+                'number'             => $inv->number,
+                'created'            => ! empty($inv->created)
+                    ? \Carbon\Carbon::createFromTimestamp($inv->created)->toIso8601String() : null,
+                'amount'             => $inv->amount_paid ?? $inv->total ?? 0, // cents
+                'currency'           => strtoupper($inv->currency ?? 'eur'),
+                'status'             => $inv->status,
+                'hosted_invoice_url' => $inv->hosted_invoice_url ?? null,
+                'invoice_pdf'        => $inv->invoice_pdf ?? null,
+            ];
+        }
+
+        return response()->json(['invoices' => $out]);
     }
 
     // ── GET /billing/session ───────────────────────────────────────
