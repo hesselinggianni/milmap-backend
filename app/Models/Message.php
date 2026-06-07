@@ -36,7 +36,36 @@ class Message extends Model
         return $this->belongsTo(User::class, 'sender_id');
     }
 
+    public function reactions()
+    {
+        return $this->hasMany(MessageReaction::class);
+    }
+
     // ── Serialisation ──────────────────────────────────────────────
+
+    /**
+     * Aggregate raw reaction rows into a per-emoji summary:
+     *   [ { emoji, count, user_ids: [..] }, .. ]
+     * `user_ids` lets each client derive whether the viewer reacted, without the
+     * server needing to know who is asking. Emoji are plain metadata (not the
+     * E2EE message body), so this carries no decrypted content.
+     */
+    public function reactionSummary(): array
+    {
+        if (! $this->relationLoaded('reactions')) {
+            $this->load('reactions');
+        }
+
+        return $this->reactions
+            ->groupBy('emoji')
+            ->map(fn ($rows, $emoji) => [
+                'emoji'    => (string) $emoji,
+                'count'    => $rows->count(),
+                'user_ids' => $rows->pluck('user_id')->map(fn ($id) => (int) $id)->values()->all(),
+            ])
+            ->values()
+            ->all();
+    }
 
     /**
      * Return the payload for a given viewer. The viewer receives the
@@ -69,6 +98,7 @@ class Message extends Model
             'type'            => $this->type ?? 'text',
             'encryption'      => $this->encryption,
             'ciphertext'      => $ciphertext,
+            'reactions'       => $this->reactionSummary(),
             'created_at'      => $this->created_at?->toIso8601String(),
         ];
     }

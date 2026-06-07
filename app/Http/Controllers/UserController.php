@@ -159,6 +159,40 @@ class UserController extends Controller
     }
 
     /**
+     * PUT /api/v1/user/settings
+     * Werkt de persoonlijke voorkeuren (settings-JSON) van de ingelogde
+     * gebruiker bij. Alleen bekende sleutels worden gevalideerd en
+     * samengevoegd, zodat andere settings behouden blijven.
+     */
+    public function updateSettings(Request $request)
+    {
+        $user = Auth::user();
+        if (!$user) {
+            return response()->json(['message' => 'Unauthorized'], 401);
+        }
+
+        $validated = $request->validate([
+            // Privacy: "laatst online" zichtbaar voor anderen (opt-out).
+            'show_last_seen' => ['sometimes', 'boolean'],
+        ]);
+
+        $settings = $user->settings ?? [];
+        foreach ($validated as $key => $value) {
+            $settings[$key] = $value;
+        }
+
+        $user->settings = $settings;
+        $user->save();
+
+        return response()->json([
+            'success'  => true,
+            'message'  => 'Settings updated',
+            'settings' => $settings,
+            'data'     => $user,
+        ], 200);
+    }
+
+    /**
      * PUT /api/v1/user/password
      * Wijzigt het wachtwoord van de ingelogde gebruiker na verificatie
      * van het huidige wachtwoord.

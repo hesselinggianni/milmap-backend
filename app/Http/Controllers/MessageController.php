@@ -5,6 +5,7 @@ namespace App\Http\Controllers;
 use App\Events\MessageCreated;
 use App\Models\Conversation;
 use App\Models\Message;
+use App\Models\MessageReaction;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Auth;
 
@@ -28,6 +29,7 @@ class MessageController extends Controller
         $after  = $request->query('after');   // poll cursor: only messages AFTER this id
 
         $messages = Message::where('conversation_id', $conversation->id)
+            ->with('reactions')
             ->when($before, fn ($q) => $q->where('id', '<', $before))
             ->when($after,  fn ($q) => $q->where('id', '>', $after))
             ->orderByDesc('id')
@@ -89,5 +91,99 @@ class MessageController extends Controller
         return response()->json([
             'message' => $message->forViewer($userId),
         ], 201);
+    }
+
+    /**
+     * Toggle a WhatsApp-style emoji reaction on a message.
+     *
+     * One reaction per user per message: sending the SAME emoji you already
+     * reacted with removes it (toggle off); sending a different emoji replaces
+     * the previous one. Returns the fresh reaction summary and broadcasts it so
+     * every participant's UI updates live.
+     */
+    public function react(Request $request, $conversationId, $messageId)
+    {
+        $userId = Auth::id();
+
+        $conversation = Conversation::findOrFail($conversationId);
+        if (! $conversation->hasParticipant($userId)) {
+            return response()->json(['message' => 'Forbidden.'], 403);
+        }
+
+        $message = Message::where('conversation_id', $conversation->id)
+            ->whereKey($messageId)
+            ->firstOrFail();
+
+        $data = $request->validate([
+            'emoji' => ['required', 'string', 'max:32'],
+        ]);
+
+        $existing = MessageReaction::where('message_id', $message->id)
+            ->where('user_id', $userId)
+            ->first();
+
+        if ($existing && $existing->emoji === $data['emoji']) {
+            // Same emoji again → toggle the reaction off.
+            $existing->delete();
+        } elseif ($existing) {
+            // Different emoji → replace.
+            $existing->update(['emoji' => $data['emoji']]);
+        } else {
+            MessageReaction::create([
+                'message_id' => $message->id,
+                'user_id'    => $userId,
+                'emoji'      => $data['emoji'],
+            ]);
+        }
+
+        return $this->respondWithReactions($message, $userId);
+    }
+
+    /**
+     * Remove the authenticated user's reaction from a message (if any).
+     */
+    public function unreact(Request $request, $conversationId, $messageId)
+    {
+        $userId = Auth::id();
+
+        $conversation = Conversation::findOrFail($conversationId);
+        if (! $conversation->hasParticipant($userId)) {
+            return response()->json(['message' => 'Forbidden.'], 403);
+        }
+
+        $message = Message::where('conversation_id', $conversation->id)
+            ->whereKey($messageId)
+            ->firstOrFail();
+
+        MessageReaction::where('message_id', $message->id)
+            ->where('user_id', $userId)
+            ->delete();
+
+        return $this->respondWithReactions($message, $userId);
+    }
+
+    /**
+     * Reload reactions, broadcast the update to other participants, and return
+     * the fresh summary to the caller.
+     */
+    private function respondWithReactions(Message $message, int $userId)
+    {
+        $message->load('reactions');
+        $summary = $message->reactionSummary();
+
+        try {
+            broadcast(new \App\Events\MessageReactionUpdated(
+                $message->conversation_id,
+                $message->id,
+                $summary
+            ))->toOthers();
+        } catch (\Throwable $e) {
+            \Illuminate\Support\Facades\Log::warning('[chat] reaction broadcast failed: ' . $e->getMessage());
+        }
+
+        return response()->json([
+            'message_id' => $message->id,
+            'reactions'  => $summary,
+        ]);
     }
 }

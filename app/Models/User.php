@@ -40,6 +40,7 @@ class User extends Authenticatable
             'settings'          => 'array',
             'trial_ends_at'     => 'datetime',
             'view_only'         => 'boolean',
+            'last_seen_at'      => 'datetime',
         ];
     }
 
@@ -55,6 +56,35 @@ class User extends Authenticatable
         $name = trim(sprintf('%s %s', $this->first_name ?? '', $this->last_name ?? ''));
 
         return $name !== '' ? $name : (string) $this->email;
+    }
+
+    // ── Presence ("last online") ───────────────────────────────────
+
+    /**
+     * Whether this user exposes their "last online" timestamp to others.
+     * Opt-out via settings.show_last_seen; defaults to true (privacy-by-default
+     * still applies — the value is only ever a coarse "last online", never live
+     * location/typing — and the user can disable it in their account).
+     */
+    public function showsLastSeen(): bool
+    {
+        $settings = $this->settings ?? [];
+
+        return ! array_key_exists('show_last_seen', $settings)
+            || (bool) $settings['show_last_seen'];
+    }
+
+    /**
+     * The last-online timestamp to expose to OTHER users, honouring the
+     * show_last_seen opt-out. Returns null when hidden or never seen.
+     */
+    public function publicLastSeen(): ?string
+    {
+        if (! $this->showsLastSeen()) {
+            return null;
+        }
+
+        return $this->last_seen_at?->toIso8601String();
     }
 
     // ── Relations ──────────────────────────────────────────────────
@@ -90,8 +120,11 @@ class User extends Authenticatable
     {
         return $this->subscriptions()
             ->whereIn('stripe_status', ['active', 'trialing'])
-            ->whereNull('ends_at')
-            ->orWhere('ends_at', '>', now())
+            // Group the OR so it stays scoped to THIS user's subscriptions:
+            // (not cancelled) OR (cancellation date still in the future).
+            ->where(function ($q) {
+                $q->whereNull('ends_at')->orWhere('ends_at', '>', now());
+            })
             ->first();
     }
 

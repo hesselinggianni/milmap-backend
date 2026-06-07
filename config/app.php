@@ -58,6 +58,19 @@ return [
 
     /*
     |--------------------------------------------------------------------------
+    | Front-end (SPA) URL
+    |--------------------------------------------------------------------------
+    |
+    | The public URL of the Vue SPA. Used to build redirect targets for Stripe
+    | Checkout (success/cancel) and the billing portal so users return to the
+    | right environment. Falls back to APP_URL, then the production domain.
+    |
+    */
+
+    'app_url' => env('FRONTEND_URL', env('APP_URL', 'https://app.milmap.nl')),
+
+    /*
+    |--------------------------------------------------------------------------
     | Application Timezone
     |--------------------------------------------------------------------------
     |

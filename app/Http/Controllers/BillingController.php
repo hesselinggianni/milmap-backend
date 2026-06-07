@@ -21,15 +21,12 @@ class BillingController extends Controller
     private StripeClient $stripe;
 
     // ── Plan registry ──────────────────────────────────────────────
-    // Map our plan keys to Stripe Price IDs (set in .env)
+    // Map our plan keys to Stripe Price IDs. The admin can override the .env
+    // defaults by selecting products in the admin UI (stored in settings);
+    // AdminBillingController::effectiveMap() merges overrides over the defaults.
     private function plans(): array
     {
-        return [
-            'pro_monthly'    => config('billing.stripe_price_pro_monthly'),
-            'pro_yearly'     => config('billing.stripe_price_pro_yearly'),
-            'team_monthly'   => config('billing.stripe_price_team_monthly'),
-            'team_yearly'    => config('billing.stripe_price_team_yearly'),
-        ];
+        return AdminBillingController::effectiveMap();
     }
 
     public function __construct()

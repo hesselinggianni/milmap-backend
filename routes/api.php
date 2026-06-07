@@ -22,6 +22,7 @@ use App\Http\Controllers\AdminAuthController;
 use App\Http\Controllers\AdminController;
 use App\Http\Controllers\AdminMailAccountController;
 use App\Http\Controllers\AdminMailboxController;
+use App\Http\Controllers\AdminBillingController;
 use App\Http\Controllers\MapShareController;
 use App\Http\Controllers\BillingController;
 use App\Http\Controllers\MapCollaboratorController;
@@ -86,8 +87,8 @@ Route::prefix('v1')->middleware(['api'])->group(function () {
 
 
 Route::prefix('v1')->middleware(['api'])->group(function () {
-    Route::middleware('auth:sanctum')->group(function () {
-     
+    Route::middleware(['auth:sanctum', \App\Http\Middleware\TrackLastSeen::class])->group(function () {
+
         /* User group */
 
         Route::get('/users', [UserController::class, 'index']);
@@ -96,6 +97,7 @@ Route::prefix('v1')->middleware(['api'])->group(function () {
 
         // Self-service endpoints (geen id nodig — gebruikt Auth::user())
         Route::put('/user/profile', [UserController::class, 'updateProfile']);
+        Route::put('/user/settings', [UserController::class, 'updateSettings']);
         Route::put('/user/password', [UserController::class, 'changePassword']);
 
         // Literal route MUST come before /users/{id} or "search" is captured as an id.
@@ -239,6 +241,10 @@ Route::prefix('v1')->middleware(['api'])->group(function () {
         Route::get('/chat/conversations/{id}/messages', [MessageController::class, 'index']);
         Route::post('/chat/conversations/{id}/messages', [MessageController::class, 'store']);
 
+        // Message reactions (WhatsApp-style emoji likes)
+        Route::post('/chat/conversations/{id}/messages/{messageId}/reactions', [MessageController::class, 'react']);
+        Route::delete('/chat/conversations/{id}/messages/{messageId}/reactions', [MessageController::class, 'unreact']);
+
         // Chat attachments
         Route::post('/chat/attachments', [ChatAttachmentController::class, 'store']);
 
@@ -261,6 +267,12 @@ Route::prefix('v1')->middleware(['api'])->group(function () {
             Route::get('/admin/stats', [AdminController::class, 'getDashboardStats']);
             Route::get('/admin/client-errors', [AdminController::class, 'clientErrors']);
             Route::delete('/admin/client-errors', [AdminController::class, 'clearClientErrors']);
+
+            // ── Stripe billing configuration ────────────────────────────
+            Route::get('/admin/billing/prices', [AdminBillingController::class, 'prices']);
+            Route::get('/admin/billing/price-map', [AdminBillingController::class, 'priceMap']);
+            Route::put('/admin/billing/price-map', [AdminBillingController::class, 'savePriceMap']);
+            Route::get('/admin/users/{userId}', [AdminController::class, 'getUser']);
             Route::delete('/admin/users/{userId}', [AdminController::class, 'deleteUser']);
             Route::patch('/admin/users/{userId}/admin-status', [AdminController::class, 'toggleAdminStatus']);
             Route::post('/admin/users/{userId}/reset-password', [AdminController::class, 'resetUserPassword']);

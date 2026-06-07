@@ -1,18 +1,18 @@
 @extends('emails.layout')
 
-@section('content')
+@section('body')
 <div style="padding: 24px 0; text-align: center;">
-    <h2 style="color: #1a1a2e; margin: 0 0 16px 0; font-size: 24px; font-weight: bold;">
+    <h2 style="color: #f8fafc; margin: 0 0 16px 0; font-size: 24px; font-weight: bold;">
         You're invited to collaborate!
     </h2>
-    <p style="color: #666; margin: 0 0 24px 0; font-size: 16px;">
+    <p style="color: #cbd5e1; margin: 0 0 24px 0; font-size: 16px;">
         {{ $inviter->first_name }} invited you to collaborate on <strong>{{ $map->title }}</strong>
     </p>
 </div>
 
 <div style="background: #f5f5f5; padding: 24px; border-radius: 8px; margin: 24px 0;">
-    <h3 style="color: #1a1a2e; margin: 0 0 12px 0;">What can you do?</h3>
-    <ul style="color: #666; margin: 0; padding-left: 20px;">
+    <h3 style="color: #f8fafc; margin: 0 0 12px 0;">What can you do?</h3>
+    <ul style="color: #cbd5e1; margin: 0; padding-left: 20px;">
         <li style="margin: 8px 0;">Create and edit route maps</li>
         <li style="margin: 8px 0;">Add and manage location markers</li>
         <li style="margin: 8px 0;">See real-time updates from other collaborators</li>
@@ -26,20 +26,20 @@
     </a>
 </div>
 
-<div style="background: #e8f4f8; padding: 16px; border-left: 4px solid #2b7fff; border-radius: 4px; margin: 24px 0;">
-    <p style="color: #0f3460; margin: 0; font-size: 14px;">
+<div style="background: #1a2433; padding: 16px; border-left: 4px solid #2b7fff; border-radius: 4px; margin: 24px 0;">
+    <p style="color: #cbd5e1; margin: 0; font-size: 14px;">
         <strong>Privacy Notice:</strong> Only the map owner can remove your access. Location sharing is per-session and requires your permission each time.
     </p>
 </div>
 
-<hr style="border: none; border-top: 1px solid #ddd; margin: 24px 0;">
+<hr style="border: none; border-top: 1px solid #1e293b; margin: 24px 0;">
 
-<p style="color: #999; font-size: 12px; margin: 0;">
+<p style="color: #7e8a9c; font-size: 12px; margin: 0;">
     If you have questions, you can reply to this email or contact {{ $inviter->email }}.
 </p>
 
 @if(!$acceptLink)
-    <p style="color: #999; font-size: 12px; margin: 8px 0 0 0;">
+    <p style="color: #7e8a9c; font-size: 12px; margin: 8px 0 0 0;">
         Or copy and paste this link in your browser:<br>
         <code style="background: #f0f0f0; padding: 2px 6px; border-radius: 3px;">{{ $acceptLink }}</code>
     </p>

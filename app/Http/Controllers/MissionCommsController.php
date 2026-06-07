@@ -39,15 +39,16 @@ class MissionCommsController extends Controller
 
         $ids   = $mission->participantUserIds();
         $users = User::whereIn('id', $ids)
-            ->get(['id', 'first_name', 'last_name', 'email', 'public_key']);
+            ->get(['id', 'first_name', 'last_name', 'email', 'public_key', 'last_seen_at', 'settings']);
 
         return response()->json([
             'participants' => $users->map(fn (User $u) => [
-                'id'         => $u->id,
-                'name'       => trim(($u->first_name ?? '') . ' ' . ($u->last_name ?? '')) ?: $u->email,
-                'email'      => $u->email,
-                'public_key' => $u->public_key,
-                'is_me'      => $u->id === $userId,
+                'id'           => $u->id,
+                'name'         => trim(($u->first_name ?? '') . ' ' . ($u->last_name ?? '')) ?: $u->email,
+                'email'        => $u->email,
+                'public_key'   => $u->public_key,
+                'last_seen_at' => $u->publicLastSeen(),
+                'is_me'        => $u->id === $userId,
             ])->values(),
         ]);
     }
@@ -66,7 +67,7 @@ class MissionCommsController extends Controller
         }
 
         $conversation = $mission->syncGroupConversation();
-        $conversation->load('participants:id,first_name,last_name,email,public_key');
+        $conversation->load('participants:id,first_name,last_name,email,public_key,last_seen_at,settings');
 
         return response()->json([
             'conversation' => $this->present($conversation, $userId),
@@ -100,10 +101,11 @@ class MissionCommsController extends Controller
             'last_message_at' => $c->last_message_at?->toIso8601String(),
             'unread'          => $unread,
             'participants'    => $c->participants->map(fn (User $u) => [
-                'id'         => $u->id,
-                'name'       => trim(($u->first_name ?? '') . ' ' . ($u->last_name ?? '')) ?: $u->email,
-                'email'      => $u->email,
-                'public_key' => $u->public_key,
+                'id'           => $u->id,
+                'name'         => trim(($u->first_name ?? '') . ' ' . ($u->last_name ?? '')) ?: $u->email,
+                'email'        => $u->email,
+                'public_key'   => $u->public_key,
+                'last_seen_at' => $u->publicLastSeen(),
             ])->values(),
         ];
     }

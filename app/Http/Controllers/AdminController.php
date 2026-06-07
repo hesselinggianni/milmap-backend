@@ -69,6 +69,93 @@ class AdminController extends Controller
     }
 
     /**
+     * Get full detail for a single user (profile, maps, teams, billing).
+     */
+    public function getUser($userId)
+    {
+        try {
+            $user = User::with([
+                'teams' => fn ($q) => $q->withCount('members'),
+                'subscriptions',
+            ])->findOrFail($userId);
+
+            $maps = Map::where('owner_id', $user->id)
+                ->with('routeMaps')
+                ->get()
+                ->map(function ($map) {
+                    return [
+                        'id'              => $map->id,
+                        'title'           => $map->title,
+                        'status'          => $map->status,
+                        'routemaps_count' => $map->routeMaps->count(),
+                        'created_at'      => $map->created_at,
+                    ];
+                });
+
+            return response()->json([
+                'user' => [
+                    'id'                => $user->id,
+                    'first_name'        => $user->first_name,
+                    'last_name'         => $user->last_name,
+                    'name'              => $user->full_name,
+                    'email'             => $user->email,
+                    'is_admin'          => (bool) $user->is_admin,
+                    'language'          => $user->language,
+                    'view_only'         => $user->isViewOnly(),
+                    'email_verified_at' => $user->email_verified_at,
+                    'created_at'        => $user->created_at,
+                    'updated_at'        => $user->updated_at,
+                    'plan'              => $user->plan(),
+                    'subscribed'        => $user->subscribed(),
+                    'trial_ends_at'     => $user->trial_ends_at,
+                    'stripe_id'         => $user->stripe_id,
+                    'pm_type'           => $user->pm_type,
+                    'pm_last_four'      => $user->pm_last_four,
+                ],
+                'maps'  => $maps,
+                'teams' => $user->teams->map(function ($team) {
+                    return [
+                        'id'            => $team->id,
+                        'name'          => $team->name,
+                        'description'   => $team->description,
+                        'color'         => $team->color,
+                        'members_count' => $team->members_count,
+                    ];
+                }),
+                'subscriptions' => $user->subscriptions->map(function ($sub) {
+                    return [
+                        'id'            => $sub->id,
+                        'type'          => $sub->type,
+                        'stripe_status' => $sub->stripe_status,
+                        'stripe_price'  => $sub->stripe_price,
+                        'quantity'      => $sub->quantity,
+                        'trial_ends_at' => $sub->trial_ends_at,
+                        'ends_at'       => $sub->ends_at,
+                        'created_at'    => $sub->created_at,
+                    ];
+                }),
+                'stats' => [
+                    'total_maps'          => $maps->count(),
+                    'total_routemaps'     => $maps->sum('routemaps_count'),
+                    'total_teams'         => $user->teams->count(),
+                    'total_subscriptions' => $user->subscriptions->count(),
+                ],
+            ], 200);
+
+        } catch (\Illuminate\Database\Eloquent\ModelNotFoundException $e) {
+            return response()->json([
+                'message' => 'Gebruiker niet gevonden',
+                'error'   => 'not_found',
+            ], 404);
+        } catch (\Exception $e) {
+            return response()->json([
+                'message' => 'Fout bij ophalen gebruiker',
+                'error'   => $e->getMessage(),
+            ], 500);
+        }
+    }
+
+    /**
      * Delete a user and cascade related data
      */
     public function deleteUser($userId)

@@ -3,10 +3,10 @@
 @section('title', 'Admin Login Code - MilMap')
 
 @section('body')
-  <h2 style="margin:0 0 8px;font-size:20px;font-weight:700;color:#1a1a1a;">
+  <h2 style="margin:0 0 8px;font-size:20px;font-weight:700;color:#f8fafc;">
     🔐 Admin Login Code
   </h2>
-  <p style="margin:0 0 24px;font-size:14px;color:#555;line-height:1.6;">
+  <p style="margin:0 0 24px;font-size:14px;color:#cbd5e1;line-height:1.6;">
     Je hebt een inlogcode aangevraagd voor het MilMap admin dashboard. Gebruik de code hieronder om in te loggen:
   </p>
 
@@ -29,29 +29,29 @@
   <table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0"
          style="margin:0 0 20px;">
     <tr>
-      <td style="background-color:#f0f5ff;border-left:4px solid #2b7fff;border-radius:4px;padding:14px 16px;">
-        <p style="margin:0 0 4px;font-size:13px;font-weight:600;color:#1a1a1a;">
+      <td style="background-color:#1a2433;border-left:4px solid #2b7fff;border-radius:4px;padding:14px 16px;">
+        <p style="margin:0 0 4px;font-size:13px;font-weight:600;color:#f8fafc;">
           ⏱️ Deze code vervalt over {{ $expiryMinutes }} minuten
         </p>
-        <p style="margin:0;font-size:13px;color:#555;line-height:1.5;">
+        <p style="margin:0;font-size:13px;color:#cbd5e1;line-height:1.5;">
           Voer deze code in op het login-scherm. De code kan maar één keer gebruikt worden.
         </p>
       </td>
     </tr>
   </table>
 
-  <p style="margin:0 0 20px;font-size:14px;color:#555;line-height:1.6;">
+  <p style="margin:0 0 20px;font-size:14px;color:#cbd5e1;line-height:1.6;">
     Als je deze code niet aangevraagd hebt, negeer deze email dan.
   </p>
 
   <!-- Warning box -->
   <table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0">
     <tr>
-      <td style="background-color:#fff8e1;border-left:4px solid #f59e0b;border-radius:4px;padding:14px 16px;">
-        <p style="margin:0 0 4px;font-size:13px;font-weight:700;color:#92400e;">
+      <td style="background-color:#241a06;border-left:4px solid #2b7fff;border-radius:4px;padding:14px 16px;">
+        <p style="margin:0 0 4px;font-size:13px;font-weight:700;color:#fcd34d;">
           ⚠️ VEILIGHEID
         </p>
-        <p style="margin:0;font-size:13px;color:#78350f;line-height:1.5;">
+        <p style="margin:0;font-size:13px;color:#fcd34d;line-height:1.5;">
           Deel deze code met niemand. MilMap medewerkers zullen je nooit om deze code vragen.
         </p>
       </td>

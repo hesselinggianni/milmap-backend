@@ -28,7 +28,7 @@ class ConversationController extends Controller
 
         $conversations = Conversation::query()
             ->whereHas('participants', fn ($q) => $q->where('users.id', $userId))
-            ->with(['participants:id,first_name,last_name,email,public_key'])
+            ->with(['participants:id,first_name,last_name,email,public_key,last_seen_at,settings'])
             ->orderByRaw('COALESCE(last_message_at, created_at) DESC')
             ->get();
 
@@ -77,7 +77,7 @@ class ConversationController extends Controller
             ->value('cu1.conversation_id');
 
         if ($existingId) {
-            $conversation = Conversation::with('participants:id,first_name,last_name,email,public_key')
+            $conversation = Conversation::with('participants:id,first_name,last_name,email,public_key,last_seen_at,settings')
                 ->find($existingId);
 
             return response()->json([
@@ -90,7 +90,7 @@ class ConversationController extends Controller
             'created_by' => $me,
         ]);
         $conversation->participants()->attach([$me, $other]);
-        $conversation->load('participants:id,first_name,last_name,email,public_key');
+        $conversation->load('participants:id,first_name,last_name,email,public_key,last_seen_at,settings');
 
         return response()->json([
             'conversation' => $this->present($conversation, $me),
@@ -104,7 +104,7 @@ class ConversationController extends Controller
     {
         $userId = Auth::id();
 
-        $conversation = Conversation::with('participants:id,first_name,last_name,email,public_key')
+        $conversation = Conversation::with('participants:id,first_name,last_name,email,public_key,last_seen_at,settings')
             ->findOrFail($id);
 
         if (! $conversation->hasParticipant($userId)) {
@@ -161,10 +161,11 @@ class ConversationController extends Controller
             'last_message_at' => $c->last_message_at?->toIso8601String(),
             'unread'          => $unread,
             'participants'    => $c->participants->map(fn (User $u) => [
-                'id'         => $u->id,
-                'name'       => trim(($u->first_name ?? '') . ' ' . ($u->last_name ?? '')) ?: $u->email,
-                'email'      => $u->email,
-                'public_key' => $u->public_key,
+                'id'           => $u->id,
+                'name'         => trim(($u->first_name ?? '') . ' ' . ($u->last_name ?? '')) ?: $u->email,
+                'email'        => $u->email,
+                'public_key'   => $u->public_key,
+                'last_seen_at' => $u->publicLastSeen(),
             ])->values(),
         ];
     }
