@@ -15,7 +15,9 @@ return new class extends Migration
             $table->uuid('id')->primary();
             $table->uuid('route_map_id');
             $table->unsignedBigInteger('user_id');
-            $table->json('options')->default('{}'); // { terrain: 'footpaths|roads', optimization: 'distance|elevation|time' }
+            // MySQL (< 8.0.13) verbiedt een DEFAULT op JSON-kolommen, dus nullable
+            // i.p.v. default '{}'. De app behandelt null als een leeg object.
+            $table->json('options')->nullable(); // { terrain: 'footpaths|roads', optimization: 'distance|elevation|time' }
             $table->longText('route_geojson'); // GeoJSON LineString
             $table->float('total_distance_m')->nullable();
             $table->float('total_elevation_m')->nullable();

@@ -2,6 +2,8 @@
 
 namespace App\Http\Controllers;
 
+use App\Models\ChatInvite;
+use App\Models\ChatRequest;
 use App\Models\Conversation;
 use App\Models\Invitation;
 use App\Models\MapCollaborator;
@@ -11,6 +13,7 @@ use App\Models\User;
 use App\Services\InvitationService;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Auth;
+use Illuminate\Support\Facades\DB;
 
 class InvitationController extends Controller
 {
@@ -235,17 +238,78 @@ class InvitationController extends Controller
         // Chats I'm part of (direct conversations) — surfaced as activity.
         Conversation::where('type', 'direct')
             ->whereHas('participants', fn ($q) => $q->where('users.id', $user))
-            ->with(['participants:id,first_name,last_name'])
+            ->with(['participants:id,first_name,last_name,email'])
             ->latest()->limit(20)->get()
             ->each(function ($c) use (&$events, $user) {
                 $other = $c->participants->firstWhere('id', '!=', $user);
+                // Val terug op het e-mailadres wanneer de deelnemer (nog) geen
+                // naam heeft ingevuld, zodat "Chat met" nooit leeg/anoniem is.
+                $otherName = $other?->full_name ?: ($other?->email ?? 'een deelnemer');
                 $events->push([
                     'type'          => 'chat_started',
                     'title'         => 'Nieuw gesprek',
-                    'subtitle'      => 'Chat met ' . ($other?->full_name ?? 'een deelnemer'),
+                    'subtitle'      => 'Chat met ' . $otherName,
                     'resource_type' => 'chat',
                     'resource_id'   => $c->id,
                     'at'            => $c->created_at?->toIso8601String(),
+                ]);
+            });
+
+        // Chat invites I sent that have now been accepted (the invitee
+        // registered an account). Link to the direct conversation that was
+        // opened on their behalf so the inviter can jump straight in.
+        ChatInvite::where('inviter_id', $user)
+            ->where('status', 'accepted')
+            ->with(['acceptedUser:id,first_name,last_name,email'])
+            ->latest('accepted_at')->limit(20)->get()
+            ->each(function ($ci) use (&$events, $user) {
+                $name = $ci->acceptedUser?->full_name
+                    ?: ($ci->acceptedUser?->email ?? $ci->email);
+
+                // Find the direct conversation we opened with this person.
+                $conversationId = null;
+                if ($ci->accepted_user_id) {
+                    $conversationId = Conversation::where('type', 'direct')
+                        ->whereHas('participants', fn ($q) => $q->where('users.id', $user))
+                        ->whereHas('participants', fn ($q) => $q->where('users.id', $ci->accepted_user_id))
+                        ->value('id');
+                }
+
+                $events->push([
+                    'type'          => 'chat_invite_accepted',
+                    'title'         => 'Chatuitnodiging geaccepteerd',
+                    'subtitle'      => $name . ' heeft een account aangemaakt',
+                    'status'        => 'accepted',
+                    'resource_type' => $conversationId ? 'chat' : null,
+                    'resource_id'   => $conversationId,
+                    'at'            => ($ci->accepted_at ?? $ci->updated_at)?->toIso8601String(),
+                ]);
+            });
+
+        // Chat requests I sent that were accepted by the other (existing) user.
+        ChatRequest::where('requester_id', $user)
+            ->where('status', 'accepted')
+            ->with(['recipient:id,first_name,last_name,email'])
+            ->latest('responded_at')->limit(20)->get()
+            ->each(function ($r) use (&$events, $user) {
+                $name = $r->recipient?->full_name ?: ($r->recipient?->email ?? 'Iemand');
+
+                $conversationId = DB::table('conversation_user as cu1')
+                    ->join('conversation_user as cu2', 'cu1.conversation_id', '=', 'cu2.conversation_id')
+                    ->join('conversations as c', 'c.id', '=', 'cu1.conversation_id')
+                    ->where('c.type', 'direct')
+                    ->where('cu1.user_id', $user)
+                    ->where('cu2.user_id', $r->recipient_id)
+                    ->value('cu1.conversation_id');
+
+                $events->push([
+                    'type'          => 'chat_invite_accepted',
+                    'title'         => 'Chatverzoek geaccepteerd',
+                    'subtitle'      => $name . ' accepteerde je chatverzoek',
+                    'status'        => 'accepted',
+                    'resource_type' => $conversationId ? 'chat' : null,
+                    'resource_id'   => $conversationId,
+                    'at'            => ($r->responded_at ?? $r->updated_at)?->toIso8601String(),
                 ]);
             });
 

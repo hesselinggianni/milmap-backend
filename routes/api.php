@@ -37,6 +37,7 @@ use App\Http\Controllers\InvitationController;
 use App\Http\Controllers\TeamController;
 use App\Http\Controllers\ChatAttachmentController;
 use App\Http\Controllers\ChatInviteController;
+use App\Http\Controllers\ChatRequestController;
 use App\Http\Controllers\MissionTrackController;
 use App\Http\Controllers\MissionEvaluationController;
 use App\Http\Controllers\MissionCommsController;
@@ -234,6 +235,10 @@ Route::prefix('v1')->middleware(['api'])->group(function () {
         // Public-key exchange for sealed-box encryption
         Route::put('/chat/keys/me', [ChatKeyController::class, 'store']);
         Route::get('/chat/keys/me', [ChatKeyController::class, 'me']);
+        // Zero-knowledge key escrow (pincode-wrapped private key for cross-device).
+        // MUST precede the /chat/keys/{id} wildcard so "escrow" isn't read as an id.
+        Route::put('/chat/keys/escrow', [ChatKeyController::class, 'storeEscrow']);
+        Route::get('/chat/keys/escrow', [ChatKeyController::class, 'escrow']);
         Route::get('/chat/keys/{id}', [ChatKeyController::class, 'show']);
 
         // Conversations
@@ -253,8 +258,14 @@ Route::prefix('v1')->middleware(['api'])->group(function () {
         // Chat attachments
         Route::post('/chat/attachments', [ChatAttachmentController::class, 'store']);
 
-        // Chat invite link
+        // Chat invite link (for e-mails without an account yet)
         Route::post('/chat/invite', [ChatInviteController::class, 'store']);
+
+        // Chat connection requests (existing accounts must accept first)
+        Route::post('/chat/requests', [ChatRequestController::class, 'store']);
+        Route::get('/chat/requests/incoming', [ChatRequestController::class, 'incoming']);
+        Route::post('/chat/requests/{id}/accept', [ChatRequestController::class, 'accept']);
+        Route::post('/chat/requests/{id}/decline', [ChatRequestController::class, 'decline']);
 
         // Bug report route
         Route::post('/bug-reports', [BugReportController::class, 'store']);

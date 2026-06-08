@@ -27,6 +27,12 @@ class GeneratedRoute extends Model
         'applied_at',
     ];
 
+    // The `options` column is nullable (MySQL forbids a JSON default), so give
+    // it an empty-object default here — it always reads back as an array.
+    protected $attributes = [
+        'options' => '{}',
+    ];
+
     protected $casts = [
         'options' => 'array',
         'route_geojson' => 'array',

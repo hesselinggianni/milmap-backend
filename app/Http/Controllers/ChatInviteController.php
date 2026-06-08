@@ -3,6 +3,8 @@
 namespace App\Http\Controllers;
 
 use App\Mail\ChatInviteMail;
+use App\Models\ChatInvite;
+use App\Models\User;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Auth;
 use Illuminate\Support\Facades\Log;
@@ -23,9 +25,24 @@ class ChatInviteController extends Controller
 
         $inviter     = Auth::user();
         $inviterName = $inviter->full_name ?? $inviter->first_name ?? 'Een MilMap-gebruiker';
+        $email       = mb_strtolower(trim($data['email']));
         $base        = rtrim(config('app.frontend_url', 'https://app.milmap.nl'), '/');
         $url         = $base . '/register?ref=chat&inviter=' . urlencode($inviterName)
-                     . '&email=' . urlencode($data['email']);
+                     . '&email=' . urlencode($email);
+
+        // Persist the invite so we can report acceptance on the inviter's Hub
+        // activity timeline once this person registers. If the e-mail already
+        // belongs to an account there's nothing to "accept", so skip tracking.
+        if (! User::where('email', $email)->exists()) {
+            try {
+                ChatInvite::updateOrCreate(
+                    ['inviter_id' => $inviter->id, 'email' => $email],
+                    ['status' => 'pending']
+                );
+            } catch (\Throwable $e) {
+                Log::warning('[chat] invite persist failed: ' . $e->getMessage());
+            }
+        }
 
         $emailed = false;
         try {

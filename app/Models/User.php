@@ -20,6 +20,13 @@ class User extends Authenticatable
         'language',
         'settings',
         'public_key',
+        'key_escrow',
+        'key_escrow_salt',
+        'key_escrow_nonce',
+        'key_escrow_ops',
+        'key_escrow_mem',
+        'key_escrow_alg',
+        'key_escrow_updated_at',
         'stripe_id',
         'pm_type',
         'pm_last_four',
@@ -30,6 +37,14 @@ class User extends Authenticatable
     protected $hidden = [
         'password',
         'remember_token',
+        // Encrypted key-escrow blob: never leak it in user listings/profiles.
+        // It is returned only via the dedicated GET /chat/keys/escrow endpoint.
+        'key_escrow',
+        'key_escrow_salt',
+        'key_escrow_nonce',
+        'key_escrow_ops',
+        'key_escrow_mem',
+        'key_escrow_alg',
     ];
 
     protected function casts(): array
