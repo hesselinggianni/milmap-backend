@@ -78,6 +78,10 @@ Route::prefix('v1')->middleware(['api'])->group(function () {
     // Stripe webhook — public, verified via signature
     Route::post('/billing/webhook', [BillingController::class, 'handleWebhook']);
 
+    // Live Stripe pricing per plan (amount/currency/interval/product_id) — public,
+    // used by the checkout & landing pages so the shown price matches Stripe.
+    Route::get('/billing/pricing', [BillingController::class, 'pricing']);
+
     // Guest checkout — public, maakt account aan als nodig
     Route::post('/billing/guest-checkout', [BillingController::class, 'guestCheckout']);
 

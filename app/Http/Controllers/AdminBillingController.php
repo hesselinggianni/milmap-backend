@@ -4,6 +4,7 @@ namespace App\Http\Controllers;
 
 use App\Models\Setting;
 use Illuminate\Http\Request;
+use Illuminate\Support\Facades\Cache;
 use Stripe\StripeClient;
 use Throwable;
 
@@ -146,6 +147,9 @@ class AdminBillingController extends Controller
         }
 
         Setting::put(self::SETTING_KEY, $clean);
+
+        // Drop the cached public pricing so the new mapping shows up right away.
+        Cache::forget('billing_pricing_v1');
 
         return response()->json([
             'ok'  => true,

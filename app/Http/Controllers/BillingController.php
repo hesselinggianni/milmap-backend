@@ -7,6 +7,7 @@ use App\Models\Subscription;
 use App\Models\SubscriptionItem;
 use App\Models\User;
 use Illuminate\Http\Request;
+use Illuminate\Support\Facades\Cache;
 use Illuminate\Support\Facades\Hash;
 use Illuminate\Support\Facades\Log;
 use Illuminate\Support\Facades\Mail;
@@ -31,10 +32,13 @@ class BillingController extends Controller
 
     public function __construct()
     {
-        // Cast naar string: ontbreekt STRIPE_SECRET (null), dan zou Stripe
-        // anders al in de constructor "$config must be a string or an array"
-        // gooien — waardoor élk billing-endpoint (ook publieke) 500't.
-        $this->stripe = new StripeClient((string) config('billing.stripe_secret'));
+        // Geef de secret als api_key door, of null wanneer hij ontbreekt/leeg is.
+        // StripeClient staat een null api_key toe (faalt pas bij een echte call),
+        // maar gooit "api_key cannot be the empty string" bij een lege string en
+        // "$config must be a string or an array" bij null als losse waarde.
+        // Via ['api_key' => ... ?: null] werken alle gevallen, zodat ook publieke
+        // endpoints (zoals pricing()) zonder geconfigureerde secret niet 500'en.
+        $this->stripe = new StripeClient(['api_key' => config('billing.stripe_secret') ?: null]);
     }
 
     // ── Plan labels ────────────────────────────────────────────────
@@ -47,6 +51,73 @@ class BillingController extends Controller
             'team_yearly'  => 'Team (jaarlijks)',
             default        => 'Pro',
         };
+    }
+
+    // ── GET /billing/pricing ───────────────────────────────────────
+    // Public — returns the live Stripe pricing for every MilMap plan slot so the
+    // checkout/landing pages show the real amount + currency that Stripe will
+    // actually charge (instead of a hard-coded number that can drift). Each plan
+    // resolves to its mapped Stripe Price ID (admin override → .env default) and
+    // we read the unit_amount/currency/interval plus the parent product id back
+    // from Stripe. Cached briefly so a busy checkout page never hammers Stripe.
+    public function pricing()
+    {
+        if (! config('billing.stripe_secret')) {
+            // Stripe not configured → no live data; the client keeps its own
+            // static fallback prices.
+            return response()->json(['plans' => (object) []]);
+        }
+
+        try {
+            $plans = Cache::remember('billing_pricing_v1', 300, function () {
+                $map = AdminBillingController::effectiveMap();
+                $out = [];
+
+                foreach ($map as $key => $priceId) {
+                    if (! $priceId) {
+                        continue;
+                    }
+
+                    try {
+                        $price = $this->stripe->prices->retrieve(
+                            $priceId,
+                            ['expand' => ['product']]
+                        );
+                    } catch (\Throwable $e) {
+                        // A single broken/deleted price must not nuke the whole
+                        // response — just skip it and let the client fall back.
+                        Log::warning('billing.pricing: kon price niet laden', [
+                            'plan'  => $key,
+                            'price' => $priceId,
+                            'error' => $e->getMessage(),
+                        ]);
+                        continue;
+                    }
+
+                    $product = $price->product ?? null;
+
+                    $out[$key] = [
+                        'plan'         => $key,
+                        'price_id'     => $price->id,
+                        'product_id'   => is_object($product)
+                            ? ($product->id ?? null)
+                            : (is_string($product) ? $product : null),
+                        'product_name' => is_object($product) ? ($product->name ?? '') : '',
+                        'amount'       => $price->unit_amount,                 // in cents
+                        'currency'     => strtoupper((string) $price->currency),
+                        'interval'     => $price->recurring->interval ?? null, // month | year | null
+                    ];
+                }
+
+                return $out;
+            });
+        } catch (\Throwable $e) {
+            Log::warning('billing.pricing: onverwachte fout', ['error' => $e->getMessage()]);
+
+            return response()->json(['plans' => (object) []]);
+        }
+
+        return response()->json(['plans' => empty($plans) ? (object) [] : $plans]);
     }
 
     // ── POST /billing/guest-checkout ───────────────────────────────
@@ -116,8 +187,11 @@ class BillingController extends Controller
             }
 
             // Create Checkout Session
+            // NB: payment_method_types wordt bewust NIET hardcoded. Stripe Checkout
+            // kiest dan automatisch de in het Dashboard geactiveerde methodes die
+            // geldig zijn voor deze mode/valuta. Hardcoden van bv. 'ideal' geeft
+            // anders "payment method type ... is invalid" als de combinatie niet klopt.
             $session = $this->stripe->checkout->sessions->create(array_merge($customerParams, [
-                'payment_method_types' => ['card', 'ideal'],
                 'mode'                 => 'subscription',
                 'line_items'           => [[
                     'price'    => $priceId,
@@ -294,9 +368,10 @@ class BillingController extends Controller
         }
 
         // Create Checkout Session
+        // NB: payment_method_types wordt bewust NIET hardcoded — zie guestCheckout().
+        // Stripe Checkout bepaalt zelf welke geactiveerde methodes geldig zijn.
         $session = $this->stripe->checkout->sessions->create([
             'customer'             => $user->stripe_id,
-            'payment_method_types' => ['card', 'ideal'],
             'mode'                 => 'subscription',
             'line_items'           => [[
                 'price'    => $priceId,
