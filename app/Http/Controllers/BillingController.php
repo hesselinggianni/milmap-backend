@@ -67,63 +67,72 @@ class BillingController extends Controller
             return response()->json(['message' => 'Ongeldig plan geselecteerd.'], 422);
         }
 
-        // Find or create user
-        $isNewUser = false;
-        $user = User::where('email', $request->email)->first();
-
-        if (! $user) {
-            $isNewUser = true;
-            $user = User::create([
-                'email'      => $request->email,
-                'first_name' => $request->first_name ?? '',
-                'last_name'  => $request->last_name  ?? '',
-                // Random password — will be set via activation email
-                'password'   => Hash::make(Str::random(32)),
-            ]);
-        }
+        // Look up the account only IF it already exists. For a brand-new e-mail
+        // we deliberately do NOT create the MilMap account here — that happens
+        // only after the payment succeeds (see onCheckoutCompleted), so an
+        // abandoned or failed checkout never leaves an orphan account behind.
+        $user      = User::where('email', $request->email)->first();
+        $isNewUser = ! $user;
 
         // Stripe redirect points to app
         $appUrl = config('app.app_url', 'https://app.milmap.nl');
 
         try {
-            // Create or retrieve Stripe customer
-            if (! $user->stripe_id) {
-                $customer = $this->stripe->customers->create([
-                    'email'    => $user->email,
-                    'name'     => trim("{$user->first_name} {$user->last_name}"),
-                    'metadata' => ['user_id' => $user->id],
-                ]);
-                $user->update(['stripe_id' => $customer->id]);
+            if ($user) {
+                // Existing account → reuse (or lazily create) its Stripe customer
+                // and tag the session with the real user_id.
+                if (! $user->stripe_id) {
+                    $customer = $this->stripe->customers->create([
+                        'email'    => $user->email,
+                        'name'     => trim("{$user->first_name} {$user->last_name}"),
+                        'metadata' => ['user_id' => $user->id],
+                    ]);
+                    $user->update(['stripe_id' => $customer->id]);
+                }
+
+                $customerParams = [
+                    'customer'        => $user->stripe_id,
+                    'customer_update' => ['address' => 'auto'],
+                ];
+                $meta = [
+                    'user_id'     => (string) $user->id,
+                    'plan'        => $request->plan,
+                    'is_new_user' => 'false',
+                ];
+            } else {
+                // New e-mail → let Checkout create the Stripe customer from the
+                // entered address; the MilMap account itself is created in the
+                // webhook once payment succeeds. The registration details ride
+                // along in metadata so the webhook can build the account.
+                $customerParams = ['customer_email' => $request->email];
+                $meta = [
+                    'plan'                 => $request->plan,
+                    'is_new_user'          => 'true',
+                    'pending_registration' => 'true',
+                    'reg_email'            => $request->email,
+                    'reg_first_name'       => (string) ($request->first_name ?? ''),
+                    'reg_last_name'        => (string) ($request->last_name ?? ''),
+                ];
             }
 
             // Create Checkout Session
-            $session = $this->stripe->checkout->sessions->create([
-                'customer'             => $user->stripe_id,
+            $session = $this->stripe->checkout->sessions->create(array_merge($customerParams, [
                 'payment_method_types' => ['card', 'ideal'],
                 'mode'                 => 'subscription',
                 'line_items'           => [[
                     'price'    => $priceId,
                     'quantity' => 1,
                 ]],
-                'customer_update' => ['address' => 'auto'],
                 'subscription_data' => [
-                    'metadata' => [
-                        'user_id'      => $user->id,
-                        'plan'         => $request->plan,
-                        'is_new_user'  => $isNewUser ? 'true' : 'false',
-                    ],
+                    'metadata' => $meta,
                 ],
                 'success_url' => "{$appUrl}/billing/success?session_id={CHECKOUT_SESSION_ID}",
                 'cancel_url'  => "{$appUrl}/checkout/{$request->plan}?cancelled=1",
-                'metadata'    => [
-                    'user_id'     => $user->id,
-                    'plan'        => $request->plan,
-                    'is_new_user' => $isNewUser ? 'true' : 'false',
-                ],
+                'metadata'    => $meta,
                 'allow_promotion_codes'      => true,
                 'billing_address_collection' => 'auto',
                 'locale'                     => 'nl',
-            ]);
+            ]));
         } catch (\Stripe\Exception\ApiErrorException $e) {
             // Stripe rejected the request. The most common cause here is a Price
             // ID that doesn't exist in the account/mode the active secret key
@@ -133,7 +142,7 @@ class BillingController extends Controller
             Log::error('guestCheckout Stripe error', [
                 'plan'         => $request->plan,
                 'price_id'     => $priceId,
-                'user_id'      => $user->id,
+                'email'        => $request->email,
                 'stripe_code'  => method_exists($e, 'getStripeCode') ? $e->getStripeCode() : null,
                 'stripe_error' => $e->getMessage(),
             ]);
@@ -604,6 +613,43 @@ class BillingController extends Controller
         $userId    = $session->metadata->user_id ?? null;
         $isNewUser = ($session->metadata->is_new_user ?? 'false') === 'true';
         $planKey   = $session->metadata->plan ?? 'pro_monthly';
+        $pending   = ($session->metadata->pending_registration ?? 'false') === 'true';
+
+        // Gast-checkout: het MilMap-account wordt PAS aangemaakt nadat de betaling
+        // is geslaagd (deze webhook). Zo blijven er geen weesaccounts achter bij
+        // afgebroken of mislukte betalingen.
+        if (! $userId && $pending) {
+            $email = $session->metadata->reg_email
+                ?? ($session->customer_details->email ?? null);
+
+            if (! $email) {
+                Log::warning('Pending registration zonder e-mailadres', [
+                    'session' => $session->id ?? null,
+                ]);
+                return;
+            }
+
+            $user = User::firstOrCreate(
+                ['email' => $email],
+                [
+                    'first_name' => $session->metadata->reg_first_name ?? '',
+                    'last_name'  => $session->metadata->reg_last_name ?? '',
+                    'password'   => Hash::make(Str::random(32)),
+                ]
+            );
+
+            // Koppel de Stripe-customer aan het nieuwe account.
+            $customerId = is_string($session->customer ?? null)
+                ? $session->customer
+                : ($session->customer->id ?? null);
+            if ($customerId && ! $user->stripe_id) {
+                $user->update(['stripe_id' => $customerId]);
+            }
+
+            $userId    = $user->id;
+            // Alleen een activatiemail sturen als het account nu net is aangemaakt.
+            $isNewUser = $user->wasRecentlyCreated;
+        }
 
         if (! $userId) return;
 
