@@ -2,12 +2,14 @@
 
 namespace App\Http\Controllers;
 
+use App\Events\MissionLocationUpdated;
 use App\Models\Mission;
 use App\Models\MissionTrack;
 use App\Models\User;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Auth;
 use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Facades\Log;
 
 class MissionTrackController extends Controller
 {
@@ -54,6 +56,31 @@ class MissionTrackController extends Controller
 
         MissionTrack::insert($rows);
 
+        // Broadcast this participant's latest position to the mission presence
+        // channel so teammates see live movement on the mission map. The client
+        // only uploads while the user has consented to share, so being broadcast
+        // here is always opt-in. Best-effort: never let a broadcast failure break
+        // track storage.
+        try {
+            $last = end($data['points']);
+            $user = Auth::user();
+            $name = trim(($user->first_name ?? '') . ' ' . ($user->last_name ?? '')) ?: ($user->email ?? 'Unknown');
+
+            broadcast(new MissionLocationUpdated(
+                missionId:  (string) $mission->id,
+                userId:     (int) $userId,
+                userName:   $name,
+                lat:        (float) $last['lat'],
+                lng:        (float) $last['lng'],
+                heading:    isset($last['heading']) ? (float) $last['heading'] : null,
+                speed:      isset($last['speed']) ? (float) $last['speed'] : null,
+                accuracy:   isset($last['accuracy']) ? (float) $last['accuracy'] : null,
+                recordedAt: $last['recorded_at'] ?? null,
+            ));
+        } catch (\Throwable $e) {
+            Log::warning('MissionLocationUpdated broadcast failed: ' . $e->getMessage());
+        }
+
         return response()->json(['stored' => count($rows)], 201);
     }
 
@@ -67,11 +94,11 @@ class MissionTrackController extends Controller
         $userId = Auth::id();
         $mission = Mission::findOrFail($missionId);
 
-        if (! $mission->canManage($userId) && ! $mission->isOwnedBy($userId)) {
-            // Also allow canEdit so editors can see the map
-            if (! $mission->canEdit($userId)) {
-                return response()->json(['message' => 'Forbidden.'], 403);
-            }
+        // Any mission participant may view live teammate positions on the map.
+        // (Appearing on the map is still opt-in — see store(): a participant is
+        //  only broadcast/persisted while they consent to share their location.)
+        if (! $mission->hasAccess($userId)) {
+            return response()->json(['message' => 'Forbidden.'], 403);
         }
 
         // Subquery: latest recorded_at per (mission, user)

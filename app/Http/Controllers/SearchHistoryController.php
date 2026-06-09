@@ -27,7 +27,7 @@ public function store(Request $request)
         'subtitle' => 'nullable|string',
         'lat' => 'required|numeric',
         'lon' => 'required|numeric',
-        'map_id' => 'required|uuid',
+        'map_id' => 'required|uuid|exists:maps,id',
     ]);
 
     // 🔥 bestaande entry verwijderen
