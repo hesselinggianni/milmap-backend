@@ -18,12 +18,12 @@ class AdminBillingController extends Controller
     public const PLAN_KEYS = ['pro_monthly', 'pro_yearly', 'team_monthly', 'team_yearly'];
     public const SETTING_KEY = 'billing_prices';
 
-    private StripeClient $stripe;
-
-    public function __construct()
-    {
-        $this->stripe = new StripeClient(config('billing.stripe_secret'));
-    }
+    // NB: bewust GEEN StripeClient in de constructor. Als de Stripe-secret
+    // ontbreekt (of de config-cache stale is) gooit `new StripeClient(null)`
+    // een InvalidArgumentException. Omdat de constructor bij ELKE actie draait,
+    // crashte daardoor ook price-map / save-price-map met een 500 — terwijl die
+    // Stripe helemaal niet nodig hebben. De client wordt nu pas in prices()
+    // aangemaakt, ná de secret-check en binnen een try/catch.
 
     /**
      * The .env-configured defaults for each plan slot.
@@ -67,7 +67,8 @@ class AdminBillingController extends Controller
         }
 
         try {
-            $prices = $this->stripe->prices->all([
+            $stripe = new StripeClient(config('billing.stripe_secret'));
+            $prices = $stripe->prices->all([
                 'active' => true,
                 'limit'  => 100,
                 'expand' => ['data.product'],

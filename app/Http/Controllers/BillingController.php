@@ -85,44 +85,63 @@ class BillingController extends Controller
         // Stripe redirect points to app
         $appUrl = config('app.app_url', 'https://app.milmap.nl');
 
-        // Create or retrieve Stripe customer
-        if (! $user->stripe_id) {
-            $customer = $this->stripe->customers->create([
-                'email'    => $user->email,
-                'name'     => trim("{$user->first_name} {$user->last_name}"),
-                'metadata' => ['user_id' => $user->id],
-            ]);
-            $user->update(['stripe_id' => $customer->id]);
-        }
+        try {
+            // Create or retrieve Stripe customer
+            if (! $user->stripe_id) {
+                $customer = $this->stripe->customers->create([
+                    'email'    => $user->email,
+                    'name'     => trim("{$user->first_name} {$user->last_name}"),
+                    'metadata' => ['user_id' => $user->id],
+                ]);
+                $user->update(['stripe_id' => $customer->id]);
+            }
 
-        // Create Checkout Session
-        $session = $this->stripe->checkout->sessions->create([
-            'customer'             => $user->stripe_id,
-            'payment_method_types' => ['card', 'ideal'],
-            'mode'                 => 'subscription',
-            'line_items'           => [[
-                'price'    => $priceId,
-                'quantity' => 1,
-            ]],
-            'customer_update' => ['address' => 'auto'],
-            'subscription_data' => [
-                'metadata' => [
-                    'user_id'      => $user->id,
-                    'plan'         => $request->plan,
-                    'is_new_user'  => $isNewUser ? 'true' : 'false',
+            // Create Checkout Session
+            $session = $this->stripe->checkout->sessions->create([
+                'customer'             => $user->stripe_id,
+                'payment_method_types' => ['card', 'ideal'],
+                'mode'                 => 'subscription',
+                'line_items'           => [[
+                    'price'    => $priceId,
+                    'quantity' => 1,
+                ]],
+                'customer_update' => ['address' => 'auto'],
+                'subscription_data' => [
+                    'metadata' => [
+                        'user_id'      => $user->id,
+                        'plan'         => $request->plan,
+                        'is_new_user'  => $isNewUser ? 'true' : 'false',
+                    ],
                 ],
-            ],
-            'success_url' => "{$appUrl}/billing/success?session_id={CHECKOUT_SESSION_ID}",
-            'cancel_url'  => "{$appUrl}/checkout/{$request->plan}?cancelled=1",
-            'metadata'    => [
-                'user_id'     => $user->id,
-                'plan'        => $request->plan,
-                'is_new_user' => $isNewUser ? 'true' : 'false',
-            ],
-            'allow_promotion_codes'      => true,
-            'billing_address_collection' => 'auto',
-            'locale'                     => 'nl',
-        ]);
+                'success_url' => "{$appUrl}/billing/success?session_id={CHECKOUT_SESSION_ID}",
+                'cancel_url'  => "{$appUrl}/checkout/{$request->plan}?cancelled=1",
+                'metadata'    => [
+                    'user_id'     => $user->id,
+                    'plan'        => $request->plan,
+                    'is_new_user' => $isNewUser ? 'true' : 'false',
+                ],
+                'allow_promotion_codes'      => true,
+                'billing_address_collection' => 'auto',
+                'locale'                     => 'nl',
+            ]);
+        } catch (\Stripe\Exception\ApiErrorException $e) {
+            // Stripe rejected the request. The most common cause here is a Price
+            // ID that doesn't exist in the account/mode the active secret key
+            // points to (a test-vs-live mismatch) → "No such price: price_…".
+            // Surface a clean message and log the real reason + the offending
+            // price so this never returns an opaque 500 again.
+            Log::error('guestCheckout Stripe error', [
+                'plan'         => $request->plan,
+                'price_id'     => $priceId,
+                'user_id'      => $user->id,
+                'stripe_code'  => method_exists($e, 'getStripeCode') ? $e->getStripeCode() : null,
+                'stripe_error' => $e->getMessage(),
+            ]);
+
+            return response()->json([
+                'message' => 'Afrekenen is op dit moment niet beschikbaar. Probeer het later opnieuw of neem contact op met support.',
+            ], 502);
+        }
 
         return response()->json([
             'checkout_url' => $session->url,
