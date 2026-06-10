@@ -119,15 +119,25 @@ class MissionCollaboratorController extends Controller
             ], 422);
         }
 
-        $collaborator = MissionCollaborator::create([
-            'mission_id' => $mission->id,
-            'user_id' => $user->id,
-            'added_by' => Auth::id(),
-            'role' => $request->input('role', 'editor'),
-            'status' => 'accepted',
-            'invited_at' => now(),
-            'accepted_at' => now(),
-        ]);
+        // The $existing pre-check above is a TOCTOU window: two concurrent adds
+        // can both pass it and then collide on unique(mission_id,user_id),
+        // throwing an unhandled 500 that leaks SQL. Catch that race and return
+        // the same friendly 422 the pre-check would have.
+        try {
+            $collaborator = MissionCollaborator::create([
+                'mission_id' => $mission->id,
+                'user_id' => $user->id,
+                'added_by' => Auth::id(),
+                'role' => $request->input('role', 'editor'),
+                'status' => 'accepted',
+                'invited_at' => now(),
+                'accepted_at' => now(),
+            ]);
+        } catch (\Illuminate\Database\QueryException $e) {
+            return response()->json([
+                'error' => 'This user is already a collaborator on this mission',
+            ], 422);
+        }
 
         return response()->json([
             'message' => 'Collaborator added',

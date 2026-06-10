@@ -29,6 +29,12 @@ class MissionTrackController extends Controller
             return response()->json(['message' => 'Forbidden.'], 403);
         }
 
+        // Don't accept live track points for a mission that's over — they would
+        // pollute the debrief replay and a stale "live" map long after the fact.
+        if ($mission->status === 'complete') {
+            return response()->json(['message' => 'Mission is no longer active.'], 422);
+        }
+
         $data = $request->validate([
             'points'              => ['required', 'array', 'min:1', 'max:50'],
             'points.*.lat'        => ['required', 'numeric', 'between:-90,90'],
@@ -40,19 +46,33 @@ class MissionTrackController extends Controller
             'points.*.recorded_at'=> ['required', 'date'],
         ]);
 
-        $rows = array_map(fn ($p) => [
-            'mission_id'  => $mission->id,
-            'user_id'     => $userId,
-            'lat'         => $p['lat'],
-            'lng'         => $p['lng'],
-            'altitude'    => $p['altitude'] ?? null,
-            'speed'       => $p['speed'] ?? null,
-            'heading'     => $p['heading'] ?? null,
-            'accuracy'    => $p['accuracy'] ?? null,
-            'recorded_at' => $p['recorded_at'],
-            'created_at'  => now(),
-            'updated_at'  => now(),
-        ], $data['points']);
+        // Clamp recorded_at into a sane window. A device clock that's skewed into
+        // the future (or a client injecting absurd timestamps) would otherwise
+        // poison the ordered track/debrief. Anything outside [now-1d, now] is
+        // pulled back to now rather than dropped, so a slightly-off clock never
+        // loses a legit point.
+        $now    = now();
+        $floor  = $now->copy()->subDay();
+        $rows = array_map(function ($p) use ($mission, $userId, $now, $floor) {
+            $rec = \Illuminate\Support\Carbon::parse($p['recorded_at']);
+            if ($rec->greaterThan($now) || $rec->lessThan($floor)) {
+                $rec = $now;
+            }
+
+            return [
+                'mission_id'  => $mission->id,
+                'user_id'     => $userId,
+                'lat'         => $p['lat'],
+                'lng'         => $p['lng'],
+                'altitude'    => $p['altitude'] ?? null,
+                'speed'       => $p['speed'] ?? null,
+                'heading'     => $p['heading'] ?? null,
+                'accuracy'    => $p['accuracy'] ?? null,
+                'recorded_at' => $rec,
+                'created_at'  => $now,
+                'updated_at'  => $now,
+            ];
+        }, $data['points']);
 
         MissionTrack::insert($rows);
 

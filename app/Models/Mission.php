@@ -80,10 +80,18 @@ class Mission extends Model
             return 'owner';
         }
 
-        $collab = $this->collaborators()
-            ->where('user_id', $userId)
-            ->where('status', 'accepted')
-            ->first();
+        // Prefer the eager-loaded collaborators collection when the caller has
+        // already loaded it (e.g. the mission list) so we don't fire one query
+        // per mission. When it isn't loaded the query path is byte-identical to
+        // before, so every existing caller behaves exactly as it did.
+        $collab = $this->relationLoaded('collaborators')
+            ? $this->collaborators->first(
+                fn ($c) => (int) $c->user_id === (int) $userId && $c->status === 'accepted'
+            )
+            : $this->collaborators()
+                ->where('user_id', $userId)
+                ->where('status', 'accepted')
+                ->first();
 
         if ($collab) {
             return $collab->role;
@@ -207,8 +215,24 @@ class Mission extends Model
             $conversation->update(['name' => $title]);
         }
 
-        // Keep the group roster aligned with mission membership.
-        $conversation->participants()->sync($this->participantUserIds());
+        // Keep the group roster aligned with mission membership — but only WRITE
+        // when it actually differs. This method runs on plain GET loads (the chat
+        // list and the mission Comms tab), so an unconditional sync() would issue
+        // pivot writes on every read (write amplification + a REST/caching
+        // hazard). Comparing first makes the steady state a single read.
+        $desired = $this->participantUserIds();
+        sort($desired);
+
+        $current = $conversation->participants()
+            ->pluck('users.id')
+            ->map(fn ($id) => (int) $id)
+            ->sort()
+            ->values()
+            ->all();
+
+        if ($current !== $desired) {
+            $conversation->participants()->sync($desired);
+        }
 
         return $conversation;
     }

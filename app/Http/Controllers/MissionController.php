@@ -22,6 +22,9 @@ class MissionController extends Controller
         $teamIds = TeamMember::where('user_id', $userId)->pluck('team_id');
 
         $missions = Mission::query()
+            // Eager-load what present()/roleFor() need so the list isn't N+1
+            // (one collaborators + one linked-team query per mission otherwise).
+            ->with(['collaborators', 'linkedTeam' => fn ($q) => $q->withCount('members')])
             ->where('owner_id', $userId)
             ->orWhereHas('collaborators', function ($q) use ($userId) {
                 $q->where('user_id', $userId)->where('status', 'accepted');
@@ -119,6 +122,19 @@ class MissionController extends Controller
             abort(403, 'Only the mission owner or admin can link a team');
         }
 
+        // IDOR guard: a `exists:teams,id` rule only proves the team exists, not
+        // that it's the actor's. Linking an arbitrary team would silently grant
+        // that team's members viewer access to this mission and expose the
+        // mission to them — so only a team the actor OWNS may be linked.
+        if (!empty($data['linked_team_id'])) {
+            $team = \App\Models\Team::find($data['linked_team_id']);
+            if (!$team || !$team->isOwnedBy($userId)) {
+                return response()->json([
+                    'error' => 'Je kunt alleen een eigen team aan een missie koppelen.',
+                ], 422);
+            }
+        }
+
         $mission->fill($data);
         $mission->save();
 
@@ -149,16 +165,20 @@ class MissionController extends Controller
     {
         $role = $mission->roleFor($userId);
 
-        // Linked team summary (id, name, color, member count)
+        // Linked team summary (id, name, color, member count). Use the
+        // eager-loaded relation when present (mission list) to avoid a per-row
+        // query; fall back to a direct lookup for the single-mission path.
         $linkedTeam = null;
         if ($mission->linked_team_id) {
-            $team = $mission->linkedTeam()->withCount('members')->first();
+            $team = $mission->relationLoaded('linkedTeam')
+                ? $mission->linkedTeam
+                : $mission->linkedTeam()->withCount('members')->first();
             if ($team) {
                 $linkedTeam = [
                     'id'            => $team->id,
                     'name'          => $team->name,
                     'color'         => $team->color,
-                    'members_count' => $team->members_count,
+                    'members_count' => $team->members_count ?? $team->members()->count(),
                 ];
             }
         }

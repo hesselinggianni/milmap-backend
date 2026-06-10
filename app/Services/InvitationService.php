@@ -150,15 +150,21 @@ class InvitationService
                 $c = MissionCollaborator::where('mission_id', $resource->id)
                     ->where('user_id', $user->id)->first();
                 if (! $c) {
-                    MissionCollaborator::create([
-                        'mission_id'  => $resource->id,
-                        'user_id'     => $user->id,
-                        'added_by'    => $invite->invited_by,
-                        'role'        => $role,
-                        'status'      => 'accepted',
-                        'invited_at'  => $invite->created_at,
-                        'accepted_at' => now(),
-                    ]);
+                    try {
+                        MissionCollaborator::create([
+                            'mission_id'  => $resource->id,
+                            'user_id'     => $user->id,
+                            'added_by'    => $invite->invited_by,
+                            'role'        => $role,
+                            'status'      => 'accepted',
+                            'invited_at'  => $invite->created_at,
+                            'accepted_at' => now(),
+                        ]);
+                    } catch (\Illuminate\Database\QueryException $e) {
+                        // Raced with a concurrent accept of the same invite — the
+                        // row now exists, which is the intended outcome; ignore
+                        // the unique(mission_id,user_id) violation.
+                    }
                 } elseif ($c->status !== 'accepted') {
                     $c->update(['status' => 'accepted', 'accepted_at' => now()]);
                 }
@@ -168,19 +174,25 @@ class InvitationService
                 $c = MapCollaborator::where('map_id', $resource->id)
                     ->where('user_id', $user->id)->first();
                 if (! $c) {
-                    $c = MapCollaborator::create([
-                        'map_id'      => $resource->id,
-                        'user_id'     => $user->id,
-                        'added_by'    => $invite->invited_by,
-                        'role'        => $role,
-                        'status'      => 'accepted',
-                        'invited_at'  => $invite->created_at,
-                        'accepted_at' => now(),
-                    ]);
                     try {
-                        broadcast(new MapCollaboratorAdded($c))->toOthers();
-                    } catch (\Throwable $e) {
-                        Log::warning('Kon MapCollaboratorAdded niet broadcasten', ['error' => $e->getMessage()]);
+                        $c = MapCollaborator::create([
+                            'map_id'      => $resource->id,
+                            'user_id'     => $user->id,
+                            'added_by'    => $invite->invited_by,
+                            'role'        => $role,
+                            'status'      => 'accepted',
+                            'invited_at'  => $invite->created_at,
+                            'accepted_at' => now(),
+                        ]);
+                        try {
+                            broadcast(new MapCollaboratorAdded($c))->toOthers();
+                        } catch (\Throwable $e) {
+                            Log::warning('Kon MapCollaboratorAdded niet broadcasten', ['error' => $e->getMessage()]);
+                        }
+                    } catch (\Illuminate\Database\QueryException $e) {
+                        // Raced with a concurrent accept of the same invite — the
+                        // row now exists, which is the intended outcome; ignore
+                        // the unique(map_id,user_id) violation.
                     }
                 } elseif ($c->status !== 'accepted') {
                     $c->update(['status' => 'accepted', 'accepted_at' => now()]);

@@ -45,7 +45,8 @@ use App\Http\Controllers\MissionCommsController;
 /* Auth group */
 
 Route::prefix('v1')->middleware(['api'])->group(function () {
-    Route::post('/register', [RegisterController::class, 'store']);
+    Route::post('/register', [RegisterController::class, 'store'])
+        ->middleware('throttle:10,1');
     // ── Client-side error reporting (no auth required) ───────────
     Route::post('/client-errors', [ClientErrorController::class, 'store'])
         ->middleware('throttle:30,1');
@@ -53,8 +54,10 @@ Route::prefix('v1')->middleware(['api'])->group(function () {
     Route::post('/logout', [LogoutController::class, 'destroy'])->middleware('auth:sanctum');
     Route::post('/logout-all', [LogoutController::class, 'logoutFromAllDevices'])->middleware('auth:sanctum');
 
-    Route::post('/password/reset-link', [PasswordResetController::class, 'sendResetLink']);
-    Route::post('/password/reset', [PasswordResetController::class, 'resetPassword']);
+    Route::post('/password/reset-link', [PasswordResetController::class, 'sendResetLink'])
+        ->middleware('throttle:6,1');
+    Route::post('/password/reset', [PasswordResetController::class, 'resetPassword'])
+        ->middleware('throttle:10,1');
 
     // Admin authentication (public endpoints)
     Route::post('/admin/request-code', [AdminAuthController::class, 'requestCode']);
@@ -80,7 +83,8 @@ Route::prefix('v1')->middleware(['api'])->group(function () {
     Route::get('/billing/pricing', [BillingController::class, 'pricing']);
 
     // Guest checkout — public, maakt account aan als nodig
-    Route::post('/billing/guest-checkout', [BillingController::class, 'guestCheckout']);
+    Route::post('/billing/guest-checkout', [BillingController::class, 'guestCheckout'])
+        ->middleware('throttle:10,1');
 
     // Check of er al een account bestaat met dit e-mailadres (vóór guest-checkout).
     // Rate-limited om enumeratie af te remmen.
@@ -263,10 +267,12 @@ Route::prefix('v1')->middleware(['api'])->group(function () {
         Route::post('/chat/attachments', [ChatAttachmentController::class, 'store']);
 
         // Chat invite link (for e-mails without an account yet)
-        Route::post('/chat/invite', [ChatInviteController::class, 'store']);
+        Route::post('/chat/invite', [ChatInviteController::class, 'store'])
+            ->middleware('throttle:10,1');
 
         // Chat connection requests (existing accounts must accept first)
-        Route::post('/chat/requests', [ChatRequestController::class, 'store']);
+        Route::post('/chat/requests', [ChatRequestController::class, 'store'])
+            ->middleware('throttle:20,1');
         Route::get('/chat/requests/incoming', [ChatRequestController::class, 'incoming']);
         // Outgoing pending connections (requests + e-mail invites) → "pending" chats
         Route::get('/chat/pending', [ChatRequestController::class, 'pending']);

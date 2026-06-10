@@ -71,6 +71,19 @@ class ChatRequestController extends Controller
             return response()->json(['status' => 'connected', 'conversation_id' => $cid]);
         }
 
+        // The recipient already declined a request from me → do NOT resurrect it
+        // to 'pending' and do NOT notify again. Re-flipping would let a blocked
+        // requester re-spam someone who declined them. We silently treat it as a
+        // no-op that looks identical to a fresh "requested" response, so the
+        // decline is never leaked back to the requester.
+        $declined = ChatRequest::where('requester_id', $me)
+            ->where('recipient_id', $other)
+            ->where('status', 'declined')
+            ->first();
+        if ($declined) {
+            return response()->json(['status' => 'requested', 'request_id' => $declined->id]);
+        }
+
         // Otherwise create / refresh a pending outgoing request and notify.
         $req = ChatRequest::updateOrCreate(
             ['requester_id' => $me, 'recipient_id' => $other],

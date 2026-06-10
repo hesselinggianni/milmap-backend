@@ -85,6 +85,19 @@ class ConversationController extends Controller
             ]);
         }
 
+        // Connected-gate: a direct conversation may only be *opened* with someone
+        // you're already connected to — a mission/map teammate, an existing
+        // contact, or someone whose chat request was accepted. Strangers must go
+        // through the request flow (POST /chat/requests) first; otherwise this
+        // endpoint would let anyone DM anyone by guessing a user_id, bypassing the
+        // accept/decline gate entirely.
+        if (! $this->alreadyConnected($me, $other)) {
+            return response()->json([
+                'message'       => 'Stuur eerst een chatverzoek voordat je een gesprek kunt starten.',
+                'needs_request' => true,
+            ], 403);
+        }
+
         $conversation = Conversation::create([
             'type'       => 'direct',
             'created_by' => $me,
@@ -95,6 +108,35 @@ class ConversationController extends Controller
         return response()->json([
             'conversation' => $this->present($conversation, $me),
         ], 201);
+    }
+
+    /**
+     * Are these two users already connected — i.e. allowed to open a direct
+     * conversation without sending a chat request first?
+     *
+     * Connected means EITHER they already share at least one conversation (a
+     * mission/map group puts teammates in the same channel; an existing direct
+     * chat obviously counts), OR there's an accepted chat request between them in
+     * either direction. Strangers match neither and must use the request flow.
+     */
+    protected function alreadyConnected(int $a, int $b): bool
+    {
+        $shareConversation = DB::table('conversation_user as cu1')
+            ->join('conversation_user as cu2', 'cu1.conversation_id', '=', 'cu2.conversation_id')
+            ->where('cu1.user_id', $a)
+            ->where('cu2.user_id', $b)
+            ->exists();
+
+        if ($shareConversation) {
+            return true;
+        }
+
+        return \App\Models\ChatRequest::where('status', 'accepted')
+            ->where(function ($q) use ($a, $b) {
+                $q->where(fn ($w) => $w->where('requester_id', $a)->where('recipient_id', $b))
+                    ->orWhere(fn ($w) => $w->where('requester_id', $b)->where('recipient_id', $a));
+            })
+            ->exists();
     }
 
     /**
