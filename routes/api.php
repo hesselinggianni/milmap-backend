@@ -94,7 +94,7 @@ Route::prefix('v1')->middleware(['api'])->group(function () {
 
 
 Route::prefix('v1')->middleware(['api'])->group(function () {
-    Route::middleware(['auth:sanctum', \App\Http\Middleware\TrackLastSeen::class])->group(function () {
+    Route::middleware(['auth:sanctum', \App\Http\Middleware\TrackLastSeen::class, \App\Http\Middleware\EnsureNotViewOnly::class])->group(function () {
 
         /* User group */
 
