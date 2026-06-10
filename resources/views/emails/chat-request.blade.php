@@ -26,8 +26,8 @@
   <div style="height:1px;background:#1e293b;margin:0 0 24px;"></div>
 
   <p style="margin:0 0 24px;font-size:14px;line-height:1.7;color:#cbd5e1;">
-    <strong style="color:#f8fafc;">{{ $requesterName }}</strong> heeft je een chatverzoek gestuurd op het
-    Milmap Training Platform. Open de app en <strong style="color:#f8fafc;">accepteer</strong> het verzoek om
+    <strong style="color:#f8fafc;">{{ $requesterName }}</strong> heeft je een chatverzoek gestuurd op
+    Milmap. Open de app en <strong style="color:#f8fafc;">accepteer</strong> het verzoek om
     end-to-end versleuteld met elkaar te chatten. Wil je dit liever niet? Dan kun je het verzoek gewoon
     <strong style="color:#f8fafc;">weigeren</strong> — er wordt dan geen gesprek geopend.
   </p>

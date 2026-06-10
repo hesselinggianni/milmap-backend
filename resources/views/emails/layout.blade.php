@@ -35,12 +35,6 @@
                       <path d="M85.7754 144.447L0.108852 0H51.2693L90.0206 64.2227L120.499 11.9737V84.6869L85.7754 144.447ZM127.575 144.447V0H175.687V144.447H127.575ZM0 144.447V13.3888L44.9559 88.8233V144.447H0Z" fill="#ffffff"/>
                     </svg>
                   </td>
-                  <td align="right" style="vertical-align:middle;">
-                    <span style="font-size:9.5px;font-weight:700;letter-spacing:0.12em;
-                                 color:#64748b;text-transform:uppercase;">
-                      Training Platform
-                    </span>
-                  </td>
                 </tr>
               </table>
             </td>
@@ -60,7 +54,7 @@
                 Milmap
               </p>
               <p style="margin:0;font-size:11px;color:#64748b;line-height:1.5;">
-                Training Platform &nbsp;&middot;&nbsp; Alleen voor geautoriseerd trainingsgebruik
+                Alleen voor geautoriseerd trainingsgebruik
               </p>
             </td>
           </tr>

@@ -26,8 +26,8 @@
   <div style="height:1px;background:#1e293b;margin:0 0 24px;"></div>
 
   <p style="margin:0 0 24px;font-size:14px;line-height:1.7;color:#cbd5e1;">
-    <strong style="color:#f8fafc;">{{ $inviterName }}</strong> heeft je uitgenodigd om te chatten op het
-    Milmap Training Platform. Maak een gratis account aan met de knop hieronder, dan kun je direct
+    <strong style="color:#f8fafc;">{{ $inviterName }}</strong> heeft je uitgenodigd om te chatten op
+    Milmap. Maak een gratis account aan met de knop hieronder, dan kun je direct
     end-to-end versleuteld berichten sturen.
   </p>
 

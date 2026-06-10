@@ -30,7 +30,7 @@
   </p>
   <p style="margin:0 0 24px;font-size:14px;line-height:1.7;color:#cbd5e1;">
     U bent uitgenodigd om deel te nemen aan de workspace
-    <strong style="color:#f8fafc;">{{ $workspace->name }}</strong> op het Milmap Training Platform.
+    <strong style="color:#f8fafc;">{{ $workspace->name }}</strong> op Milmap.
     Klik op de knop hieronder om de uitnodiging te accepteren.
   </p>
 
