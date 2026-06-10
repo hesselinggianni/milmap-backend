@@ -1,13 +1,13 @@
 @extends('emails.layout')
 
-@section('title', 'Admin Login Code - MilMap')
+@section('title', 'Admin Login Code - Milmap')
 
 @section('body')
   <h2 style="margin:0 0 8px;font-size:20px;font-weight:700;color:#f8fafc;">
     🔐 Admin Login Code
   </h2>
   <p style="margin:0 0 24px;font-size:14px;color:#cbd5e1;line-height:1.6;">
-    Je hebt een inlogcode aangevraagd voor het MilMap admin dashboard. Gebruik de code hieronder om in te loggen:
+    Je hebt een inlogcode aangevraagd voor het Milmap admin dashboard. Gebruik de code hieronder om in te loggen:
   </p>
 
   <!-- Code box -->
@@ -52,7 +52,7 @@
           ⚠️ VEILIGHEID
         </p>
         <p style="margin:0;font-size:13px;color:#fcd34d;line-height:1.5;">
-          Deel deze code met niemand. MilMap medewerkers zullen je nooit om deze code vragen.
+          Deel deze code met niemand. Milmap medewerkers zullen je nooit om deze code vragen.
         </p>
       </td>
     </tr>

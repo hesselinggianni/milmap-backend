@@ -1,5 +1,5 @@
 @extends('emails.layout')
-@section('title', 'Chatuitnodiging — MilMap')
+@section('title', 'Chatuitnodiging — Milmap')
 @section('body')
 
   <table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0" style="margin-bottom:24px;">
@@ -27,7 +27,7 @@
 
   <p style="margin:0 0 24px;font-size:14px;line-height:1.7;color:#cbd5e1;">
     <strong style="color:#f8fafc;">{{ $inviterName }}</strong> heeft je uitgenodigd om te chatten op het
-    MilMap Training Platform. Maak een gratis account aan met de knop hieronder, dan kun je direct
+    Milmap Training Platform. Maak een gratis account aan met de knop hieronder, dan kun je direct
     end-to-end versleuteld berichten sturen.
   </p>
 

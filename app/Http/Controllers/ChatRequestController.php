@@ -154,7 +154,7 @@ class ChatRequestController extends Controller
                 return;
             }
             $me   = Auth::user();
-            $name = $me->full_name ?: ($me->first_name ?? 'Een MilMap-gebruiker');
+            $name = $me->full_name ?: ($me->first_name ?? 'Een Milmap-gebruiker');
             $url  = rtrim(config('app.frontend_url', 'https://app.milmap.nl'), '/') . '/hub';
 
             Mail::to($recipient->email)->send(new ChatRequestMail($name, $url));

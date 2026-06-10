@@ -24,7 +24,7 @@ class ChatInviteController extends Controller
         ]);
 
         $inviter     = Auth::user();
-        $inviterName = $inviter->full_name ?? $inviter->first_name ?? 'Een MilMap-gebruiker';
+        $inviterName = $inviter->full_name ?? $inviter->first_name ?? 'Een Milmap-gebruiker';
         $email       = mb_strtolower(trim($data['email']));
         $base        = rtrim(config('app.frontend_url', 'https://app.milmap.nl'), '/');
         $url         = $base . '/register?ref=chat&inviter=' . urlencode($inviterName)

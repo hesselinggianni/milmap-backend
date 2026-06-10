@@ -1,5 +1,5 @@
 @extends('emails.layout')
-@section('title', 'Plan je route — MilMap')
+@section('title', 'Plan je route — Milmap')
 @section('body')
 
   {{-- Intro --}}
@@ -7,10 +7,10 @@
     Product-update
   </p>
   <h1 style="margin:0 0 8px;font-size:23px;font-weight:700;color:#f8fafc;letter-spacing:-0.01em;line-height:1.2;">
-    Plan je route — nu in MilMap
+    Plan je route — nu in Milmap
   </h1>
   <p style="margin:0 0 22px;font-size:14px;line-height:1.7;color:#cbd5e1;">
-    Vanaf nu plan je complete routes binnen MilMap. Importeer je voorbereiding rechtstreeks uit
+    Vanaf nu plan je complete routes binnen Milmap. Importeer je voorbereiding rechtstreeks uit
     <strong style="color:#f8fafc;">TopoGPS</strong>, verfijn alles op de militaire kaart en exporteer naar je
     <strong style="color:#f8fafc;">Garmin</strong> om de route onderweg live te tracken — in één doorlopende workflow.
   </p>
@@ -45,7 +45,7 @@
                     text-align:center;line-height:34px;color:#2b7fff;font-size:14px;font-weight:700;">2</div>
       </td>
       <td style="vertical-align:top;padding-left:14px;">
-        <p style="margin:0 0 3px;font-size:14px;font-weight:700;color:#f8fafc;">Plan &amp; verfijn in MilMap</p>
+        <p style="margin:0 0 3px;font-size:14px;font-weight:700;color:#f8fafc;">Plan &amp; verfijn in Milmap</p>
         <p style="margin:0;font-size:13px;line-height:1.6;color:#94a3b8;">
           Stel je route samen, controleer afstanden en hoogtemeters en leg waypoints vast op de militaire kaart.
         </p>
@@ -90,7 +90,7 @@
         <a href="{{ $appUrl }}"
            style="display:inline-block;height:44px;padding:0 26px;line-height:44px;
                   font-size:14px;font-weight:600;color:#ffffff;text-decoration:none;border-radius:8px;">
-          Plan je route in MilMap
+          Plan je route in Milmap
         </a>
       </td>
     </tr>

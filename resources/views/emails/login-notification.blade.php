@@ -1,5 +1,5 @@
 @extends('emails.layout')
-@section('title', 'Nieuwe inlog gedetecteerd — MilMap')
+@section('title', 'Nieuwe inlog gedetecteerd — Milmap')
 @section('body')
 
   <table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0" style="margin-bottom:24px;">
@@ -20,7 +20,7 @@
         <h1 style="margin:0 0 3px;font-size:20px;font-weight:700;color:#f8fafc;letter-spacing:-0.01em;line-height:1.2;">
           Nieuwe inlog gedetecteerd
         </h1>
-        <p style="margin:0;font-size:13px;color:#94a3b8;">Er is ingelogd op uw MilMap account</p>
+        <p style="margin:0;font-size:13px;color:#94a3b8;">Er is ingelogd op uw Milmap account</p>
       </td>
     </tr>
   </table>

@@ -29,7 +29,7 @@ class AdminLoginCodeMail extends Mailable
     public function envelope(): Envelope
     {
         return new Envelope(
-            subject: 'Admin Login Code - MilMap',
+            subject: 'Admin Login Code - Milmap',
         );
     }
 

@@ -1,5 +1,5 @@
 @extends('emails.layout')
-@section('title', 'Uitnodiging — MilMap')
+@section('title', 'Uitnodiging — Milmap')
 @section('body')
 
   <table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0" style="margin-bottom:24px;">
@@ -30,7 +30,7 @@
   </p>
   <p style="margin:0 0 24px;font-size:14px;line-height:1.7;color:#cbd5e1;">
     <strong style="color:#f8fafc;">{{ $inviterName }}</strong> heeft je uitgenodigd om deel te nemen aan de
-    {{ $resourceLabel }} <strong style="color:#f8fafc;">{{ $resourceTitle }}</strong> op MilMap.
+    {{ $resourceLabel }} <strong style="color:#f8fafc;">{{ $resourceTitle }}</strong> op Milmap.
     Klik op de knop hieronder om de uitnodiging te bekijken en te accepteren.
   </p>
 
@@ -49,7 +49,7 @@
   @if($isNewUser)
     <p style="margin:0 0 20px;padding:12px 16px;background:#1a2433;border:1px solid #2a3a52;border-radius:8px;
               font-size:13px;color:#fcd34d;line-height:1.6;">
-      Je hebt nog geen MilMap-account. Via de knop hierboven maak je een
+      Je hebt nog geen Milmap-account. Via de knop hierboven maak je een
       <strong>gratis account met alleen-lezen toegang</strong> aan, zodat je direct kunt meekijken.
       Wil je zelf bewerken of eigen werkruimtes maken? Dan kun je later upgraden naar een betaald abonnement.
     </p>

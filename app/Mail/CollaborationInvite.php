@@ -25,7 +25,7 @@ class CollaborationInvite extends Mailable
     public function envelope(): Envelope
     {
         return new Envelope(
-            subject: "{$this->inviter->first_name} invited you to collaborate on a MilMap",
+            subject: "{$this->inviter->first_name} invited you to collaborate on a Milmap",
         );
     }
 

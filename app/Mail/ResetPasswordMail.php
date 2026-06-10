@@ -19,7 +19,7 @@ class ResetPasswordMail extends Mailable
 
     public function build()
     {
-        return $this->subject('Wachtwoord resetten — MilMap')
+        return $this->subject('Wachtwoord resetten — Milmap')
                     ->view('emails.reset-password')
                     ->with(['resetUrl' => $this->resetUrl]);
     }

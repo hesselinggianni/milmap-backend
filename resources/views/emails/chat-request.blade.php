@@ -1,5 +1,5 @@
 @extends('emails.layout')
-@section('title', 'Chatverzoek — MilMap')
+@section('title', 'Chatverzoek — Milmap')
 @section('body')
 
   <table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0" style="margin-bottom:24px;">
@@ -27,7 +27,7 @@
 
   <p style="margin:0 0 24px;font-size:14px;line-height:1.7;color:#cbd5e1;">
     <strong style="color:#f8fafc;">{{ $requesterName }}</strong> heeft je een chatverzoek gestuurd op het
-    MilMap Training Platform. Open de app en <strong style="color:#f8fafc;">accepteer</strong> het verzoek om
+    Milmap Training Platform. Open de app en <strong style="color:#f8fafc;">accepteer</strong> het verzoek om
     end-to-end versleuteld met elkaar te chatten. Wil je dit liever niet? Dan kun je het verzoek gewoon
     <strong style="color:#f8fafc;">weigeren</strong> — er wordt dan geen gesprek geopend.
   </p>
@@ -38,7 +38,7 @@
         <a href="{{ $url }}"
            style="display:inline-block;height:44px;padding:0 24px;line-height:44px;
                   font-size:14px;font-weight:600;color:#ffffff;text-decoration:none;border-radius:8px;">
-          Verzoek bekijken in MilMap
+          Verzoek bekijken in Milmap
         </a>
       </td>
     </tr>

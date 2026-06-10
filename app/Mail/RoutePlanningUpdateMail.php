@@ -25,7 +25,7 @@ class RoutePlanningUpdateMail extends Mailable
     public function envelope(): Envelope
     {
         return new Envelope(
-            subject: 'Nieuw in MilMap: plan je route — van TopoGPS tot Garmin',
+            subject: 'Nieuw in Milmap: plan je route — van TopoGPS tot Garmin',
         );
     }
 

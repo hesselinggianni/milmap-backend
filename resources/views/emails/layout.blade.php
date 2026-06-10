@@ -5,7 +5,7 @@
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <meta name="color-scheme" content="dark">
   <meta name="supported-color-schemes" content="dark">
-  <title>@yield('title', 'MilMap')</title>
+  <title>@yield('title', 'Milmap')</title>
 </head>
 <body style="margin:0;padding:0;background-color:#0a0f1a;font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,sans-serif;color:#cbd5e1;">
 
@@ -26,7 +26,7 @@
                 <tr>
                   <td style="vertical-align:middle;">
                     <svg xmlns="http://www.w3.org/2000/svg" width="132" height="22" viewBox="0 0 944 160"
-                         fill="none" style="display:inline-block;vertical-align:middle;" aria-label="MilMap">
+                         fill="none" style="display:inline-block;vertical-align:middle;" aria-label="Milmap">
                       <path d="M861.02 107.328V78.3735H895.961V28.8458H861.02V0H915.01L943.856 28.8458V78.3735L915.01 107.328H861.02ZM806.158 144.447V0H853.4V144.447H806.158Z" fill="#ffffff"/>
                       <path d="M744.656 144.447L738.561 128.663H691.319L701.333 100.035H727.458L688.815 0H735.731L793.313 144.447H744.656ZM631.995 144.447L683.59 6.53112L704.925 63.8961L678.474 144.447H631.995Z" fill="#ffffff"/>
                       <path d="M529.239 144.447L443.572 0H494.733L533.484 64.2227L563.963 11.9737V84.6869L529.239 144.447ZM571.038 144.447V0H619.151V144.447H571.038ZM443.463 144.447V13.3888L488.419 88.8233V144.447H443.463Z" fill="#ffffff"/>
@@ -56,8 +56,8 @@
           <!-- Footer -->
           <tr>
             <td style="background-color:#01163d;border-top:1px solid #1e293b;padding:18px 24px;text-align:center;">
-              <p style="margin:0 0 4px;font-size:12px;font-weight:700;color:#94a3b8;letter-spacing:0.02em;">
-                Mil<span style="color:#2b7fff;">Map</span>
+              <p style="margin:0 0 4px;font-size:12px;font-weight:700;color:#cbd5e1;letter-spacing:0.02em;">
+                Milmap
               </p>
               <p style="margin:0;font-size:11px;color:#64748b;line-height:1.5;">
                 Training Platform &nbsp;&middot;&nbsp; Alleen voor geautoriseerd trainingsgebruik
@@ -67,7 +67,7 @@
 
         </table>
 
-        <p style="margin:16px 0 0;font-size:11px;color:#3f4a5a;">&copy; {{ date('Y') }} MilMap</p>
+        <p style="margin:16px 0 0;font-size:11px;color:#3f4a5a;">&copy; {{ date('Y') }} Milmap</p>
 
       </td>
     </tr>

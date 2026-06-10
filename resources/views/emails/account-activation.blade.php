@@ -1,5 +1,5 @@
 @extends('emails.layout')
-@section('title', 'Welkom bij MilMap — Stel je wachtwoord in')
+@section('title', 'Welkom bij Milmap — Stel je wachtwoord in')
 @section('body')
 
   {{-- Header row --}}
@@ -20,7 +20,7 @@
         <h1 style="margin:0 0 3px;font-size:20px;font-weight:700;color:#f8fafc;letter-spacing:-0.01em;line-height:1.2;">
           Betaling geslaagd!
         </h1>
-        <p style="margin:0;font-size:13px;color:#94a3b8;">Welkom bij MilMap {{ $planLabel }}</p>
+        <p style="margin:0;font-size:13px;color:#94a3b8;">Welkom bij Milmap {{ $planLabel }}</p>
       </td>
     </tr>
   </table>
@@ -35,7 +35,7 @@
   @endif
 
   <p style="margin:0 0 20px;font-size:14px;line-height:1.7;color:#cbd5e1;">
-    Je betaling is bevestigd en je <strong style="color:#f8fafc;">MilMap {{ $planLabel }}</strong>-abonnement
+    Je betaling is bevestigd en je <strong style="color:#f8fafc;">Milmap {{ $planLabel }}</strong>-abonnement
     is direct actief. Er is een account aangemaakt op dit e-mailadres.
   </p>
 
@@ -52,7 +52,7 @@
               </svg>
             </td>
             <td>
-              <p style="margin:0;font-size:13px;font-weight:700;color:#2b7fff;">Actief abonnement: MilMap {{ $planLabel }}</p>
+              <p style="margin:0;font-size:13px;font-weight:700;color:#2b7fff;">Actief abonnement: Milmap {{ $planLabel }}</p>
             </td>
           </tr>
         </table>
