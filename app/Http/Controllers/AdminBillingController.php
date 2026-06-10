@@ -4,7 +4,6 @@ namespace App\Http\Controllers;
 
 use App\Models\Setting;
 use Illuminate\Http\Request;
-use Illuminate\Support\Facades\Cache;
 use Stripe\StripeClient;
 use Throwable;
 
@@ -148,12 +147,27 @@ class AdminBillingController extends Controller
 
         Setting::put(self::SETTING_KEY, $clean);
 
-        // Drop the cached public pricing so the new mapping shows up right away.
-        Cache::forget('billing_pricing_v1');
+        // Nieuwe koppeling gekozen → de live-prijscache is verouderd. Leeg hem
+        // (via de centrale helper zodat de cache-key op één plek staat) zodat
+        // checkout/account direct de zojuist gekozen prijzen tonen.
+        BillingController::forgetPricingCache();
 
         return response()->json([
             'ok'  => true,
             'map' => self::effectiveMap(),
         ]);
+    }
+
+    /**
+     * POST /api/v1/admin/billing/flush-cache
+     * Leeg handmatig de live-prijscache. Handig wanneer een admin het bedrag van
+     * een prijs in Stripe heeft aangepast zonder de koppeling te wijzigen — de
+     * volgende aanvraag haalt de actuele bedragen dan opnieuw bij Stripe op.
+     */
+    public function flushPricingCache()
+    {
+        BillingController::forgetPricingCache();
+
+        return response()->json(['ok' => true]);
     }
 }

@@ -21,6 +21,12 @@ class BillingController extends Controller
 {
     private StripeClient $stripe;
 
+    // Cache key voor de live Stripe-prijzen. De cache wordt NIET op een timer
+    // verlopen: hij blijft staan tot een admin nieuwe prijzen koppelt (savePriceMap)
+    // of de cache handmatig leegt in de admin-omgeving. Zo hammeren we Stripe niet
+    // en blijven de getoonde bedragen stabiel tot de beheerder ze bewust ververst.
+    public const PRICING_CACHE_KEY = 'billing_pricing_v1';
+
     // ── Plan registry ──────────────────────────────────────────────
     // Map our plan keys to Stripe Price IDs. The admin can override the .env
     // defaults by selecting products in the admin UI (stored in settings);
@@ -63,54 +69,12 @@ class BillingController extends Controller
     public function pricing()
     {
         if (! config('billing.stripe_secret')) {
-            // Stripe not configured → no live data; the client keeps its own
-            // static fallback prices.
+            // Stripe not configured → no live data; the client toont '…'.
             return response()->json(['plans' => (object) []]);
         }
 
         try {
-            $plans = Cache::remember('billing_pricing_v1', 300, function () {
-                $map = AdminBillingController::effectiveMap();
-                $out = [];
-
-                foreach ($map as $key => $priceId) {
-                    if (! $priceId) {
-                        continue;
-                    }
-
-                    try {
-                        $price = $this->stripe->prices->retrieve(
-                            $priceId,
-                            ['expand' => ['product']]
-                        );
-                    } catch (\Throwable $e) {
-                        // A single broken/deleted price must not nuke the whole
-                        // response — just skip it and let the client fall back.
-                        Log::warning('billing.pricing: kon price niet laden', [
-                            'plan'  => $key,
-                            'price' => $priceId,
-                            'error' => $e->getMessage(),
-                        ]);
-                        continue;
-                    }
-
-                    $product = $price->product ?? null;
-
-                    $out[$key] = [
-                        'plan'         => $key,
-                        'price_id'     => $price->id,
-                        'product_id'   => is_object($product)
-                            ? ($product->id ?? null)
-                            : (is_string($product) ? $product : null),
-                        'product_name' => is_object($product) ? ($product->name ?? '') : '',
-                        'amount'       => $price->unit_amount,                 // in cents
-                        'currency'     => strtoupper((string) $price->currency),
-                        'interval'     => $price->recurring->interval ?? null, // month | year | null
-                    ];
-                }
-
-                return $out;
-            });
+            $plans = $this->cachedPricing();
         } catch (\Throwable $e) {
             Log::warning('billing.pricing: onverwachte fout', ['error' => $e->getMessage()]);
 
@@ -118,6 +82,87 @@ class BillingController extends Controller
         }
 
         return response()->json(['plans' => empty($plans) ? (object) [] : $plans]);
+    }
+
+    /**
+     * De gecachete Stripe-prijzen per plan-slot. De cache verloopt NIET vanzelf
+     * (geen TTL): hij blijft staan tot een admin nieuwe prijzen koppelt of de
+     * cache handmatig leegt. Een mislukte/lege ophaalpoging wordt bewust NIET
+     * gecachet, zodat een tijdelijke Stripe-storing nooit een lege prijslijst
+     * "vastzet" tot de eerstvolgende handmatige flush.
+     *
+     * @return array<string, array<string, mixed>>  [planKey => priceData]
+     */
+    private function cachedPricing(): array
+    {
+        $cached = Cache::get(self::PRICING_CACHE_KEY);
+        if (is_array($cached) && ! empty($cached)) {
+            return $cached;
+        }
+
+        $fresh = $this->buildPricing();
+        if (! empty($fresh)) {
+            Cache::forever(self::PRICING_CACHE_KEY, $fresh);
+        }
+
+        return $fresh;
+    }
+
+    /**
+     * Haal de actuele prijzen rechtstreeks bij Stripe op voor elke plan-slot uit
+     * de admin-mapping (override → .env default). Dit is de enige plek die Stripe
+     * raakt; alle endpoints lezen via cachedPricing() zodat we Stripe niet
+     * onnodig bevragen.
+     *
+     * @return array<string, array<string, mixed>>
+     */
+    private function buildPricing(): array
+    {
+        $map = AdminBillingController::effectiveMap();
+        $out = [];
+
+        foreach ($map as $key => $priceId) {
+            if (! $priceId) {
+                continue;
+            }
+
+            try {
+                $price = $this->stripe->prices->retrieve($priceId, ['expand' => ['product']]);
+            } catch (\Throwable $e) {
+                // A single broken/deleted price must not nuke the whole response.
+                Log::warning('billing.pricing: kon price niet laden', [
+                    'plan'  => $key,
+                    'price' => $priceId,
+                    'error' => $e->getMessage(),
+                ]);
+                continue;
+            }
+
+            $product = $price->product ?? null;
+
+            $out[$key] = [
+                'plan'         => $key,
+                'price_id'     => $price->id,
+                'product_id'   => is_object($product)
+                    ? ($product->id ?? null)
+                    : (is_string($product) ? $product : null),
+                'product_name' => is_object($product) ? ($product->name ?? '') : '',
+                'amount'       => $price->unit_amount,                 // in cents
+                'currency'     => strtoupper((string) $price->currency),
+                'interval'     => $price->recurring->interval ?? null, // month | year | null
+            ];
+        }
+
+        return $out;
+    }
+
+    /**
+     * Leeg de prijscache. Aangeroepen wanneer een admin nieuwe prijzen koppelt
+     * (AdminBillingController::savePriceMap) of de cache handmatig ververst.
+     */
+    public static function forgetPricingCache(): void
+    {
+        Cache::forget(self::PRICING_CACHE_KEY);
     }
 
     // ── POST /billing/guest-checkout ───────────────────────────────
@@ -589,7 +634,6 @@ class BillingController extends Controller
     // Selectable plans with LIVE prices from Stripe (never hardcoded).
     public function availablePlans()
     {
-        $map   = $this->plans(); // [planKey => priceId] (admin-configured)
         $names = [
             'pro_monthly'  => 'Pro',
             'pro_yearly'   => 'Pro',
@@ -597,25 +641,29 @@ class BillingController extends Controller
             'team_yearly'  => 'Team',
         ];
 
-        $out = [];
-        foreach ($map as $key => $priceId) {
-            if (! $priceId) {
-                continue;
-            }
-            try {
-                $price = $this->stripe->prices->retrieve($priceId, ['expand' => ['product']]);
-            } catch (\Throwable $e) {
-                Log::warning('Stripe-prijs ophalen mislukt', ['plan' => $key, 'price' => $priceId, 'error' => $e->getMessage()]);
-                continue;
-            }
+        if (! config('billing.stripe_secret')) {
+            return response()->json(['plans' => []]);
+        }
 
+        try {
+            // Lees uit dezelfde gecachete bron als /billing/pricing zodat de
+            // bedragen consistent zijn en Stripe niet per request wordt bevraagd.
+            $pricing = $this->cachedPricing();
+        } catch (\Throwable $e) {
+            Log::warning('billing.availablePlans: prijzen ophalen mislukt', ['error' => $e->getMessage()]);
+
+            return response()->json(['plans' => []]);
+        }
+
+        $out = [];
+        foreach ($pricing as $key => $p) {
             $out[] = [
                 'key'      => $key,
-                'name'     => is_object($price->product) ? ($price->product->name ?? ($names[$key] ?? 'Plan')) : ($names[$key] ?? 'Plan'),
-                'price_id' => $price->id,
-                'amount'   => $price->unit_amount,                 // cents
-                'currency' => strtoupper($price->currency ?? 'eur'),
-                'interval' => $price->recurring->interval ?? null, // month | year
+                'name'     => $p['product_name'] ?: ($names[$key] ?? 'Plan'),
+                'price_id' => $p['price_id'],
+                'amount'   => $p['amount'],                 // cents
+                'currency' => $p['currency'] ?: 'EUR',
+                'interval' => $p['interval'],               // month | year
             ];
         }
 

@@ -297,6 +297,7 @@ Route::prefix('v1')->middleware(['api'])->group(function () {
             Route::get('/admin/billing/prices', [AdminBillingController::class, 'prices']);
             Route::get('/admin/billing/price-map', [AdminBillingController::class, 'priceMap']);
             Route::put('/admin/billing/price-map', [AdminBillingController::class, 'savePriceMap']);
+            Route::post('/admin/billing/flush-cache', [AdminBillingController::class, 'flushPricingCache']);
             Route::get('/admin/users/{userId}', [AdminController::class, 'getUser']);
             Route::delete('/admin/users/{userId}', [AdminController::class, 'deleteUser']);
             Route::patch('/admin/users/{userId}/admin-status', [AdminController::class, 'toggleAdminStatus']);
