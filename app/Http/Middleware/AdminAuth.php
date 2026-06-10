@@ -32,6 +32,19 @@ class AdminAuth
             ], 403);
         }
 
+        // Defense-in-depth: the admin area may only be reached with a token that
+        // was minted through the admin login flow (scoped 'admin'), not with a
+        // regular app session token — so a leaked/misused user token can't touch
+        // admin endpoints even if that user happens to be an admin. Legacy
+        // unscoped ['*'] tokens and the stateful SPA TransientToken both still
+        // satisfy tokenCan(), so this adds no breakage for existing sessions.
+        if (!Auth::user()->tokenCan('admin')) {
+            return response()->json([
+                'message' => 'Forbidden - Admin token required',
+                'error' => 'admin_token_required'
+            ], 403);
+        }
+
         return $next($request);
     }
 }

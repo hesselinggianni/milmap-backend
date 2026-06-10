@@ -22,8 +22,20 @@ class LoginController extends Controller
             'password' => 'required',
         ]);
 
-        $key = 'login-attempts:' . $request->ip();
-        if (RateLimiter::tooManyAttempts($key, 5)) {
+        // Two-dimensional throttle. A pure per-IP limit has two failure modes:
+        //   • shared-NAT lockout — one bad actor behind a carrier-grade NAT /
+        //     office gateway locks out every other legitimate user on that IP;
+        //   • distributed bypass — an attacker rotating IPs brute-forces a
+        //     single account without ever tripping the per-IP counter.
+        // So we keep a strict per-ACCOUNT counter (catches IP rotation against
+        // one email) plus a looser per-IP counter (catches one host spraying
+        // many accounts) and block when EITHER trips. The per-account limit is
+        // the tight one, so honest users sharing a NAT aren't punished for a
+        // neighbour's failures.
+        $emailKey = 'login-attempts:email:' . sha1(mb_strtolower($credentials['email']));
+        $ipKey    = 'login-attempts:ip:' . $request->ip();
+
+        if (RateLimiter::tooManyAttempts($emailKey, 5) || RateLimiter::tooManyAttempts($ipKey, 20)) {
             throw ValidationException::withMessages([
                 'email' => 'Too many login attempts. Please try again in a few minutes.',
             ]);
@@ -32,15 +44,20 @@ class LoginController extends Controller
         $user = User::where('email', $credentials['email'])->first();
 
         if (!$user || !Hash::check($credentials['password'], $user->password)) {
-            RateLimiter::hit($key);
+            RateLimiter::hit($emailKey, 900); // 15-min decay
+            RateLimiter::hit($ipKey, 900);
             throw ValidationException::withMessages([
                 'email' => 'The provided credentials are incorrect.',
             ]);
         }
 
-        RateLimiter::clear($key);
+        RateLimiter::clear($emailKey);
+        RateLimiter::clear($ipKey);
 
-        $token = $user->createToken('API Token')->plainTextToken;
+        // Scope regular-login tokens to the 'user' ability so they can never
+        // satisfy tokenCan('admin') — admin routes require a token minted via
+        // the admin login flow (see AdminAuth middleware).
+        $token = $user->createToken('API Token', ['user'])->plainTextToken;
 
         $this->sendLoginNotification($request, $user);
 

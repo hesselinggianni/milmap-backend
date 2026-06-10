@@ -124,8 +124,11 @@ class AdminAuthController extends Controller
             // Mark code as used
             $loginCode->markAsUsed();
 
-            // Create Sanctum token for admin
-            $token = $user->createToken('Admin Token')->plainTextToken;
+            // Create Sanctum token for admin, scoped to the 'admin' ability (plus
+            // 'user' so an admin can still use the regular app endpoints). The
+            // AdminAuth middleware requires tokenCan('admin'), so only tokens
+            // minted here can reach the admin area.
+            $token = $user->createToken('Admin Token', ['admin', 'user'])->plainTextToken;
 
             return response()->json([
                 'message' => 'Ingelogd als admin',
