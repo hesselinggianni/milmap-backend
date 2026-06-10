@@ -9,6 +9,7 @@ use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Auth;
 use Illuminate\Support\Facades\Log;
 use Illuminate\Support\Facades\Mail;
+use Illuminate\Support\Facades\RateLimiter;
 
 class ChatInviteController extends Controller
 {
@@ -44,18 +45,28 @@ class ChatInviteController extends Controller
             }
         }
 
+        // Anti-spam: stuur de uitnodigingsmail hoogstens 1× per uur naar
+        // hetzelfde adres. Een mislukte verzending verbruikt de limiet niet,
+        // zodat een herkansing mogelijk blijft.
+        $throttleKey = 'chat-mail:' . sha1($email);
+        $throttled   = RateLimiter::tooManyAttempts($throttleKey, 1);
+
         $emailed = false;
-        try {
-            Mail::to($data['email'])->send(new ChatInviteMail($inviterName, $url));
-            $emailed = true;
-        } catch (\Throwable $e) {
-            // SMTP unreachable — the inviter can still copy/share the link.
-            Log::warning('[chat] invite email failed: ' . $e->getMessage());
+        if (! $throttled) {
+            try {
+                Mail::to($data['email'])->send(new ChatInviteMail($inviterName, $url));
+                $emailed = true;
+                RateLimiter::hit($throttleKey, 3600); // 1 uur
+            } catch (\Throwable $e) {
+                // SMTP unreachable — the inviter can still copy/share the link.
+                Log::warning('[chat] invite email failed: ' . $e->getMessage());
+            }
         }
 
         return response()->json([
-            'url'     => $url,
-            'emailed' => $emailed,
+            'url'       => $url,
+            'emailed'   => $emailed,
+            'throttled' => $throttled,
         ]);
     }
 }

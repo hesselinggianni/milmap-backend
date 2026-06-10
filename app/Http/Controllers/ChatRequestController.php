@@ -3,6 +3,7 @@
 namespace App\Http\Controllers;
 
 use App\Mail\ChatRequestMail;
+use App\Models\ChatInvite;
 use App\Models\ChatRequest;
 use App\Models\Conversation;
 use App\Models\User;
@@ -11,6 +12,7 @@ use Illuminate\Support\Facades\Auth;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Log;
 use Illuminate\Support\Facades\Mail;
+use Illuminate\Support\Facades\RateLimiter;
 
 /**
  * Chat connection requests between two existing accounts.
@@ -102,6 +104,51 @@ class ChatRequestController extends Controller
     }
 
     /**
+     * Outgoing, not-yet-answered chat connections of the authenticated user —
+     * both requests to existing accounts and e-mail invites for people without
+     * an account. The frontend shows these as "pending" chats so the inviter
+     * sees who they reached out to before it's accepted.
+     * GET /chat/pending
+     */
+    public function pending()
+    {
+        $me = Auth::id();
+
+        $requests = ChatRequest::where('requester_id', $me)
+            ->where('status', 'pending')
+            ->with(['recipient:id,first_name,last_name,email'])
+            ->latest()
+            ->get()
+            ->map(fn ($r) => [
+                'id'         => 'req:' . $r->id,
+                'kind'       => 'request',
+                'user_id'    => $r->recipient_id,
+                'name'       => $r->recipient?->full_name ?: ($r->recipient?->email ?? 'Onbekend'),
+                'email'      => $r->recipient?->email,
+                'created_at' => $r->created_at?->toIso8601String(),
+            ]);
+
+        $invites = ChatInvite::where('inviter_id', $me)
+            ->where('status', 'pending')
+            ->latest()
+            ->get()
+            ->map(fn ($i) => [
+                'id'         => 'inv:' . $i->id,
+                'kind'       => 'invite',
+                'user_id'    => null,
+                'name'       => $i->email,
+                'email'      => $i->email,
+                'created_at' => $i->created_at?->toIso8601String(),
+            ]);
+
+        $pending = $requests->concat($invites)
+            ->sortByDesc('created_at')
+            ->values();
+
+        return response()->json(['pending' => $pending]);
+    }
+
+    /**
      * Accept a chat request → open the direct conversation.
      * POST /chat/requests/{id}/accept
      */
@@ -153,11 +200,19 @@ class ChatRequestController extends Controller
             if (! $recipient || ! $recipient->email) {
                 return;
             }
+
+            // Anti-spam: hoogstens 1 chatverzoek-mail per uur naar hetzelfde adres.
+            $throttleKey = 'chat-mail:' . sha1(mb_strtolower($recipient->email));
+            if (RateLimiter::tooManyAttempts($throttleKey, 1)) {
+                return;
+            }
+
             $me   = Auth::user();
             $name = $me->full_name ?: ($me->first_name ?? 'Een Milmap-gebruiker');
             $url  = rtrim(config('app.frontend_url', 'https://app.milmap.nl'), '/') . '/hub';
 
             Mail::to($recipient->email)->send(new ChatRequestMail($name, $url));
+            RateLimiter::hit($throttleKey, 3600); // 1 uur
         } catch (\Throwable $e) {
             Log::warning('[chat] request email failed: ' . $e->getMessage());
         }

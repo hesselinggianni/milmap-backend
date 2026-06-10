@@ -268,6 +268,8 @@ Route::prefix('v1')->middleware(['api'])->group(function () {
         // Chat connection requests (existing accounts must accept first)
         Route::post('/chat/requests', [ChatRequestController::class, 'store']);
         Route::get('/chat/requests/incoming', [ChatRequestController::class, 'incoming']);
+        // Outgoing pending connections (requests + e-mail invites) → "pending" chats
+        Route::get('/chat/pending', [ChatRequestController::class, 'pending']);
         Route::post('/chat/requests/{id}/accept', [ChatRequestController::class, 'accept']);
         Route::post('/chat/requests/{id}/decline', [ChatRequestController::class, 'decline']);
 
