@@ -56,6 +56,7 @@ class User extends Authenticatable
             'trial_ends_at'     => 'datetime',
             'view_only'         => 'boolean',
             'last_seen_at'      => 'datetime',
+            'key_escrow_updated_at' => 'datetime',
         ];
     }
 
