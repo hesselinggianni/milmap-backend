@@ -22,8 +22,8 @@ class UserController extends Controller
 
     public function index()
     {
-        // Authorize the 'viewAny' policy method
-        // $this->authorize('viewAny', User::class);
+        // Admin-only: never expose the full user directory to regular accounts.
+        $this->authorize('viewAny', User::class);
 
         return response()->json($this->userService->getAllUsers(), 200);
     }
@@ -54,10 +54,9 @@ class UserController extends Controller
         // Fetch user data by ID
         $user = $this->userService->getUserById($id);
 
-        // // Authorize the 'view' policy method
-        // $this->authorize('view', $user);
+        // Self-or-admin: a user may only read their own full record.
+        $this->authorize('view', $user);
 
-      
         return response()->json($user, 200);
     } catch (ModelNotFoundException $e) {
         return response()->json(['message' => 'User not found'], 404);
@@ -70,26 +69,30 @@ class UserController extends Controller
         try {
             $user = $this->userService->getUserById($id);
 
-            // Authorize the 'update' policy method
-            // $this->authorize('update', $user);
+            // Self-or-admin: blocks the account-takeover IDOR (a logged-in user
+            // could otherwise rewrite anyone's email/password by id).
+            $this->authorize('update', $user);
 
-            $request->validate([               
+            $request->validate([
                 'email' => 'string|email|max:255|unique:users,email,' . $id,
                 'password' => 'string|min:8',
                 'language' => 'string|max:2',
                 'settings' => 'array',
-              
+
 
             ]);
 
-            $updatedUser = $this->userService->updateUser($id, $request->only([
-               
-                'email',
-                'password',
-                'language',
-                'settings'               
+            // Defense-in-depth: a non-admin editing their own record may only
+            // change low-risk preferences through this generic endpoint. Email
+            // and password changes must go through the dedicated self-service
+            // endpoints (/user/password verifies the current password first),
+            // so a hijacked session can't silently swap credentials here.
+            $isAdmin = (bool) (Auth::user()->is_admin ?? false);
+            $allowed = $isAdmin
+                ? ['email', 'password', 'language', 'settings']
+                : ['language', 'settings'];
 
-            ]));
+            $updatedUser = $this->userService->updateUser($id, $request->only($allowed));
             
             return response()->json(
                 [
@@ -110,8 +113,8 @@ class UserController extends Controller
         try {
             $user = $this->userService->getUserById($id);
 
-            // Authorize the 'delete' policy method
-            // $this->authorize('delete', $user);
+            // Self-or-admin: a user may delete only their own account.
+            $this->authorize('delete', $user);
 
             $this->userService->deleteUser($id);
 

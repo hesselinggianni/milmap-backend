@@ -47,8 +47,11 @@ class ChatInviteController extends Controller
 
         // Anti-spam: stuur de uitnodigingsmail hoogstens 1× per uur naar
         // hetzelfde adres. Een mislukte verzending verbruikt de limiet niet,
-        // zodat een herkansing mogelijk blijft.
-        $throttleKey = 'chat-mail:' . sha1($email);
+        // zodat een herkansing mogelijk blijft. Bewust op de ONTVANGER gescoped
+        // (productvereiste: "die persoon kan max. 1 mail per uur ontvangen") en
+        // met een eigen prefix, los van de chat-request-mail, zodat de twee
+        // kanalen elkaar nooit kunnen onderdrukken.
+        $throttleKey = 'chat-invite:' . sha1($email);
         $throttled   = RateLimiter::tooManyAttempts($throttleKey, 1);
 
         $emailed = false;

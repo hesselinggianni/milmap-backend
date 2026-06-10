@@ -69,9 +69,6 @@ Route::prefix('v1')->middleware(['api'])->group(function () {
     // Public contact tickets (no auth required)
     Route::post('/contact-tickets', [ContactTicketController::class, 'store']);
 
-    // Map collaboration invitations (public - no auth required for acceptance)
-    Route::post('/invitations/{token}/accept', [MapCollaboratorController::class, 'acceptInvitation']);
-
     // Invitation preview — the /invite/{token} page reads this before login/registration.
     Route::get('/invitations/token/{token}', [InvitationController::class, 'preview']);
 
@@ -123,6 +120,9 @@ Route::prefix('v1')->middleware(['api'])->group(function () {
         Route::get('/invitations/outgoing', [InvitationController::class, 'outgoing']);
         Route::post('/invitations/token/{token}/accept', [InvitationController::class, 'accept']);
         Route::post('/invitations/token/{token}/decline', [InvitationController::class, 'decline']);
+        // Legacy map-collaborator token accept (superseded by the flow above).
+        // Now authenticated + addressee-checked — was previously public.
+        Route::post('/invitations/{token}/accept', [MapCollaboratorController::class, 'acceptInvitation']);
         Route::delete('/invitations/{id}', [InvitationController::class, 'revoke']);
         Route::get('/activity/timeline', [InvitationController::class, 'timeline']);
 

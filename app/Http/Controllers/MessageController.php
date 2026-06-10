@@ -68,6 +68,34 @@ class MessageController extends Controller
             'type'            => ['nullable', 'in:text,location,mission,image,file,voice,poll,event,contact,medevac'],
         ]);
 
+        // SECURITY: validate the per-recipient ciphertext map against the
+        // conversation roster. Without this a client could (a) smuggle a group
+        // `ciphertexts` map into a 1-on-1, or (b) inject keys for user ids that
+        // are not participants. A group send addresses the CURRENT participants;
+        // a direct send must use ciphertext/ciphertext_self only. (Omitting a
+        // participant who has no public_key yet is allowed — they simply can't
+        // decrypt — so we reject only unknown/foreign keys, not a partial map.)
+        if (! empty($data['ciphertexts'])) {
+            if (! $conversation->isGroup()) {
+                return response()->json([
+                    'message' => 'ciphertexts is not allowed on a direct conversation.',
+                ], 422);
+            }
+
+            $participantIds = $conversation->participants()
+                ->pluck('users.id')
+                ->map(fn ($id) => (string) $id)
+                ->all();
+
+            foreach (array_keys($data['ciphertexts']) as $recipientId) {
+                if (! in_array((string) $recipientId, $participantIds, true)) {
+                    return response()->json([
+                        'message' => 'ciphertexts contains a user id that is not a participant.',
+                    ], 422);
+                }
+            }
+        }
+
         $message = Message::create([
             'conversation_id' => $conversation->id,
             'sender_id'       => $userId,

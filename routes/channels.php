@@ -45,25 +45,35 @@ Broadcast::channel('map.{mapId}', function ($user, $mapId) {
 
 /**
  * Live user location sharing channel
- * - Authenticated users: must be collaborator on the map
- * - Public shares: allowed without authentication
+ * - Owner and accepted collaborators only.
+ *
+ * SECURITY: live GPS positions are sensitive. The previous implementation
+ * returned true for ANY unauthenticated subscriber, so anyone who could guess a
+ * map id streamed every sharer's live location. We now require authentication
+ * plus map access (mirroring the `map.{mapId}` channel). A future public-share
+ * viewer must validate a MapShare token explicitly rather than being waved
+ * through unauthenticated.
  */
 Broadcast::channel('map.{mapId}.locations', function ($user, $mapId) {
-    // Find the map
-    $map = Map::find($mapId);
-
-    if (!$map) {
+    if (! $user) {
         return false;
     }
 
-    // If user is authenticated, check if they have access to the map
-    if ($user) {
-        return $map->users->contains($user->id);
+    $map = Map::find($mapId);
+    if (! $map) {
+        return false;
     }
 
-    // If user is not authenticated, allow access (for public share links)
-    // This allows guests viewing public share links to see live locations
-    return true;
+    // Owner has access.
+    if ($map->owner_id === $user->id) {
+        return true;
+    }
+
+    // Accepted collaborators have access.
+    return $map->collaborators()
+        ->where('user_id', $user->id)
+        ->where('status', 'accepted')
+        ->exists();
 });
 
 /**

@@ -201,8 +201,11 @@ class ChatRequestController extends Controller
                 return;
             }
 
-            // Anti-spam: hoogstens 1 chatverzoek-mail per uur naar hetzelfde adres.
-            $throttleKey = 'chat-mail:' . sha1(mb_strtolower($recipient->email));
+            // Anti-spam: hoogstens 1 chatverzoek-mail per uur naar hetzelfde
+            // adres (ontvanger-gescoped, eigen prefix los van de invite-mail).
+            // Het verzoek zelf staat los van deze mail in de Hub, dus de
+            // throttle beperkt alleen de herhaalde e-mailnotificatie.
+            $throttleKey = 'chat-request:' . sha1(mb_strtolower($recipient->email));
             if (RateLimiter::tooManyAttempts($throttleKey, 1)) {
                 return;
             }

@@ -259,6 +259,22 @@ class MapCollaboratorController extends Controller
             ], 422);
         }
 
+        // SECURITY: this endpoint was previously public — anyone holding or
+        // guessing a token could flip a pending collaboration to accepted with
+        // no addressee check. It now runs behind auth:sanctum and we verify the
+        // authenticated user is the exact account the invitation was issued to.
+        $userId = Auth::id();
+        if (! $userId) {
+            return response()->json([
+                'error' => 'You must be logged in to accept this invitation.',
+            ], 401);
+        }
+        if ((int) $collaboration->user_id !== (int) $userId) {
+            return response()->json([
+                'error' => 'This invitation is not addressed to your account.',
+            ], 403);
+        }
+
         // Accept the invitation
         $collaboration->accept();
 
