@@ -42,6 +42,20 @@ class ChatRequestController extends Controller
             return response()->json(['message' => 'Je kunt geen verzoek naar jezelf sturen.'], 422);
         }
 
+        // Blokkeer-symmetrie: of de ander mij heeft geblokkeerd, of ik heb
+        // hem/haar geblokkeerd → verzoek wordt stil als 'requested'
+        // geretourneerd (geen leak naar de blokker over de blokkade) maar er
+        // wordt niets opgeslagen of verstuurd. Vergelijkbaar met het
+        // 'declined' pad hierboven.
+        $blocked = \Illuminate\Support\Facades\DB::table('user_blocks')
+            ->where(function ($q) use ($me, $other) {
+                $q->where(fn ($w) => $w->where('blocker_id', $me)->where('blocked_id', $other))
+                  ->orWhere(fn ($w) => $w->where('blocker_id', $other)->where('blocked_id', $me));
+            })->exists();
+        if ($blocked) {
+            return response()->json(['status' => 'requested']);
+        }
+
         // Already have a 1-on-1 conversation → just open it.
         if ($conversationId = $this->findDirectConversation($me, $other)) {
             return response()->json(['status' => 'connected', 'conversation_id' => $conversationId]);

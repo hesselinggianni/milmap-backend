@@ -31,6 +31,8 @@ use App\Http\Controllers\ChatKeyController;
 use App\Http\Controllers\ConversationController;
 use App\Http\Controllers\MessageController;
 use App\Http\Controllers\MissionController;
+use App\Http\Controllers\MissionTaskController;
+use App\Http\Controllers\MissionTaskTemplateController;
 use App\Http\Controllers\MissionCollaboratorController;
 use App\Http\Controllers\ClientErrorController;
 use App\Http\Controllers\InvitationController;
@@ -43,6 +45,7 @@ use App\Http\Controllers\MissionEvaluationController;
 use App\Http\Controllers\MissionCommsController;
 use App\Http\Controllers\TrashController;
 use App\Http\Controllers\StatsController;
+use App\Http\Controllers\SecurityController;
 use App\Http\Controllers\NineLineController;
 
 /* Auth group */
@@ -222,6 +225,23 @@ Route::prefix('v1')->middleware(['api'])->group(function () {
         Route::put('/missions/{id}', [MissionController::class, 'update']);
         Route::delete('/missions/{id}', [MissionController::class, 'destroy']);
 
+        // ── Mission tasks (kort actiepunten per missie) ──────────────
+        // Reorder + apply-template als aparte endpoints zodat één drag-drop
+        // een minimale roundtrip blijft (één PUT van een ID-array).
+        Route::get   ('/missions/{id}/tasks',                [MissionTaskController::class, 'index']);
+        Route::post  ('/missions/{id}/tasks',                [MissionTaskController::class, 'store']);
+        Route::put   ('/missions/{id}/tasks/{taskId}',       [MissionTaskController::class, 'update']);
+        Route::delete('/missions/{id}/tasks/{taskId}',       [MissionTaskController::class, 'destroy']);
+        Route::post  ('/missions/{id}/tasks/reorder',        [MissionTaskController::class, 'reorder']);
+        Route::post  ('/missions/{id}/tasks/apply-template', [MissionTaskController::class, 'applyTemplate']);
+
+        // ── Mission task templates (per-gebruiker herbruikbaar) ─────
+        Route::get   ('/task-templates',         [MissionTaskTemplateController::class, 'index']);
+        Route::post  ('/task-templates',         [MissionTaskTemplateController::class, 'store']);
+        Route::get   ('/task-templates/{id}',    [MissionTaskTemplateController::class, 'show']);
+        Route::put   ('/task-templates/{id}',    [MissionTaskTemplateController::class, 'update']);
+        Route::delete('/task-templates/{id}',    [MissionTaskTemplateController::class, 'destroy']);
+
         // Mission collaborators (invite with roles, manage rights)
         Route::get('/missions/{missionId}/collaborators', [MissionCollaboratorController::class, 'index']);
         Route::post('/missions/{missionId}/collaborators', [MissionCollaboratorController::class, 'store']);
@@ -261,6 +281,13 @@ Route::prefix('v1')->middleware(['api'])->group(function () {
         // The conversation itself stays alive for the other participants. The
         // archived chat shows up in /trash and can be restored within 60 days.
         Route::delete('/chat/conversations/{id}', [ConversationController::class, 'archive']);
+        // Long-press menu — per-user state op de pivot.
+        Route::post('/chat/conversations/{id}/mute',         [ConversationController::class, 'mute']);
+        Route::post('/chat/conversations/{id}/favorite',     [ConversationController::class, 'favorite']);
+        Route::post('/chat/conversations/{id}/mark-unread',  [ConversationController::class, 'markUnread']);
+        Route::post('/chat/conversations/{id}/leave',        [ConversationController::class, 'leave']);
+        Route::post('/chat/conversations/{id}/clear',        [ConversationController::class, 'clear']);
+        Route::post('/chat/conversations/{id}/block',        [ConversationController::class, 'block']);
 
         // Messages
         Route::get('/chat/conversations/{id}/messages', [MessageController::class, 'index']);
@@ -279,6 +306,10 @@ Route::prefix('v1')->middleware(['api'])->group(function () {
         // 422 there. Authorization (owner-only) is enforced per-action.
         // "App data" voor het menu — counts + opslag-totaal van de gebruiker.
         Route::get('/me/stats', [StatsController::class, 'show']);
+
+        // App-lock tripped: 10x verkeerde PIN ingevoerd. Trekt alle tokens
+        // in en stuurt een security-mail. Eigen throttle in de controller.
+        Route::post('/security/app-lock-tripped', [SecurityController::class, 'appLockTripped']);
 
         // MEDEVAC 9-liners — persisted overview + edit + audit log + archive.
         // Scope/permissions enforced in the controller (participant-based).

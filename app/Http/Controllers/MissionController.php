@@ -135,8 +135,35 @@ class MissionController extends Controller
             }
         }
 
+        // Detecteer status-overgang voor de melding naar deelnemers. We
+        // pakken de oude waarde vóór ->fill() — daarna is hij overschreven.
+        $oldStatus = $mission->status;
+        $newStatus = $data['status'] ?? $oldStatus;
+
         $mission->fill($data);
         $mission->save();
+
+        // Status veranderd → real-time melding op het mission presence channel.
+        // Wordt niet gepersisteerd (clients tonen een toast en updaten de chip).
+        if ($newStatus !== $oldStatus) {
+            try {
+                $actor = Auth::user();
+                $name  = trim(($actor->first_name ?? '') . ' ' . ($actor->last_name ?? ''))
+                    ?: ($actor->name ?? $actor->email ?? 'Iemand');
+
+                broadcast(new \App\Events\MissionStatusChanged(
+                    (string) $mission->id,
+                    (string) ($mission->name ?? 'Missie'),
+                    (string) $oldStatus,
+                    (string) $newStatus,
+                    (int) $userId,
+                    $name,
+                    now()->toIso8601String(),
+                ))->toOthers();
+            } catch (\Throwable $e) {
+                \Illuminate\Support\Facades\Log::warning('[mission] status broadcast failed: ' . $e->getMessage());
+            }
+        }
 
         return response()->json(['data' => $this->present($mission->fresh(), $userId)]);
     }

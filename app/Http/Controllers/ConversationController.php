@@ -216,6 +216,145 @@ class ConversationController extends Controller
     }
 
     /**
+     * Mute (no push / no notifications) for THIS user. Body:
+     *   { hours: int? }   default = 8 (until tomorrow morning)
+     * Set hours=0 to unmute. Use a sentinel of 9999 hours for "forever";
+     * frontend just labels it "Gedempt".
+     */
+    public function mute(Request $request, $id)
+    {
+        $userId = Auth::id();
+        $conv = Conversation::findOrFail($id);
+        if (! $conv->hasParticipant($userId)) {
+            return response()->json(['message' => 'Forbidden.'], 403);
+        }
+        $hours = (int) ($request->input('hours', 8));
+        $until = $hours <= 0 ? null : now()->addHours(min($hours, 24 * 365 * 10));
+        $conv->participants()->updateExistingPivot($userId, ['muted_until' => $until]);
+        return response()->json(['ok' => true, 'muted_until' => optional($until)->toIso8601String()]);
+    }
+
+    /**
+     * Favoriet markeren / weghalen voor deze gebruiker.
+     */
+    public function favorite($id)
+    {
+        $userId = Auth::id();
+        $conv = Conversation::findOrFail($id);
+        if (! $conv->hasParticipant($userId)) {
+            return response()->json(['message' => 'Forbidden.'], 403);
+        }
+        $row = DB::table('conversation_user')
+            ->where('conversation_id', $id)->where('user_id', $userId)->first();
+        $next = $row && $row->favorited_at ? null : now();
+        $conv->participants()->updateExistingPivot($userId, ['favorited_at' => $next]);
+        return response()->json(['ok' => true, 'favorited' => (bool) $next]);
+    }
+
+    /**
+     * Markeer als ongelezen: zet last_read_at terug naar net vóór het laatste
+     * bericht zodat de unread-teller opnieuw aanslaat. Voor de UI is dit een
+     * blauw bolletje naast de chat.
+     */
+    public function markUnread($id)
+    {
+        $userId = Auth::id();
+        $conv = Conversation::findOrFail($id);
+        if (! $conv->hasParticipant($userId)) {
+            return response()->json(['message' => 'Forbidden.'], 403);
+        }
+        $lastMsg = DB::table('messages')->where('conversation_id', $id)
+            ->orderByDesc('created_at')->value('created_at');
+        $cutoff = $lastMsg ? \Illuminate\Support\Carbon::parse($lastMsg)->subSecond() : now();
+        $conv->participants()->updateExistingPivot($userId, ['last_read_at' => $cutoff]);
+        return response()->json(['ok' => true]);
+    }
+
+    /**
+     * Verlaat een groepschat. Voor de groep verdwijn ik direct uit de roster
+     * en blijven mijn (sealed) historie-rijen staan zodat anderen ze nog
+     * kunnen ontcijferen. Voor een 1-op-1 chat gedragen we ons als "archive"
+     * — een 1-op-1 kun je niet "verlaten", de andere persoon moet ook in z'n
+     * eigen lijst kunnen blijven zien.
+     */
+    public function leave($id)
+    {
+        $userId = Auth::id();
+        $conv = Conversation::findOrFail($id);
+        if (! $conv->hasParticipant($userId)) {
+            return response()->json(['message' => 'Forbidden.'], 403);
+        }
+
+        if ($conv->type === 'direct') {
+            $conv->participants()->updateExistingPivot($userId, ['archived_at' => now()]);
+            return response()->json(['ok' => true, 'mode' => 'archived']);
+        }
+
+        // Group / channel — drop the pivot row entirely.
+        DB::table('conversation_user')
+            ->where('conversation_id', $id)->where('user_id', $userId)->delete();
+
+        // Tell live clients so the participant list updates without a refresh.
+        try {
+            if (class_exists(\App\Events\ParticipantLeft::class)) {
+                broadcast(new \App\Events\ParticipantLeft((string) $id, $userId))->toOthers();
+            }
+        } catch (\Throwable $e) {
+            \Illuminate\Support\Facades\Log::warning('[chat] leave broadcast failed: ' . $e->getMessage());
+        }
+
+        return response()->json(['ok' => true, 'mode' => 'left']);
+    }
+
+    /**
+     * "Wis chat" — verberg álle eerdere berichten voor DEZE gebruiker. We
+     * verwijderen niets server-side (de andere deelnemer heeft zijn eigen
+     * sealed copy en moet die kunnen blijven lezen); de client filtert
+     * messages met created_at <= cleared_at weg uit hun thread.
+     */
+    public function clear($id)
+    {
+        $userId = Auth::id();
+        $conv = Conversation::findOrFail($id);
+        if (! $conv->hasParticipant($userId)) {
+            return response()->json(['message' => 'Forbidden.'], 403);
+        }
+        $conv->participants()->updateExistingPivot($userId, ['cleared_at' => now()]);
+        return response()->json(['ok' => true]);
+    }
+
+    /**
+     * Blokkeer de tegenstander van een 1-op-1 chat. User-level: stuurt ook
+     * toekomstige chat-requests van die persoon naar /dev/null. Op groeps-
+     * chats geeft het 422 — daar moet je verlaten in plaats van blokkeren.
+     */
+    public function block($id)
+    {
+        $me = Auth::id();
+        $conv = Conversation::findOrFail($id);
+        if (! $conv->hasParticipant($me)) {
+            return response()->json(['message' => 'Forbidden.'], 403);
+        }
+        if ($conv->type !== 'direct') {
+            return response()->json([
+                'message' => 'Een groepschat kun je niet blokkeren — verlaat hem in plaats daarvan.',
+            ], 422);
+        }
+        $other = DB::table('conversation_user')
+            ->where('conversation_id', $id)->where('user_id', '!=', $me)->value('user_id');
+        if (! $other) {
+            return response()->json(['message' => 'Geen tegenstander gevonden.'], 422);
+        }
+        DB::table('user_blocks')->updateOrInsert(
+            ['blocker_id' => $me, 'blocked_id' => $other],
+            ['created_at' => now(), 'updated_at' => now()],
+        );
+        // Archiveer de chat automatisch zodat hij uit de lijst verdwijnt.
+        $conv->participants()->updateExistingPivot($me, ['archived_at' => now()]);
+        return response()->json(['ok' => true, 'blocked_user_id' => $other]);
+    }
+
+    /**
      * Shape a conversation for the API, from the viewer's perspective.
      */
     protected function present(Conversation $c, int $viewerId): array
@@ -233,6 +372,11 @@ class ConversationController extends Controller
             ->when($lastReadAt, fn ($q) => $q->where('created_at', '>', $lastReadAt))
             ->count();
 
+        // Per-user state uit de conversation_user pivot — long-press menu UI.
+        $mutedUntil  = $me?->pivot?->muted_until;
+        $favoritedAt = $me?->pivot?->favorited_at;
+        $clearedAt   = $me?->pivot?->cleared_at;
+
         return [
             'id'              => $c->id,
             'type'            => $c->type,
@@ -240,6 +384,9 @@ class ConversationController extends Controller
             'mission_id'      => $c->mission_id,
             'last_message_at' => $c->last_message_at?->toIso8601String(),
             'unread'          => $unread,
+            'muted_until'     => $mutedUntil  ? \Illuminate\Support\Carbon::parse($mutedUntil)->toIso8601String()  : null,
+            'favorited_at'    => $favoritedAt ? \Illuminate\Support\Carbon::parse($favoritedAt)->toIso8601String() : null,
+            'cleared_at'      => $clearedAt   ? \Illuminate\Support\Carbon::parse($clearedAt)->toIso8601String()   : null,
             'participants'    => $c->participants->map(fn (User $u) => [
                 'id'           => $u->id,
                 'name'         => trim(($u->first_name ?? '') . ' ' . ($u->last_name ?? '')) ?: $u->email,

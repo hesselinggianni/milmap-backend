@@ -28,8 +28,16 @@ class MessageController extends Controller
         $before = $request->query('before');
         $after  = $request->query('after');   // poll cursor: only messages AFTER this id
 
+        // "Wis chat" — verberg berichten van vóór de cleared_at marker (per
+        // gebruiker; de andere kant ziet de geschiedenis nog gewoon).
+        $clearedAt = \Illuminate\Support\Facades\DB::table('conversation_user')
+            ->where('conversation_id', $conversation->id)
+            ->where('user_id', $userId)
+            ->value('cleared_at');
+
         $messages = Message::where('conversation_id', $conversation->id)
             ->with('reactions')
+            ->when($clearedAt, fn ($q) => $q->where('created_at', '>', $clearedAt))
             ->when($before, fn ($q) => $q->where('id', '<', $before))
             ->when($after,  fn ($q) => $q->where('id', '>', $after))
             ->orderByDesc('id')
