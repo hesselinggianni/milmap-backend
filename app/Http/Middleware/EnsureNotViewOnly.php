@@ -57,6 +57,7 @@ class EnsureNotViewOnly
             'billing',              // subscribe → removes the restriction
             'bug-reports',
             'search-history',
+            'trash',                // restore / forceDelete of OWN trashed items
         ];
 
         foreach ($allowed as $prefix) {

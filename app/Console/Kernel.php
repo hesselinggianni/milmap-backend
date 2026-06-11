@@ -28,6 +28,14 @@ class Kernel extends ConsoleKernel
         // Voer de fetchEmails taak elke minuut uit
         $schedule->command('emails:fetch')->everyMinute();
         $schedule->command('check:status')->everyMinute();
+
+        // Definitief verwijderen wat langer dan 60 dagen in de prullenbak zit.
+        // Draait 's nachts (lage piek), met overlap-bescherming en logging.
+        $schedule->command('trash:purge')
+            ->dailyAt('03:15')
+            ->withoutOverlapping()
+            ->runInBackground()
+            ->appendOutputTo(storage_path('logs/trash-purge.log'));
     }
 
 

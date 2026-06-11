@@ -26,8 +26,11 @@ class ConversationController extends Controller
         // hot message-poll, so the cost stays bounded by the user's mission count.
         $this->ensureMissionConversations($userId);
 
+        // Exclude conversations the caller has archived (= deleted for them).
+        // Other participants still see the conversation; restore from /trash.
         $conversations = Conversation::query()
-            ->whereHas('participants', fn ($q) => $q->where('users.id', $userId))
+            ->whereHas('participants', fn ($q) => $q->where('users.id', $userId)
+                ->whereNull('conversation_user.archived_at'))
             ->with(['participants:id,first_name,last_name,email,public_key,last_seen_at,settings'])
             ->orderByRaw('COALESCE(last_message_at, created_at) DESC')
             ->get();
@@ -186,6 +189,28 @@ class ConversationController extends Controller
         } catch (\Throwable $e) {
             \Illuminate\Support\Facades\Log::warning('[chat] read broadcast failed: ' . $e->getMessage());
         }
+
+        return response()->json(['ok' => true]);
+    }
+
+    /**
+     * Archive a conversation for THIS user only — the inverse of "delete" for
+     * chats. The other participants keep seeing the conversation normally.
+     * The user can restore it from /trash within 60 days; after that the
+     * PurgeTrash command drops their pivot row (= they leave for good).
+     */
+    public function archive($id)
+    {
+        $userId = Auth::id();
+
+        $conversation = Conversation::findOrFail($id);
+        if (! $conversation->hasParticipant($userId)) {
+            return response()->json(['message' => 'Forbidden.'], 403);
+        }
+
+        $conversation->participants()->updateExistingPivot($userId, [
+            'archived_at' => now(),
+        ]);
 
         return response()->json(['ok' => true]);
     }

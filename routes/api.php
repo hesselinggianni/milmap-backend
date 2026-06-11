@@ -41,6 +41,7 @@ use App\Http\Controllers\ChatRequestController;
 use App\Http\Controllers\MissionTrackController;
 use App\Http\Controllers\MissionEvaluationController;
 use App\Http\Controllers\MissionCommsController;
+use App\Http\Controllers\TrashController;
 
 /* Auth group */
 
@@ -254,6 +255,10 @@ Route::prefix('v1')->middleware(['api'])->group(function () {
         Route::post('/chat/conversations', [ConversationController::class, 'store']);
         Route::get('/chat/conversations/{id}', [ConversationController::class, 'show']);
         Route::post('/chat/conversations/{id}/read', [ConversationController::class, 'markRead']);
+        // "Delete" a chat from the user's own list (per-participant archive).
+        // The conversation itself stays alive for the other participants. The
+        // archived chat shows up in /trash and can be restored within 60 days.
+        Route::delete('/chat/conversations/{id}', [ConversationController::class, 'archive']);
 
         // Messages
         Route::get('/chat/conversations/{id}/messages', [MessageController::class, 'index']);
@@ -265,6 +270,14 @@ Route::prefix('v1')->middleware(['api'])->group(function () {
 
         // Chat attachments
         Route::post('/chat/attachments', [ChatAttachmentController::class, 'store']);
+
+        // ── Prullenbak (soft-deleted Maps/Missions/RouteMaps + archived chats)
+        // 60-day grace window; `php artisan trash:purge` runs nightly. Type-
+        // parameter is validated against the controller's match(); other values
+        // 422 there. Authorization (owner-only) is enforced per-action.
+        Route::get('/trash', [TrashController::class, 'index']);
+        Route::post('/trash/{type}/{id}/restore', [TrashController::class, 'restore']);
+        Route::delete('/trash/{type}/{id}', [TrashController::class, 'forceDelete']);
 
         // Chat invite link (for e-mails without an account yet)
         Route::post('/chat/invite', [ChatInviteController::class, 'store'])
