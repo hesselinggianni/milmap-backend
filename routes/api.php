@@ -42,6 +42,8 @@ use App\Http\Controllers\MissionTrackController;
 use App\Http\Controllers\MissionEvaluationController;
 use App\Http\Controllers\MissionCommsController;
 use App\Http\Controllers\TrashController;
+use App\Http\Controllers\StatsController;
+use App\Http\Controllers\NineLineController;
 
 /* Auth group */
 
@@ -275,6 +277,18 @@ Route::prefix('v1')->middleware(['api'])->group(function () {
         // 60-day grace window; `php artisan trash:purge` runs nightly. Type-
         // parameter is validated against the controller's match(); other values
         // 422 there. Authorization (owner-only) is enforced per-action.
+        // "App data" voor het menu — counts + opslag-totaal van de gebruiker.
+        Route::get('/me/stats', [StatsController::class, 'show']);
+
+        // MEDEVAC 9-liners — persisted overview + edit + audit log + archive.
+        // Scope/permissions enforced in the controller (participant-based).
+        Route::get('/nine-lines', [NineLineController::class, 'index']);
+        Route::post('/nine-lines', [NineLineController::class, 'store']);
+        Route::get('/nine-lines/{id}', [NineLineController::class, 'show']);
+        Route::put('/nine-lines/{id}', [NineLineController::class, 'update']);
+        Route::post('/nine-lines/{id}/archive', [NineLineController::class, 'archive']);
+        Route::post('/nine-lines/{id}/unarchive', [NineLineController::class, 'unarchive']);
+
         Route::get('/trash', [TrashController::class, 'index']);
         Route::post('/trash/{type}/{id}/restore', [TrashController::class, 'restore']);
         Route::delete('/trash/{type}/{id}', [TrashController::class, 'forceDelete']);
