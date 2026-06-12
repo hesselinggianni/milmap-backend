@@ -2,7 +2,9 @@
 
 namespace App\Http\Controllers;
 
+use App\Models\UserUpload;
 use Illuminate\Http\Request;
+use Illuminate\Support\Facades\Auth;
 use Illuminate\Support\Facades\Storage;
 use Illuminate\Support\Str;
 
@@ -78,6 +80,18 @@ class ChatAttachmentController extends Controller
         $folder = 'chat/' . date('Y/m');
 
         Storage::disk('public')->putFileAs($folder, $file, $filename);
+
+        // Opslag-grootboek: chat-bijlagen zijn E2EE en hebben geen eigenaar-
+        // record op het bericht zelf, dus leggen we hier een lichte metadata-
+        // regel vast zodat StatsController het verbruik kan toerekenen. Best-
+        // effort — record() slikt eigen fouten en laat de upload nooit klappen.
+        UserUpload::record(
+            (int) Auth::id(),
+            "{$folder}/{$filename}",
+            (int) $file->getSize(),
+            $detected,
+            'chat',
+        );
 
         $url = Storage::disk('public')->url("{$folder}/{$filename}");
 

@@ -40,10 +40,21 @@ class RegisterController extends Controller
             throw ValidationException::withMessages($validator->errors()->toArray());
         }
 
+        // Share-attributie: als de registratie via een uitgedeelde link binnenkomt
+        // (frontend stuurt `utm_source` mee als share_uuid van de ambassadeur),
+        // koppelen we 'm hier. Onbekende of eigen-uuid wordt stil overgeslagen.
+        $referredById = null;
+        $utm = $request->input('utm_source');
+        if (is_string($utm) && preg_match('/^[0-9a-f-]{36}$/i', $utm)) {
+            $referrer = User::where('share_uuid', strtolower($utm))->first(['id']);
+            if ($referrer) $referredById = $referrer->id;
+        }
+
         // Create the user
         $user = User::create([
             'email' => $request->email,
             'password' => Hash::make($request->password),
+            'referred_by_id' => $referredById,
         ]);
 
         // If this e-mail was invited to any mission/map, accept those invitations

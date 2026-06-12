@@ -10,6 +10,7 @@ use App\Models\Mission;
 use App\Models\MissionCollaborator;
 use App\Models\RouteMap;
 use App\Models\TeamMember;
+use App\Models\UserUpload;
 use Illuminate\Support\Facades\Auth;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Storage;
@@ -21,13 +22,13 @@ use Illuminate\Support\Facades\Storage;
  *    team-members (total across owned teams), contacts (accepted chat reqs +
  *    accepted collaborators).
  *
- *  - Storage: only what's reliably attributable to the user. Chat attachments
- *    live on a shared disk under chat/YYYY/MM/<uuid>.ext with no owner
- *    fingerprint, and the messages they belong to are E2EE-sealed so the
- *    server can't query them. Routekaart-foto's WEL: each route_map owns its
- *    own checkpoint folder under `storage/app/public/routemaps/<id>/`. We sum
- *    those bytes for route_maps the user owns. The frontend labels this
- *    explicitly as "routekaart-foto's" so the number isn't misread.
+ *  - Storage: per-user verbruik uit twee bronnen, opgeteld in `total_bytes`.
+ *    Routekaart-foto's: each route_map owns its own checkpoint folder under
+ *    `storage/app/public/routemaps/<id>/`; we sum those bytes for route_maps
+ *    the user owns. Chat-bijlagen zijn E2EE-verzegeld en hebben geen owner-
+ *    fingerprint op het bericht, dus die kunnen we niet terug-queryen — daarom
+ *    legt elke server-side upload een lichte metadata-regel vast in
+ *    `user_uploads` (zie UserUpload) die we hier per `kind` sommeren.
  */
 class StatsController extends Controller
 {
@@ -99,11 +100,28 @@ class StatsController extends Controller
             }
         }
 
+        // Chat-bijlagen: sinds het opslag-grootboek (user_uploads) legt elke
+        // server-side upload een lichte metadata-regel vast. We sommeren de
+        // bytes per gebruiker — geen folderwalk, geen ontsleuteling nodig.
+        $bytesChat = (int) UserUpload::where('user_id', $uid)
+            ->where('kind', 'chat')
+            ->sum('size');
+
+        // Overige geledgerde uploads (bijv. mission_logo) die NIET al via de
+        // routemap-folderwalk hierboven geteld zijn. 'routemap' sluiten we uit
+        // om dubbeltelling te voorkomen.
+        $bytesOtherUploads = (int) UserUpload::where('user_id', $uid)
+            ->whereNotIn('kind', ['chat', 'routemap'])
+            ->sum('size');
+
+        $totalBytes = $bytesRouteMapImages + $bytesChat + $bytesOtherUploads;
+
         $storage = [
             'route_map_images_bytes' => $bytesRouteMapImages,
-            // Documented as 'see comment' on the controller — kept null so the
-            // frontend can show "niet meegerekend" instead of pretending it's 0.
-            'chat_attachments_bytes' => null,
+            'chat_attachments_bytes' => $bytesChat,
+            'other_uploads_bytes'    => $bytesOtherUploads,
+            // Eén getal dat de gebruiker als "totaal verbruik" kan tonen.
+            'total_bytes'            => $totalBytes,
         ];
 
         return response()->json([

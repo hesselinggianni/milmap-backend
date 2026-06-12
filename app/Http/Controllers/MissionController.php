@@ -143,6 +143,36 @@ class MissionController extends Controller
         $mission->fill($data);
         $mission->save();
 
+        // Specifiek: status → "complete" persisteert een notificatie naar elke
+        // deelnemer met een "vul de debrief in" call-to-action. Deze rij wordt
+        // door /api/v1/me/notifications opgepikt door de Meldingen-pagina en
+        // de Hub-timeline. De broadcast (hieronder) blijft staan voor de
+        // live-update; deze record overleeft een refresh.
+        if ($newStatus === 'complete' && $oldStatus !== 'complete') {
+            try {
+                $mission->loadMissing(['collaborators:id,mission_id,user_id,status', 'owner:id']);
+                $participantIds = collect();
+                if ($mission->owner_id) $participantIds->push((int) $mission->owner_id);
+                foreach ($mission->collaborators ?? [] as $c) {
+                    if ($c->user_id && $c->status === 'accepted') $participantIds->push((int) $c->user_id);
+                }
+                foreach ($participantIds->unique()->values() as $pid) {
+                    \App\Models\AppNotification::create([
+                        'user_id' => $pid,
+                        'type'    => 'mission.completed',
+                        'title'   => 'Missie afgerond — vul de debrief in',
+                        'body'    => 'Voor "' . ($mission->name ?? 'Missie') . '" staat de debrief klaar om in te vullen.',
+                        'payload' => [
+                            'mission_id' => (string) $mission->id,
+                            'action_url' => '/missions/' . $mission->id . '?tab=debrief',
+                        ],
+                    ]);
+                }
+            } catch (\Throwable $e) {
+                \Illuminate\Support\Facades\Log::warning('[mission] complete-notify failed: ' . $e->getMessage());
+            }
+        }
+
         // Status veranderd → real-time melding op het mission presence channel.
         // Wordt niet gepersisteerd (clients tonen een toast en updaten de chip).
         if ($newStatus !== $oldStatus) {

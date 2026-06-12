@@ -47,6 +47,9 @@ use App\Http\Controllers\TrashController;
 use App\Http\Controllers\StatsController;
 use App\Http\Controllers\SecurityController;
 use App\Http\Controllers\NineLineController;
+use App\Http\Controllers\LeadController;
+use App\Http\Controllers\AppNotificationController;
+use App\Http\Controllers\MediaController;
 
 /* Auth group */
 
@@ -100,6 +103,11 @@ Route::prefix('v1')->middleware(['api'])->group(function () {
     // Public share access endpoints (no auth required, but must have valid share token)
     Route::get('/maps/{mapId}/locations', [LocationController::class, 'index']);
     Route::get('/maps/{mapId}/routemaps', [RouteMapController::class, 'getByMapId']);
+
+    // Marketing leads — publiek formulier vanaf milmap.nl/app om gebruikers
+    // te informeren over de release. Throttled tegen e-mail-spam.
+    Route::post('/leads', [LeadController::class, 'store'])
+        ->middleware('throttle:6,1');
 });
 
 
@@ -229,6 +237,10 @@ Route::prefix('v1')->middleware(['api'])->group(function () {
         // Reorder + apply-template als aparte endpoints zodat één drag-drop
         // een minimale roundtrip blijft (één PUT van een ID-array).
         Route::get   ('/missions/{id}/tasks',                [MissionTaskController::class, 'index']);
+        // Toewijsbare personen + (eventueel) gekoppeld team voor de moderne
+        // multi-select. Staat vóór /{taskId} zodat 'assignees' nooit als een
+        // taak-ID wordt gelezen.
+        Route::get   ('/missions/{id}/tasks/assignees',      [MissionTaskController::class, 'assignees']);
         Route::post  ('/missions/{id}/tasks',                [MissionTaskController::class, 'store']);
         Route::put   ('/missions/{id}/tasks/{taskId}',       [MissionTaskController::class, 'update']);
         Route::delete('/missions/{id}/tasks/{taskId}',       [MissionTaskController::class, 'destroy']);
@@ -311,6 +323,18 @@ Route::prefix('v1')->middleware(['api'])->group(function () {
         // in en stuurt een security-mail. Eigen throttle in de controller.
         Route::post('/security/app-lock-tripped', [SecurityController::class, 'appLockTripped']);
 
+        // In-app meldingen (Hub + /meldingen). Mission-complete pusht hier
+        // bv. een "vul de debrief in"-rij naar elke deelnemer.
+        Route::get   ('/me/notifications',                [AppNotificationController::class, 'index']);
+        Route::post  ('/me/notifications/{id}/read',      [AppNotificationController::class, 'markRead']);
+        Route::post  ('/me/notifications/read-all',       [AppNotificationController::class, 'markAllRead']);
+        Route::delete('/me/notifications/{id}',           [AppNotificationController::class, 'destroy']);
+
+        // Media-beheer: lijst van eigen geüploade bestanden en soft-delete
+        // naar de prullenbak. /trash levert de items als type "media".
+        Route::get   ('/me/media',         [MediaController::class, 'index']);
+        Route::delete('/me/media/{id}',    [MediaController::class, 'destroy']);
+
         // MEDEVAC 9-liners — persisted overview + edit + audit log + archive.
         // Scope/permissions enforced in the controller (participant-based).
         Route::get('/nine-lines', [NineLineController::class, 'index']);
@@ -364,6 +388,11 @@ Route::prefix('v1')->middleware(['api'])->group(function () {
             Route::get('/admin/billing/price-map', [AdminBillingController::class, 'priceMap']);
             Route::put('/admin/billing/price-map', [AdminBillingController::class, 'savePriceMap']);
             Route::post('/admin/billing/flush-cache', [AdminBillingController::class, 'flushPricingCache']);
+            // ── Leads (marketing signups via milmap.nl/app) ─────────────
+            Route::get   ('/admin/leads',                  [LeadController::class, 'adminIndex']);
+            Route::post  ('/admin/leads/{id}/mark-notified', [LeadController::class, 'adminMarkNotified']);
+            Route::delete('/admin/leads/{id}',              [LeadController::class, 'adminDestroy']);
+
             Route::get('/admin/users/{userId}', [AdminController::class, 'getUser']);
             Route::delete('/admin/users/{userId}', [AdminController::class, 'deleteUser']);
             Route::patch('/admin/users/{userId}/admin-status', [AdminController::class, 'toggleAdminStatus']);

@@ -39,6 +39,7 @@ class PurgeTrash extends Command
             'maps'       => Map::onlyTrashed()->where('deleted_at', '<', $cutoff)->count(),
             'missions'   => Mission::onlyTrashed()->where('deleted_at', '<', $cutoff)->count(),
             'route_maps' => RouteMap::onlyTrashed()->where('deleted_at', '<', $cutoff)->count(),
+            'media'      => \App\Models\UserUpload::onlyTrashed()->where('deleted_at', '<', $cutoff)->count(),
         ];
 
         if (! $dry) {
@@ -52,6 +53,17 @@ class PurgeTrash extends Command
             });
             RouteMap::onlyTrashed()->where('deleted_at', '<', $cutoff)->chunkById(200, function ($chunk) {
                 $chunk->each->forceDelete();
+            });
+            // Media — naast de DB-regel ook het fysieke bestand opruimen zodat
+            // de schijf daadwerkelijk vrijkomt.
+            \App\Models\UserUpload::onlyTrashed()->where('deleted_at', '<', $cutoff)->chunkById(200, function ($chunk) {
+                foreach ($chunk as $u) {
+                    try {
+                        $disk = \Illuminate\Support\Facades\Storage::disk($u->disk ?: 'public');
+                        if ($disk->exists($u->path)) $disk->delete($u->path);
+                    } catch (\Throwable $e) { /* best-effort */ }
+                    $u->forceDelete();
+                }
             });
         }
 
@@ -83,6 +95,7 @@ class PurgeTrash extends Command
                 ['maps',       $counts['maps']],
                 ['missions',   $counts['missions']],
                 ['route_maps', $counts['route_maps']],
+                ['media',      $counts['media']],
                 ['chats',      $chatRows->count()],
             ]
         );

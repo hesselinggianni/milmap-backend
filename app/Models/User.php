@@ -32,7 +32,34 @@ class User extends Authenticatable
         'pm_last_four',
         'trial_ends_at',
         'view_only',
+        'share_uuid',
+        'referred_by_id',
     ];
+
+    /**
+     * Geef elke nieuwe gebruiker automatisch een share_uuid zodat het frontend
+     * direct na registratie kan delen zonder eerst een aparte call.
+     */
+    protected static function booted(): void
+    {
+        static::creating(function (User $u) {
+            if (empty($u->share_uuid)) {
+                $u->share_uuid = (string) \Illuminate\Support\Str::uuid();
+            }
+        });
+    }
+
+    /** Wie heeft deze gebruiker geworven (via een ?utm_source=<share_uuid> link). */
+    public function referrer()
+    {
+        return $this->belongsTo(User::class, 'referred_by_id');
+    }
+
+    /** Mensen die ik heb geworven — bron voor het admin-overzicht per "ambassadeur". */
+    public function referrals()
+    {
+        return $this->hasMany(User::class, 'referred_by_id');
+    }
 
     protected $hidden = [
         'password',

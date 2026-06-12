@@ -41,6 +41,7 @@ class TrashController extends Controller
             'missions'   => $this->missionsForUser($uid),
             'route_maps' => $this->routeMapsForUser($uid),
             'chats'      => $this->chatsForUser($uid),
+            'media'      => $this->mediaForUser($uid),
         ]);
     }
 
@@ -56,6 +57,7 @@ class TrashController extends Controller
             'missions'   => $this->restoreMission($uid, $id),
             'route_maps' => $this->restoreRouteMap($uid, $id),
             'chats'      => $this->restoreChat($uid, $id),
+            'media'      => $this->restoreMedia($uid, (int) $id),
             default      => response()->json(['message' => 'Onbekend type'], 422),
         };
     }
@@ -72,6 +74,7 @@ class TrashController extends Controller
             'missions'   => $this->forceDeleteMission($uid, $id),
             'route_maps' => $this->forceDeleteRouteMap($uid, $id),
             'chats'      => $this->forceDeleteChat($uid, $id),
+            'media'      => $this->forceDeleteMedia($uid, (int) $id),
             default      => response()->json(['message' => 'Onbekend type'], 422),
         };
     }
@@ -130,12 +133,15 @@ class TrashController extends Controller
      */
     protected function chatsForUser(int $uid): array
     {
+        // De conversations-tabel heeft `name` (niet `title`) — dat alias-en we
+        // hier al naar `title` zodat de FE en de rest van de presenter zonder
+        // wijzigingen blijven werken.
         $rows = DB::table('conversation_user as cu')
             ->join('conversations as c', 'c.id', '=', 'cu.conversation_id')
             ->where('cu.user_id', $uid)
             ->whereNotNull('cu.archived_at')
             ->orderByDesc('cu.archived_at')
-            ->get(['c.id', 'c.type', 'c.title', 'cu.archived_at']);
+            ->get(['c.id', 'c.type', 'c.name as title', 'cu.archived_at']);
 
         return $rows->map(fn ($r) => [
             'id'         => $r->id,
@@ -256,6 +262,46 @@ class TrashController extends Controller
     }
 
     // ── Helpers ───────────────────────────────────────────────
+
+    // ── Media (user_uploads) ──────────────────────────────────
+
+    protected function mediaForUser(int $uid): array
+    {
+        return \App\Models\UserUpload::onlyTrashed()
+            ->where('user_id', $uid)
+            ->orderByDesc('deleted_at')
+            ->get(['id', 'kind', 'path', 'size', 'mime', 'deleted_at'])
+            ->map(fn ($u) => [
+                'id'         => $u->id,
+                'title'      => basename($u->path),
+                'kind'       => $u->kind,
+                'mime'       => $u->mime,
+                'size'       => (int) $u->size,
+                'deleted_at' => optional($u->deleted_at)->toIso8601String(),
+                'days_left'  => $this->daysLeft($u->deleted_at),
+            ])->all();
+    }
+
+    protected function restoreMedia(int $uid, int $id)
+    {
+        $u = \App\Models\UserUpload::onlyTrashed()->where('user_id', $uid)->find($id);
+        if (! $u) return response()->json(['message' => 'Niet gevonden'], 404);
+        $u->restore();
+        return response()->json(['message' => 'Hersteld']);
+    }
+
+    protected function forceDeleteMedia(int $uid, int $id)
+    {
+        $u = \App\Models\UserUpload::onlyTrashed()->where('user_id', $uid)->find($id);
+        if (! $u) return response()->json(['message' => 'Niet gevonden'], 404);
+        // Definitief weg → fysieke disk-file ook opruimen.
+        try {
+            $disk = \Illuminate\Support\Facades\Storage::disk($u->disk ?: 'public');
+            if ($disk->exists($u->path)) $disk->delete($u->path);
+        } catch (\Throwable $e) { /* best-effort */ }
+        $u->forceDelete();
+        return response()->json(['message' => 'Definitief verwijderd']);
+    }
 
     protected function daysLeft(?Carbon $deletedAt): int
     {
