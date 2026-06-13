@@ -35,4 +35,10 @@ return [
         ],
     ],
 
+    // Gedeeld geheim waarmee de headless deploy-app de /deploy/* endpoints
+    // benadert (header: X-Deploy-Token). Niet gezet → endpoints weigeren alles.
+    'deploy' => [
+        'todo_token' => env('DEPLOY_TODO_TOKEN'),
+    ],
+
 ];

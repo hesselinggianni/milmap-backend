@@ -51,6 +51,7 @@ use App\Http\Controllers\LeadController;
 use App\Http\Controllers\AppNotificationController;
 use App\Http\Controllers\MediaController;
 use App\Http\Controllers\StatusPageController;
+use App\Http\Controllers\TodoController;
 
 /* Auth group */
 
@@ -422,9 +423,14 @@ Route::prefix('v1')->middleware(['api'])->group(function () {
             Route::put   ('/admin/feature-requests/{id}', [FeatureRequestController::class, 'adminUpdate']);
             Route::delete('/admin/feature-requests/{id}', [FeatureRequestController::class, 'adminDestroy']);
 
+            // ── Deploy-todo's (gedeeld met de deploy-app) ───────────────
+            Route::get   ('/admin/todos',      [TodoController::class, 'adminIndex']);
+            Route::post  ('/admin/todos',      [TodoController::class, 'adminStore']);
+            Route::put   ('/admin/todos/{id}', [TodoController::class, 'adminUpdate']);
+            Route::delete('/admin/todos/{id}', [TodoController::class, 'adminDestroy']);
+
             Route::get('/admin/users/{userId}', [AdminController::class, 'getUser']);
             Route::delete('/admin/users/{userId}', [AdminController::class, 'deleteUser']);
-            Route::patch('/admin/users/{userId}/admin-status', [AdminController::class, 'toggleAdminStatus']);
             Route::post('/admin/users/{userId}/reset-password', [AdminController::class, 'resetUserPassword']);
 
             // ── Admin mail client (IMAP/SMTP inboxes) ───────────────────
@@ -445,4 +451,16 @@ Route::prefix('v1')->middleware(['api'])->group(function () {
         });
 
     });
+});
+
+
+/*
+ * Deploy-app endpoints — headless toegang met een gedeeld geheim
+ * (header: X-Deploy-Token), buiten Sanctum om. Zelfde tabel als /admin/todos.
+ */
+Route::prefix('v1')->middleware(['api', 'deploy.token'])->group(function () {
+    Route::get   ('/deploy/todos',      [TodoController::class, 'deployIndex']);
+    Route::post  ('/deploy/todos',      [TodoController::class, 'deployStore']);
+    Route::put   ('/deploy/todos/{id}', [TodoController::class, 'deployUpdate']);
+    Route::delete('/deploy/todos/{id}', [TodoController::class, 'deployDestroy']);
 });

@@ -5,6 +5,7 @@ namespace App\Http\Controllers;
 use App\Models\User;
 use App\Models\Map;
 use App\Models\RouteMap;
+use App\Models\Mission;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Auth;
 use Illuminate\Support\Facades\DB;
@@ -18,45 +19,40 @@ class AdminController extends Controller
     public function getDashboardStats()
     {
         try {
-            // Get all users with their stats
-            $users = User::select('id', 'first_name', 'last_name', 'email', 'is_admin', 'created_at')
+            // Alleen tellingen — bewust geen kaarttitels/datums inladen.
+            $baseUsers = User::select('id', 'first_name', 'last_name', 'email', 'is_admin', 'created_at')
                 ->withCount('maps')
-                ->get()
-                ->map(function ($user) {
-                    // Get maps with routemap counts
-                    $maps = Map::where('owner_id', $user->id)
-                        ->with('routeMaps')
-                        ->get()
-                        ->map(function ($map) {
-                            return [
-                                'id' => $map->id,
-                                'title' => $map->title,
-                                'routemaps_count' => $map->routeMaps->count(),
-                            ];
-                        });
+                ->get();
 
-                    return [
-                        'id' => $user->id,
-                        'name' => trim(($user->first_name ?? '') . ' ' . ($user->last_name ?? '')) ?: $user->email,
-                        'email' => $user->email,
-                        'is_admin' => $user->is_admin,
-                        'maps_count' => $user->maps_count,
-                        'maps' => $maps,
-                        'created_at' => $user->created_at,
-                    ];
-                });
+            // Per-gebruiker tellingen van routekaarten en missies in twee
+            // groeps-queries (geen N+1, en zonder de rijen/titels te laden).
+            $routeMapCounts = RouteMap::selectRaw('owner_id, COUNT(*) as c')
+                ->groupBy('owner_id')
+                ->pluck('c', 'owner_id');
+            $missionCounts = Mission::selectRaw('owner_id, COUNT(*) as c')
+                ->groupBy('owner_id')
+                ->pluck('c', 'owner_id');
 
-            // Calculate totals
-            $totalUsers = $users->count();
-            $totalMaps = Map::count();
-            $totalRouteMaps = RouteMap::count();
+            $users = $baseUsers->map(function ($user) use ($routeMapCounts, $missionCounts) {
+                return [
+                    'id'               => $user->id,
+                    'name'             => trim(($user->first_name ?? '') . ' ' . ($user->last_name ?? '')) ?: $user->email,
+                    'email'            => $user->email,
+                    'is_admin'         => (bool) $user->is_admin,
+                    'maps_count'       => (int) $user->maps_count,
+                    'route_maps_count' => (int) ($routeMapCounts[$user->id] ?? 0),
+                    'missions_count'   => (int) ($missionCounts[$user->id] ?? 0),
+                    'created_at'       => $user->created_at,
+                ];
+            })->values();
 
             return response()->json([
                 'users' => $users,
                 'stats' => [
-                    'total_users' => $totalUsers,
-                    'total_maps' => $totalMaps,
-                    'total_routemaps' => $totalRouteMaps,
+                    'total_users'     => $baseUsers->count(),
+                    'total_maps'      => Map::count(),
+                    'total_routemaps' => RouteMap::count(),
+                    'total_missions'  => Mission::count(),
                 ]
             ], 200);
 
@@ -79,18 +75,11 @@ class AdminController extends Controller
                 'subscriptions',
             ])->findOrFail($userId);
 
-            $maps = Map::where('owner_id', $user->id)
-                ->with('routeMaps')
-                ->get()
-                ->map(function ($map) {
-                    return [
-                        'id'              => $map->id,
-                        'title'           => $map->title,
-                        'status'          => $map->status,
-                        'routemaps_count' => $map->routeMaps->count(),
-                        'created_at'      => $map->created_at,
-                    ];
-                });
+            // Alleen tellingen — geen titels/datums van kaarten, routekaarten
+            // of missies inladen (bewust beperkt voor het admin-overzicht).
+            $mapsCount      = Map::where('owner_id', $user->id)->count();
+            $routeMapsCount = RouteMap::where('owner_id', $user->id)->count();
+            $missionsCount  = Mission::where('owner_id', $user->id)->count();
 
             return response()->json([
                 'user' => [
@@ -112,7 +101,6 @@ class AdminController extends Controller
                     'pm_type'           => $user->pm_type,
                     'pm_last_four'      => $user->pm_last_four,
                 ],
-                'maps'  => $maps,
                 'teams' => $user->teams->map(function ($team) {
                     return [
                         'id'            => $team->id,
@@ -135,8 +123,9 @@ class AdminController extends Controller
                     ];
                 }),
                 'stats' => [
-                    'total_maps'          => $maps->count(),
-                    'total_routemaps'     => $maps->sum('routemaps_count'),
+                    'total_maps'          => $mapsCount,
+                    'total_routemaps'     => $routeMapsCount,
+                    'total_missions'      => $missionsCount,
                     'total_teams'         => $user->teams->count(),
                     'total_subscriptions' => $user->subscriptions->count(),
                 ],
@@ -187,48 +176,6 @@ class AdminController extends Controller
         } catch (\Exception $e) {
             return response()->json([
                 'message' => 'Fout bij verwijdering',
-                'error' => $e->getMessage()
-            ], 500);
-        }
-    }
-
-    /**
-     * Toggle admin status of a user
-     */
-    public function toggleAdminStatus($userId)
-    {
-        try {
-            // Prevent changing own admin status
-            if (Auth::id() == $userId) {
-                return response()->json([
-                    'message' => 'Je kunt je eigen admin status niet wijzigen',
-                    'error' => 'cannot_change_self'
-                ], 403);
-            }
-
-            $user = User::findOrFail($userId);
-
-            // Toggle admin status
-            $user->is_admin = !$user->is_admin;
-            $user->save();
-
-            return response()->json([
-                'message' => 'Admin status bijgewerkt',
-                'user' => [
-                    'id' => $user->id,
-                    'email' => $user->email,
-                    'is_admin' => $user->is_admin
-                ]
-            ], 200);
-
-        } catch (\Illuminate\Database\Eloquent\ModelNotFoundException $e) {
-            return response()->json([
-                'message' => 'Gebruiker niet gevonden',
-                'error' => 'not_found'
-            ], 404);
-        } catch (\Exception $e) {
-            return response()->json([
-                'message' => 'Fout bij wijziging',
                 'error' => $e->getMessage()
             ], 500);
         }
