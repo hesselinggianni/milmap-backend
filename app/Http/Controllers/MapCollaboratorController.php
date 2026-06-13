@@ -316,13 +316,14 @@ class MapCollaboratorController extends Controller
                     ->orWhere('first_name', 'like', $like)
                     ->orWhere('last_name', 'like', $like);
             })
-            ->select('id', 'first_name', 'last_name', 'email')
+            ->select('id', 'first_name', 'last_name', 'avatar_path', 'email')
             ->limit(20)
             ->get()
             ->map(fn($u) => [
                 'id' => $u->id,
                 'name' => $u->full_name,
                 'email' => $u->email,
+                'avatar_url' => $u->avatar_url,
             ]);
 
         return response()->json(['users' => $users]);

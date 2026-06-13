@@ -31,7 +31,7 @@ class ConversationController extends Controller
         $conversations = Conversation::query()
             ->whereHas('participants', fn ($q) => $q->where('users.id', $userId)
                 ->whereNull('conversation_user.archived_at'))
-            ->with(['participants:id,first_name,last_name,email,public_key,last_seen_at,settings'])
+            ->with(['participants:id,first_name,last_name,avatar_path,email,public_key,last_seen_at,settings'])
             ->orderByRaw('COALESCE(last_message_at, created_at) DESC')
             ->get();
 
@@ -80,7 +80,7 @@ class ConversationController extends Controller
             ->value('cu1.conversation_id');
 
         if ($existingId) {
-            $conversation = Conversation::with('participants:id,first_name,last_name,email,public_key,last_seen_at,settings')
+            $conversation = Conversation::with('participants:id,first_name,last_name,avatar_path,email,public_key,last_seen_at,settings')
                 ->find($existingId);
 
             return response()->json([
@@ -106,7 +106,7 @@ class ConversationController extends Controller
             'created_by' => $me,
         ]);
         $conversation->participants()->attach([$me, $other]);
-        $conversation->load('participants:id,first_name,last_name,email,public_key,last_seen_at,settings');
+        $conversation->load('participants:id,first_name,last_name,avatar_path,email,public_key,last_seen_at,settings');
 
         return response()->json([
             'conversation' => $this->present($conversation, $me),
@@ -149,7 +149,7 @@ class ConversationController extends Controller
     {
         $userId = Auth::id();
 
-        $conversation = Conversation::with('participants:id,first_name,last_name,email,public_key,last_seen_at,settings')
+        $conversation = Conversation::with('participants:id,first_name,last_name,avatar_path,email,public_key,last_seen_at,settings')
             ->findOrFail($id);
 
         if (! $conversation->hasParticipant($userId)) {
@@ -263,9 +263,18 @@ class ConversationController extends Controller
         if (! $conv->hasParticipant($userId)) {
             return response()->json(['message' => 'Forbidden.'], 403);
         }
-        $lastMsg = DB::table('messages')->where('conversation_id', $id)
+        // Belangrijk: de unread-teller (zie present()) telt alléén berichten
+        // van ANDEREN (sender_id != viewer). Zet de cutoff dus net vóór het
+        // laatste ONTVANGEN bericht — niet vóór het laatste bericht überhaupt.
+        // Stuurde jij zelf het laatste bericht, dan zou een cutoff op dat
+        // bericht de teller op 0 laten staan en sprong de chat meteen weer op
+        // "gelezen" in het overzicht.
+        $lastIncoming = DB::table('messages')->where('conversation_id', $id)
+            ->where('sender_id', '!=', $userId)
             ->orderByDesc('created_at')->value('created_at');
-        $cutoff = $lastMsg ? \Illuminate\Support\Carbon::parse($lastMsg)->subSecond() : now();
+        $cutoff = $lastIncoming
+            ? \Illuminate\Support\Carbon::parse($lastIncoming)->subSecond()
+            : now()->subSecond();
         $conv->participants()->updateExistingPivot($userId, ['last_read_at' => $cutoff]);
         return response()->json(['ok' => true]);
     }
@@ -377,10 +386,15 @@ class ConversationController extends Controller
         $favoritedAt = $me?->pivot?->favorited_at;
         $clearedAt   = $me?->pivot?->cleared_at;
 
+        // Voor 1-op-1 chats: toon de foto van de ander als gespreks-avatar.
+        // Groepen houden hun groeps-icoon (avatar blijft null).
+        $avatar = $c->type === 'direct' ? ($others[0]->avatar_url ?? null) : null;
+
         return [
             'id'              => $c->id,
             'type'            => $c->type,
             'title'           => $title,
+            'avatar'          => $avatar,
             'mission_id'      => $c->mission_id,
             'last_message_at' => $c->last_message_at?->toIso8601String(),
             'unread'          => $unread,
@@ -391,6 +405,7 @@ class ConversationController extends Controller
                 'id'           => $u->id,
                 'name'         => trim(($u->first_name ?? '') . ' ' . ($u->last_name ?? '')) ?: $u->email,
                 'email'        => $u->email,
+                'avatar_url'   => $u->avatar_url,
                 'public_key'   => $u->public_key,
                 'last_seen_at' => $u->publicLastSeen(),
                 // Read-receipt cursor: lets clients tick a sent message blue once

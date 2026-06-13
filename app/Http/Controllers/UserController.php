@@ -3,11 +3,13 @@
 namespace App\Http\Controllers;
 
 use App\Models\User;
+use App\Models\UserUpload;
 use App\Services\UserService;
 use Illuminate\Http\Request;
 use Illuminate\Database\Eloquent\ModelNotFoundException;
 use Illuminate\Foundation\Auth\Access\AuthorizesRequests;
 use Illuminate\Support\Facades\Auth;
+use Illuminate\Support\Facades\Storage;
 
 class UserController extends Controller
 {
@@ -162,6 +164,102 @@ class UserController extends Controller
     }
 
     /**
+     * POST /api/v1/user/avatar
+     * Uploadt (of vervangt) de profielfoto van de ingelogde gebruiker. Slaat
+     * de afbeelding op de 'public' disk op onder avatars/, ruimt de oude foto
+     * op en boekt het verbruik in het opslag-grootboek (user_uploads).
+     */
+    public function uploadAvatar(Request $request)
+    {
+        $user = Auth::user();
+        if (! $user) {
+            return response()->json(['message' => 'Unauthorized'], 401);
+        }
+
+        $request->validate([
+            // ~5 MB; gangbare web-formaten. HEIC laten we bewust weg — niet
+            // alle browsers tonen die, dus de client converteert eerst.
+            'avatar' => ['required', 'image', 'mimes:jpeg,jpg,png,webp,gif', 'max:5120'],
+        ]);
+
+        $old = $user->avatar_path;
+
+        // Bewaar onder een per-gebruiker map zodat opruimen simpel blijft.
+        $path = $request->file('avatar')->store("avatars/{$user->id}", 'public');
+
+        $user->avatar_path = $path;
+        $user->save();
+
+        // Oude foto verwijderen — voorkomt wees-bestanden bij elke wissel.
+        if ($old && $old !== $path) {
+            try {
+                Storage::disk('public')->delete($old);
+            } catch (\Throwable $e) {
+                // Best-effort opruimen; nooit de upload laten klappen.
+            }
+        }
+
+        // Grootboek bijwerken: tel de nieuwe foto, ruim oude avatar-rijen op.
+        try {
+            UserUpload::where('user_id', $user->id)->where('kind', 'avatar')->delete();
+            $file = $request->file('avatar');
+            UserUpload::record(
+                $user->id,
+                $path,
+                (int) $file->getSize(),
+                $file->getMimeType(),
+                'avatar',
+                'public'
+            );
+        } catch (\Throwable $e) {
+            // Boekhouding mag een geslaagde upload niet alsnog laten falen.
+        }
+
+        return response()->json([
+            'success'    => true,
+            'message'    => 'Avatar updated',
+            'avatar_url' => $user->avatar_url,
+            'data'       => $user->fresh(),
+        ], 200);
+    }
+
+    /**
+     * DELETE /api/v1/user/avatar
+     * Verwijdert de profielfoto van de ingelogde gebruiker (terug naar
+     * initialen). Het fysieke bestand wordt direct van de disk gehaald.
+     */
+    public function deleteAvatar()
+    {
+        $user = Auth::user();
+        if (! $user) {
+            return response()->json(['message' => 'Unauthorized'], 401);
+        }
+
+        $old = $user->avatar_path;
+        $user->avatar_path = null;
+        $user->save();
+
+        if ($old) {
+            try {
+                Storage::disk('public')->delete($old);
+            } catch (\Throwable $e) {
+                // best-effort
+            }
+            try {
+                UserUpload::where('user_id', $user->id)->where('kind', 'avatar')->delete();
+            } catch (\Throwable $e) {
+                // best-effort
+            }
+        }
+
+        return response()->json([
+            'success' => true,
+            'message' => 'Avatar removed',
+            'data'    => $user->fresh(),
+        ], 200);
+    }
+
+    /**
      * PUT /api/v1/user/settings
      * Werkt de persoonlijke voorkeuren (settings-JSON) van de ingelogde
      * gebruiker bij. Alleen bekende sleutels worden gevalideerd en
@@ -177,6 +275,9 @@ class UserController extends Controller
         $validated = $request->validate([
             // Privacy: "laatst online" zichtbaar voor anderen (opt-out).
             'show_last_seen' => ['sometimes', 'boolean'],
+            // E-mailnotificaties bij storingen of gepland onderhoud (opt-in,
+            // standaard uit). Wordt uitgelezen door `status:notify`.
+            'notify_status_emails' => ['sometimes', 'boolean'],
         ]);
 
         $settings = $user->settings ?? [];

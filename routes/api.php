@@ -50,6 +50,7 @@ use App\Http\Controllers\NineLineController;
 use App\Http\Controllers\LeadController;
 use App\Http\Controllers\AppNotificationController;
 use App\Http\Controllers\MediaController;
+use App\Http\Controllers\StatusPageController;
 
 /* Auth group */
 
@@ -74,6 +75,11 @@ Route::prefix('v1')->middleware(['api'])->group(function () {
 
     // Public share endpoint (no auth required)
     Route::get('/share/{token}', [MapShareController::class, 'showByToken']);
+
+    // Status-page domains — public; the Nuxt status page (milmap.nl/status)
+    // fetches the enabled domains here. Managed via the admin routes below.
+    Route::get('/status/domains', [StatusPageController::class, 'publicIndex'])
+        ->middleware('throttle:120,1');
 
     // Public feature requests (no auth required)
     Route::post('/feature-requests', [FeatureRequestController::class, 'store']);
@@ -124,6 +130,8 @@ Route::prefix('v1')->middleware(['api'])->group(function () {
         Route::put('/user/profile', [UserController::class, 'updateProfile']);
         Route::put('/user/settings', [UserController::class, 'updateSettings']);
         Route::put('/user/password', [UserController::class, 'changePassword']);
+        Route::post('/user/avatar', [UserController::class, 'uploadAvatar']);
+        Route::delete('/user/avatar', [UserController::class, 'deleteAvatar']);
 
         // Literal route MUST come before /users/{id} or "search" is captured as an id.
         Route::get('/users/search', [MapCollaboratorController::class, 'searchUsers']);
@@ -304,6 +312,8 @@ Route::prefix('v1')->middleware(['api'])->group(function () {
         // Messages
         Route::get('/chat/conversations/{id}/messages', [MessageController::class, 'index']);
         Route::post('/chat/conversations/{id}/messages', [MessageController::class, 'store']);
+        // "Verzenden ongedaan maken" — sender unsends (deletes) their own message.
+        Route::delete('/chat/conversations/{id}/messages/{messageId}', [MessageController::class, 'destroy']);
 
         // Message reactions (WhatsApp-style emoji likes)
         Route::post('/chat/conversations/{id}/messages/{messageId}/reactions', [MessageController::class, 'react']);
@@ -388,6 +398,13 @@ Route::prefix('v1')->middleware(['api'])->group(function () {
             Route::get('/admin/billing/price-map', [AdminBillingController::class, 'priceMap']);
             Route::put('/admin/billing/price-map', [AdminBillingController::class, 'savePriceMap']);
             Route::post('/admin/billing/flush-cache', [AdminBillingController::class, 'flushPricingCache']);
+            // ── Status-page domains (managed here, shown on milmap.nl/status) ─
+            Route::get   ('/admin/status-domains',        [StatusPageController::class, 'adminIndex']);
+            Route::post  ('/admin/status-domains',        [StatusPageController::class, 'store']);
+            Route::post  ('/admin/status-domains/check',  [StatusPageController::class, 'check']);
+            Route::put   ('/admin/status-domains/{id}',   [StatusPageController::class, 'update']);
+            Route::delete('/admin/status-domains/{id}',   [StatusPageController::class, 'destroy']);
+
             // ── Leads (marketing signups via milmap.nl/app) ─────────────
             Route::get   ('/admin/leads',                  [LeadController::class, 'adminIndex']);
             Route::post  ('/admin/leads/{id}/mark-notified', [LeadController::class, 'adminMarkNotified']);

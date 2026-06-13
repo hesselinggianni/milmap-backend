@@ -15,6 +15,7 @@ class User extends Authenticatable
     protected $fillable = [
         'first_name',
         'last_name',
+        'avatar_path',
         'email',
         'password',
         'language',
@@ -74,6 +75,14 @@ class User extends Authenticatable
         'key_escrow_alg',
     ];
 
+    /**
+     * Computed attributes that ride along in elke JSON-serialisatie van een
+     * User. avatar_url leidt het volledige web-pad af uit avatar_path, zodat
+     * de client (account, chatlijst, collaborator-lijsten) direct een bruikbare
+     * URL krijgt zonder zelf paden te plakken.
+     */
+    protected $appends = ['avatar_url'];
+
     protected function casts(): array
     {
         return [
@@ -88,6 +97,26 @@ class User extends Authenticatable
     }
 
     // ── Accessors ──────────────────────────────────────────────────
+
+    /**
+     * Volledige (publieke) URL naar de profielfoto, of null wanneer er geen
+     * foto is ingesteld. Leest het ruwe attribuut zodat de accessor ook werkt
+     * met een gedeeltelijke kolom-selectie (geeft dan simpelweg null terug),
+     * en faalt nooit hard wanneer de disk-config ontbreekt.
+     */
+    public function getAvatarUrlAttribute(): ?string
+    {
+        $path = $this->attributes['avatar_path'] ?? null;
+        if (! $path) {
+            return null;
+        }
+
+        try {
+            return \Illuminate\Support\Facades\Storage::disk('public')->url($path);
+        } catch (\Throwable $e) {
+            return null;
+        }
+    }
 
     /**
      * Volledige naam (voor- + achternaam). Valt terug op het e-mailadres

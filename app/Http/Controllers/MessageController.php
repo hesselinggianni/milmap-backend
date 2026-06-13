@@ -130,6 +130,49 @@ class MessageController extends Controller
     }
 
     /**
+     * "Verzenden ongedaan maken" — unsend a message you sent. Only the original
+     * sender may delete, and the row is removed for EVERYONE (true unsend): the
+     * ciphertext, any reactions and the per-recipient boxes all go with it. A
+     * MessageDeleted event tells every other participant's client to drop the
+     * bubble live. Attachments referenced inside the (E2EE) payload become
+     * orphaned blobs the server can't see; a sweeper job reclaims those.
+     */
+    public function destroy(Request $request, $conversationId, $messageId)
+    {
+        $userId = Auth::id();
+
+        $conversation = Conversation::findOrFail($conversationId);
+        if (! $conversation->hasParticipant($userId)) {
+            return response()->json(['message' => 'Forbidden.'], 403);
+        }
+
+        $message = Message::where('conversation_id', $conversation->id)
+            ->whereKey($messageId)
+            ->firstOrFail();
+
+        // Alleen de afzender mag zijn eigen bericht intrekken.
+        if ((string) $message->sender_id !== (string) $userId) {
+            return response()->json([
+                'message' => 'Je kunt alleen je eigen berichten verwijderen.',
+            ], 403);
+        }
+
+        $deletedId = (int) $message->id;
+
+        // Verwijder eerst de reacties (geen FK-cascade gegarandeerd), dan de rij.
+        MessageReaction::where('message_id', $message->id)->delete();
+        $message->delete();
+
+        try {
+            broadcast(new \App\Events\MessageDeleted($conversation->id, $deletedId))->toOthers();
+        } catch (\Throwable $e) {
+            \Illuminate\Support\Facades\Log::warning('[chat] delete broadcast failed: ' . $e->getMessage());
+        }
+
+        return response()->json(['ok' => true, 'message_id' => $deletedId]);
+    }
+
+    /**
      * Toggle a WhatsApp-style emoji reaction on a message.
      *
      * One reaction per user per message: sending the SAME emoji you already

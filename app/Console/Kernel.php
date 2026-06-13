@@ -5,6 +5,7 @@ namespace App\Console;
 use Illuminate\Console\Scheduling\Schedule;
 use Illuminate\Foundation\Console\Kernel as ConsoleKernel;
 use App\Console\Commands\FetchEmails; // Voeg het juiste pad toe naar je command
+use App\Console\Commands\SendStatusNotification;
 
 class Kernel extends ConsoleKernel
 {
@@ -15,6 +16,7 @@ class Kernel extends ConsoleKernel
      */
     protected $commands = [
         FetchEmails::class, // Voeg het command toe
+        SendStatusNotification::class,
     ];
 
     /**

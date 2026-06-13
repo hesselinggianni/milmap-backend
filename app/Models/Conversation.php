@@ -29,8 +29,11 @@ class Conversation extends Model
 
     public function participants()
     {
+        // Alle per-gebruiker pivot-velden meeladen — anders leest present()
+        // ze terug als null en springt de UI (favoriet/dempen/gelezen) na de
+        // eerstvolgende poll weer terug naar de oude staat.
         return $this->belongsToMany(User::class, 'conversation_user')
-            ->withPivot('last_read_at')
+            ->withPivot('last_read_at', 'muted_until', 'favorited_at', 'cleared_at', 'archived_at')
             ->withTimestamps();
     }
 
