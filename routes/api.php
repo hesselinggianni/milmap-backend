@@ -81,8 +81,10 @@ Route::prefix('v1')->middleware(['api'])->group(function () {
     Route::get('/status/domains', [StatusPageController::class, 'publicIndex'])
         ->middleware('throttle:120,1');
 
-    // Public feature requests (no auth required)
-    Route::post('/feature-requests', [FeatureRequestController::class, 'store']);
+    // Public feature requests (no auth required). Throttled against spam now
+    // that submissions are persisted (admin-zicht onder /admin/feature-requests).
+    Route::post('/feature-requests', [FeatureRequestController::class, 'store'])
+        ->middleware('throttle:20,1');
 
     // Public contact tickets (no auth required)
     Route::post('/contact-tickets', [ContactTicketController::class, 'store']);
@@ -308,6 +310,11 @@ Route::prefix('v1')->middleware(['api'])->group(function () {
         Route::post('/chat/conversations/{id}/leave',        [ConversationController::class, 'leave']);
         Route::post('/chat/conversations/{id}/clear',        [ConversationController::class, 'clear']);
         Route::post('/chat/conversations/{id}/block',        [ConversationController::class, 'block']);
+        // Geblokkeerde gebruikers beheren: lijst opvragen + deblokkeren.
+        // User-level (geldt over alle 1-op-1 chats), dus losgekoppeld van een
+        // specifieke conversation-id.
+        Route::get('/chat/blocked',                          [ConversationController::class, 'blockedList']);
+        Route::delete('/chat/blocked/{userId}',              [ConversationController::class, 'unblock']);
 
         // Messages
         Route::get('/chat/conversations/{id}/messages', [MessageController::class, 'index']);
@@ -409,6 +416,11 @@ Route::prefix('v1')->middleware(['api'])->group(function () {
             Route::get   ('/admin/leads',                  [LeadController::class, 'adminIndex']);
             Route::post  ('/admin/leads/{id}/mark-notified', [LeadController::class, 'adminMarkNotified']);
             Route::delete('/admin/leads/{id}',              [LeadController::class, 'adminDestroy']);
+
+            // ── Feature requests (publiek formulier op milmap.nl) ───────
+            Route::get   ('/admin/feature-requests',      [FeatureRequestController::class, 'adminIndex']);
+            Route::put   ('/admin/feature-requests/{id}', [FeatureRequestController::class, 'adminUpdate']);
+            Route::delete('/admin/feature-requests/{id}', [FeatureRequestController::class, 'adminDestroy']);
 
             Route::get('/admin/users/{userId}', [AdminController::class, 'getUser']);
             Route::delete('/admin/users/{userId}', [AdminController::class, 'deleteUser']);

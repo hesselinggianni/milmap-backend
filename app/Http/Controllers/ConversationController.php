@@ -364,6 +364,64 @@ class ConversationController extends Controller
     }
 
     /**
+     * Lijst van gebruikers die de ingelogde gebruiker heeft geblokkeerd.
+     * User-level: geldt over alle 1-op-1 chats heen. Nieuwste blokkade eerst.
+     */
+    public function blockedList()
+    {
+        $me = Auth::id();
+
+        $blocks = DB::table('user_blocks')
+            ->where('blocker_id', $me)
+            ->orderByDesc('created_at')
+            ->get(['blocked_id', 'created_at']);
+
+        $ids = $blocks->pluck('blocked_id')->all();
+        // Profielen in één query ophalen (geen N+1). avatar_url is een accessor
+        // op het User-model en heeft avatar_path nodig.
+        $users = User::whereIn('id', $ids)
+            ->get(['id', 'first_name', 'last_name', 'email', 'avatar_path'])
+            ->keyBy('id');
+        $blockedAt = $blocks->keyBy('blocked_id');
+
+        $data = collect($ids)->map(function ($id) use ($users, $blockedAt) {
+            $u = $users->get($id);
+            if (! $u) {
+                return null; // gebruiker bestaat niet meer
+            }
+            return [
+                'id'         => (int) $u->id,
+                'name'       => trim(($u->first_name ?? '') . ' ' . ($u->last_name ?? '')) ?: ($u->email ?? 'Onbekend'),
+                'email'      => $u->email,
+                'avatar_url' => $u->avatar_url,
+                'blocked_at' => optional($blockedAt->get($id))->created_at,
+            ];
+        })->filter()->values();
+
+        return response()->json(['data' => $data]);
+    }
+
+    /**
+     * Deblokkeer een gebruiker: verwijder de blokkade-rij. De eerder
+     * gearchiveerde chat blijft in de Prullenbak en is daar te herstellen.
+     */
+    public function unblock($userId)
+    {
+        $me = Auth::id();
+
+        $deleted = DB::table('user_blocks')
+            ->where('blocker_id', $me)
+            ->where('blocked_id', (int) $userId)
+            ->delete();
+
+        return response()->json([
+            'ok'                => true,
+            'unblocked_user_id' => (int) $userId,
+            'was_blocked'       => $deleted > 0,
+        ]);
+    }
+
+    /**
      * Shape a conversation for the API, from the viewer's perspective.
      */
     protected function present(Conversation $c, int $viewerId): array
