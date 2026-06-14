@@ -261,6 +261,21 @@ class MissionController extends Controller
             'can_manage' => in_array($role, ['owner', 'admin'], true),
         ];
 
+        // Always expose the collaborator roster as an array so the client can
+        // safely read `mission.collaborators.length` (e.g. a participant-count
+        // badge). The mission list already eager-loads this relation, so
+        // loadMissing() is a no-op there (no N+1); the single-mission paths load
+        // it on demand. Kept to a minimal, non-sensitive shape — the full
+        // management view with e-mails lives behind the owner/admin-only
+        // GET /missions/{id}/collaborators endpoint.
+        $mission->loadMissing('collaborators');
+        $out['collaborators'] = $mission->collaborators->map(fn ($c) => [
+            'id'      => $c->id,
+            'user_id' => $c->user_id,
+            'role'    => $c->role,
+            'status'  => $c->status,
+        ])->values();
+
         if ($includeLogo) {
             $out['logo'] = $mission->logo;
         }

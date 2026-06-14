@@ -47,6 +47,22 @@ class BillingController extends Controller
         $this->stripe = new StripeClient(['api_key' => config('billing.stripe_secret') ?: null]);
     }
 
+    // ── Payment methods ────────────────────────────────────────────
+    // De betaalmethodes die Checkout mag aanbieden. We geven ze expliciet mee
+    // zodat een sessie ALTIJD minstens één geldige methode voor zijn valuta
+    // heeft. Wordt dit weggelaten, dan vertrouwt Stripe Checkout volledig op de
+    // (dynamic) dashboard-config; staat die niet goed, dan faalt het aanmaken
+    // met "No valid payment method types for this Checkout Session". De default
+    // is 'card' (werkt voor elke valuta/account) en is via config/.env uit te
+    // breiden naar bv. card,ideal,bancontact — of leeg te maken om bewust op de
+    // dashboard-config te leunen.
+    private function paymentMethodTypes(): array
+    {
+        $types = config('billing.payment_method_types', ['card']);
+
+        return is_array($types) ? array_values(array_filter($types)) : [];
+    }
+
     // ── Plan labels ────────────────────────────────────────────────
     private function planLabel(string $planKey): string
     {
@@ -232,11 +248,11 @@ class BillingController extends Controller
             }
 
             // Create Checkout Session
-            // NB: payment_method_types wordt bewust NIET hardcoded. Stripe Checkout
-            // kiest dan automatisch de in het Dashboard geactiveerde methodes die
-            // geldig zijn voor deze mode/valuta. Hardcoden van bv. 'ideal' geeft
-            // anders "payment method type ... is invalid" als de combinatie niet klopt.
-            $session = $this->stripe->checkout->sessions->create(array_merge($customerParams, [
+            // De toegestane betaalmethodes komen uit config (default 'card') zodat
+            // de sessie altijd minstens één geldige methode heeft; zie
+            // paymentMethodTypes(). Een lege config laat de methode-keuze aan de
+            // dashboard-config over (dynamic payment methods).
+            $sessionParams = array_merge($customerParams, [
                 'mode'                 => 'subscription',
                 'line_items'           => [[
                     'price'    => $priceId,
@@ -251,13 +267,21 @@ class BillingController extends Controller
                 'allow_promotion_codes'      => true,
                 'billing_address_collection' => 'auto',
                 'locale'                     => 'nl',
-            ]));
-        } catch (\Stripe\Exception\ApiErrorException $e) {
-            // Stripe rejected the request. The most common cause here is a Price
-            // ID that doesn't exist in the account/mode the active secret key
-            // points to (a test-vs-live mismatch) → "No such price: price_…".
-            // Surface a clean message and log the real reason + the offending
-            // price so this never returns an opaque 500 again.
+            ]);
+            if ($pmTypes = $this->paymentMethodTypes()) {
+                $sessionParams['payment_method_types'] = $pmTypes;
+            }
+
+            $session = $this->stripe->checkout->sessions->create($sessionParams);
+        } catch (\Stripe\Exception\ExceptionInterface $e) {
+            // Any Stripe failure. The most common cause here is a Price ID that
+            // doesn't exist in the account/mode the active secret key points to
+            // (a test-vs-live mismatch) → "No such price: price_…". We catch the
+            // SDK's base ExceptionInterface (not just ApiErrorException) so the
+            // local InvalidArgument/UnexpectedValue exceptions — which do NOT
+            // extend ApiErrorException — are handled here too. Surface a clean
+            // message and log the real reason + the offending price so this
+            // never returns an opaque 500 again.
             Log::error('guestCheckout Stripe error', [
                 'plan'         => $request->plan,
                 'price_id'     => $priceId,
@@ -413,9 +437,9 @@ class BillingController extends Controller
         }
 
         // Create Checkout Session
-        // NB: payment_method_types wordt bewust NIET hardcoded — zie guestCheckout().
-        // Stripe Checkout bepaalt zelf welke geactiveerde methodes geldig zijn.
-        $session = $this->stripe->checkout->sessions->create([
+        // Toegestane betaalmethodes uit config (default 'card') — zie
+        // paymentMethodTypes() / guestCheckout() voor de toelichting.
+        $sessionParams = [
             'customer'             => $user->stripe_id,
             'mode'                 => 'subscription',
             'line_items'           => [[
@@ -437,7 +461,12 @@ class BillingController extends Controller
             'allow_promotion_codes' => true,
             'billing_address_collection' => 'auto',
             'locale' => 'nl',
-        ]);
+        ];
+        if ($pmTypes = $this->paymentMethodTypes()) {
+            $sessionParams['payment_method_types'] = $pmTypes;
+        }
+
+        $session = $this->stripe->checkout->sessions->create($sessionParams);
 
         return response()->json([
             'checkout_url' => $session->url,

@@ -34,4 +34,23 @@ return [
     'stripe_price_team_monthly' => env('STRIPE_PRICE_TEAM_MONTHLY'),
     'stripe_price_team_yearly'  => env('STRIPE_PRICE_TEAM_YEARLY'),
 
+    /*
+    |--------------------------------------------------------------------------
+    | Checkout Payment Method Types
+    |--------------------------------------------------------------------------
+    | Comma-separated list of payment methods that Checkout may offer, e.g.
+    | "card,ideal,bancontact". A non-empty list is passed to Stripe as
+    | `payment_method_types`, guaranteeing the session always has at least one
+    | valid method for its currency. Leave EMPTY to let Stripe Checkout pick the
+    | methods configured in your Dashboard (dynamic payment methods) — note that
+    | this requires the Dashboard to be set up, otherwise Stripe returns
+    | "No valid payment method types for this Checkout Session".
+    |
+    | Default 'card' works out of the box for every currency/account.
+    */
+    'payment_method_types' => array_values(array_filter(array_map(
+        'trim',
+        explode(',', (string) env('STRIPE_PAYMENT_METHOD_TYPES', 'card'))
+    ))),
+
 ];

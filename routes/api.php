@@ -28,6 +28,7 @@ use App\Http\Controllers\BillingController;
 use App\Http\Controllers\MapCollaboratorController;
 use App\Http\Controllers\RouteGenerationController;
 use App\Http\Controllers\ChatKeyController;
+use App\Http\Controllers\ChatPairingController;
 use App\Http\Controllers\ConversationController;
 use App\Http\Controllers\MessageController;
 use App\Http\Controllers\MissionController;
@@ -46,6 +47,7 @@ use App\Http\Controllers\MissionCommsController;
 use App\Http\Controllers\TrashController;
 use App\Http\Controllers\StatsController;
 use App\Http\Controllers\SecurityController;
+use App\Http\Controllers\SessionController;
 use App\Http\Controllers\NineLineController;
 use App\Http\Controllers\LeadController;
 use App\Http\Controllers\AppNotificationController;
@@ -135,6 +137,11 @@ Route::prefix('v1')->middleware(['api'])->group(function () {
         Route::put('/user/password', [UserController::class, 'changePassword']);
         Route::post('/user/avatar', [UserController::class, 'uploadAvatar']);
         Route::delete('/user/avatar', [UserController::class, 'deleteAvatar']);
+
+        // Login-historie / actieve sessies (Account → Beveiliging).
+        Route::get('/user/sessions', [SessionController::class, 'index']);
+        Route::post('/user/sessions/revoke-others', [SessionController::class, 'destroyOthers']);
+        Route::delete('/user/sessions/{id}', [SessionController::class, 'destroy']);
 
         // Literal route MUST come before /users/{id} or "search" is captured as an id.
         Route::get('/users/search', [MapCollaboratorController::class, 'searchUsers']);
@@ -294,6 +301,12 @@ Route::prefix('v1')->middleware(['api'])->group(function () {
         Route::put('/chat/keys/escrow', [ChatKeyController::class, 'storeEscrow']);
         Route::get('/chat/keys/escrow', [ChatKeyController::class, 'escrow']);
         Route::get('/chat/keys/{id}', [ChatKeyController::class, 'show']);
+
+        // QR-apparaatkoppeling (WhatsApp-Web-patroon): ontgrendel de chat op een
+        // nieuw apparaat door met een reeds ontgrendeld apparaat de QR te scannen.
+        Route::post('/chat/pairing', [ChatPairingController::class, 'create']);
+        Route::post('/chat/pairing/{id}/claim', [ChatPairingController::class, 'claim']);
+        Route::get('/chat/pairing/{id}', [ChatPairingController::class, 'show']);
 
         // Conversations
         Route::get('/chat/conversations', [ConversationController::class, 'index']);

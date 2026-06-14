@@ -43,6 +43,16 @@ return [
             ],
             'client_options' => [
                 // Guzzle client options: https://docs.guzzlephp.org/en/stable/request-options.html
+                //
+                // De chat-events broadcasten synchroon (ShouldBroadcastNow) binnen
+                // de HTTP-request. Zonder timeout valt de Pusher/Guzzle-default van
+                // ~30s terug: bij een trage/onbereikbare Reverb-server blijft de
+                // request hangen tot ver voorbij de 10s axios-timeout van de
+                // frontend ("timeout of 10000ms exceeded"). Met een korte timeout
+                // faalt de broadcast snel; de controller vangt dat af en het
+                // bericht is al opgeslagen (clients halen het bij de volgende poll).
+                'timeout' => 4,
+                'connect_timeout' => 2,
             ],
         ],
 
@@ -61,6 +71,10 @@ return [
             ],
             'client_options' => [
                 // Guzzle client options: https://docs.guzzlephp.org/en/stable/request-options.html
+                // Zelfde reden als bij 'reverb': voorkom dat een synchrone
+                // broadcast de request laat hangen voorbij de frontend-timeout.
+                'timeout' => 4,
+                'connect_timeout' => 2,
             ],
         ],
 

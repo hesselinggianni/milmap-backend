@@ -1,9 +1,11 @@
 <?php
 
 
+use Illuminate\Auth\AuthenticationException;
 use Illuminate\Foundation\Application;
 use Illuminate\Foundation\Configuration\Exceptions;
 use Illuminate\Foundation\Configuration\Middleware;
+use Illuminate\Http\Request;
 
 return Application::configure(basePath: dirname(__DIR__))
     ->withRouting(
@@ -30,7 +32,15 @@ return Application::configure(basePath: dirname(__DIR__))
         ]);
     })
     ->withExceptions(function (Exceptions $exceptions) {
-        // Custom exception handling if needed
+        // API-only app: een niet-geauthenticeerd request mag nooit naar de
+        // (niet-bestaande) named route 'login' redirecten. Forceer altijd een
+        // 401 JSON-respons i.p.v. de framework-default `route('login')`, die
+        // anders "Route [login] not defined." gooit.
+        $exceptions->render(function (AuthenticationException $e, Request $request) {
+            return response()->json([
+                'message' => $e->getMessage() ?: 'Unauthenticated.',
+            ], 401);
+        });
     })
     ->create();
 

@@ -29,3 +29,6 @@ Thumbs.db
 
 # Claude Code
 .claude/
+vendor/.DS_Store
+vendor/laravel/.DS_Store
+vendor/phpunit/.DS_Store

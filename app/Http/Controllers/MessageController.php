@@ -164,7 +164,7 @@ class MessageController extends Controller
         $message->delete();
 
         try {
-            broadcast(new \App\Events\MessageDeleted($conversation->id, $deletedId))->toOthers();
+            broadcast(new \App\Events\MessageDeleted((int) $conversation->id, $deletedId))->toOthers();
         } catch (\Throwable $e) {
             \Illuminate\Support\Facades\Log::warning('[chat] delete broadcast failed: ' . $e->getMessage());
         }

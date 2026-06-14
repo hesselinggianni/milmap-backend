@@ -4,6 +4,7 @@ namespace App\Http\Controllers\Auth;
 
 use App\Http\Controllers\Controller;
 use App\Mail\LoginNotification;
+use App\Support\DeviceInfo;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Auth;
 use Illuminate\Support\Facades\Hash;
@@ -57,7 +58,19 @@ class LoginController extends Controller
         // Scope regular-login tokens to the 'user' ability so they can never
         // satisfy tokenCan('admin') — admin routes require a token minted via
         // the admin login flow (see AdminAuth middleware).
-        $token = $user->createToken('API Token', ['user'])->plainTextToken;
+        $newToken = $user->createToken('API Token', ['user']);
+
+        // Device-/herkomst-metadata op het token zodat de gebruiker dit later
+        // in Account → Beveiliging als login-historie terugziet en gericht
+        // sessies kan intrekken. forceFill omdat dit geen $fillable-velden zijn.
+        $newToken->accessToken->forceFill([
+            'ip_address'   => $request->ip(),
+            'user_agent'   => $request->userAgent(),
+            'platform'     => DeviceInfo::platform($request),
+            'last_used_ip' => $request->ip(),
+        ])->save();
+
+        $token = $newToken->plainTextToken;
 
         $this->sendLoginNotification($request, $user);
 
