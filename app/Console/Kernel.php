@@ -6,6 +6,7 @@ use Illuminate\Console\Scheduling\Schedule;
 use Illuminate\Foundation\Console\Kernel as ConsoleKernel;
 use App\Console\Commands\FetchEmails; // Voeg het juiste pad toe naar je command
 use App\Console\Commands\SendStatusNotification;
+use App\Console\Commands\NotifyNewMail;
 
 class Kernel extends ConsoleKernel
 {
@@ -17,6 +18,7 @@ class Kernel extends ConsoleKernel
     protected $commands = [
         FetchEmails::class, // Voeg het command toe
         SendStatusNotification::class,
+        NotifyNewMail::class,
     ];
 
     /**
@@ -30,6 +32,12 @@ class Kernel extends ConsoleKernel
         // Voer de fetchEmails taak elke minuut uit
         $schedule->command('emails:fetch')->everyMinute();
         $schedule->command('check:status')->everyMinute();
+
+        // Nieuwe-mail notificaties voor de admin-app. withoutOverlapping zodat
+        // een trage IMAP-poll de volgende run niet laat opstapelen.
+        $schedule->command('mail:notify-new')
+            ->everyMinute()
+            ->withoutOverlapping();
 
         // Definitief verwijderen wat langer dan 60 dagen in de prullenbak zit.
         // Draait 's nachts (lage piek), met overlap-bescherming en logging.

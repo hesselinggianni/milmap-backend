@@ -26,6 +26,14 @@ class ContactTicketController extends Controller
 
             $this->sendEmail($ticket);
 
+            // Notificeer de admin-app (lokale melding via de notificatie-feed).
+            \App\Models\AppNotification::notifyAdmins(
+                'admin.support',
+                'Nieuwe supportaanvraag',
+                trim($ticket->name . ' — ' . $ticket->subject),
+                ['ticket_id' => $ticket->id, 'email' => $ticket->email, 'action_url' => '/admin'],
+            );
+
             return response()->json([
                 'message'   => 'Ticket created successfully',
                 'ticket_id' => $ticket->id,

@@ -72,6 +72,14 @@ class FeatureRequestController extends Controller
                 Log::warning('Feature request mail failed: '.$e->getMessage());
             }
 
+            // Notificeer de admin-app (lokale melding via de notificatie-feed).
+            \App\Models\AppNotification::notifyAdmins(
+                'admin.feature_request',
+                'Nieuwe feature request',
+                trim($validated['user_name'].' — '.$validated['title']),
+                ['feature_request_id' => $featureRequest->id, 'action_url' => '/admin/feature-requests'],
+            );
+
             return response()->json([
                 'message' => 'Feature request received successfully',
                 'data' => [

@@ -2,8 +2,11 @@
 
 namespace App\Http\Controllers;
 
+use App\Mail\AppDownloadMail;
 use App\Models\Lead;
+use App\Services\LaunchCouponService;
 use Illuminate\Http\Request;
+use Illuminate\Support\Facades\Mail;
 use Illuminate\Validation\Rule;
 
 /**
@@ -113,6 +116,50 @@ class LeadController extends Controller
         $lead->notified_at = now();
         $lead->save();
         return response()->json(['ok' => true]);
+    }
+
+    /**
+     * POST /api/v1/admin/leads/{id}/send-download-mail — verstuur de
+     * app-download-mail handmatig naar deze lead: mint een unieke Stripe-
+     * promotiecode (50% op het jaarabonnement, 1x, 1 jaar geldig), verstuurt de
+     * Apple-clean mail en markeert de lead als geïnformeerd.
+     */
+    public function adminSendDownloadMail(int $id, LaunchCouponService $coupons)
+    {
+        $lead = Lead::findOrFail($id);
+
+        try {
+            $result = $coupons->createYearlyHalfOffCode($lead->email);
+        } catch (\Throwable $e) {
+            return response()->json([
+                'ok'      => false,
+                'message' => 'Kon geen kortingscode aanmaken: ' . $e->getMessage(),
+            ], 422);
+        }
+
+        try {
+            Mail::to($lead->email)->send(new AppDownloadMail(
+                couponCode: $result['code'],
+                couponExpiresLabel: $result['expires_at']->locale('nl')->isoFormat('D MMMM YYYY'),
+                appStoreUrl: config('milmap.app_store_url'),
+                playStoreUrl: config('milmap.play_store_url'),
+                webAppUrl: config('milmap.web_app_url'),
+            ));
+        } catch (\Throwable $e) {
+            return response()->json([
+                'ok'      => false,
+                'message' => 'Versturen mislukt: ' . $e->getMessage(),
+            ], 500);
+        }
+
+        $lead->notified_at = now();
+        $lead->save();
+
+        return response()->json([
+            'ok'          => true,
+            'code'        => $result['code'],
+            'notified_at' => $lead->notified_at->toIso8601String(),
+        ]);
     }
 
     /**

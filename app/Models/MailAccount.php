@@ -37,6 +37,7 @@ class MailAccount extends Model
         'signature_html',
         'is_active',
         'last_synced_at',
+        'last_seen_uid',
     ];
 
     /**
@@ -58,6 +59,7 @@ class MailAccount extends Model
             'imap_port'          => 'integer',
             'smtp_port'          => 'integer',
             'last_synced_at'     => 'datetime',
+            'last_seen_uid'      => 'integer',
         ];
     }
 

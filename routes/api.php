@@ -411,6 +411,15 @@ Route::prefix('v1')->middleware(['api'])->group(function () {
         // Admin routes (protected by AdminAuth middleware)
         Route::middleware('admin.auth')->group(function () {
             Route::get('/admin/stats', [AdminController::class, 'getDashboardStats']);
+
+            // In-app notificatie-feed voor de admin-app (nieuwe mail / support /
+            // feature requests). Onder de admin-prefix zodat de frontend-
+            // interceptor het admin-token meestuurt. Hergebruikt de feed-
+            // controller (werkt op de ingelogde admin via Auth::id()).
+            Route::get ('/admin/notifications',           [AppNotificationController::class, 'index']);
+            Route::post('/admin/notifications/read-all',  [AppNotificationController::class, 'markAllRead']);
+            Route::post('/admin/notifications/{id}/read', [AppNotificationController::class, 'markRead']);
+
             Route::get('/admin/client-errors', [AdminController::class, 'clientErrors']);
             Route::delete('/admin/client-errors', [AdminController::class, 'clearClientErrors']);
 
@@ -429,6 +438,7 @@ Route::prefix('v1')->middleware(['api'])->group(function () {
             // ── Leads (marketing signups via milmap.nl/app) ─────────────
             Route::get   ('/admin/leads',                  [LeadController::class, 'adminIndex']);
             Route::post  ('/admin/leads/{id}/mark-notified', [LeadController::class, 'adminMarkNotified']);
+            Route::post  ('/admin/leads/{id}/send-download-mail', [LeadController::class, 'adminSendDownloadMail']);
             Route::delete('/admin/leads/{id}',              [LeadController::class, 'adminDestroy']);
 
             // ── Feature requests (publiek formulier op milmap.nl) ───────
