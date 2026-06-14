@@ -164,7 +164,7 @@ class TrashController extends Controller
             ->join('users as u', 'u.id', '=', 'cu.user_id')
             ->where('cu.conversation_id', $row->id)
             ->where('cu.user_id', '!=', $uid)
-            ->value(DB::raw("COALESCE(u.name, CONCAT(u.first_name,' ',u.last_name), u.email)"));
+            ->value(DB::raw("COALESCE(NULLIF(TRIM(CONCAT_WS(' ', u.first_name, u.last_name)), ''), u.email)"));
         return $other ?: 'Gesprek';
     }
 
