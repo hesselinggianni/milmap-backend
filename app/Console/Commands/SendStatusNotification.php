@@ -3,7 +3,9 @@
 namespace App\Console\Commands;
 
 use App\Mail\NotificationMail;
+use App\Models\MailCategory;
 use App\Models\User;
+use App\Services\NotificationPreferenceService;
 use Illuminate\Console\Command;
 use Illuminate\Support\Facades\Mail;
 
@@ -36,11 +38,15 @@ class SendStatusNotification extends Command
             return self::FAILURE;
         }
 
-        // Alleen gebruikers die de opt-in expliciet op true hebben staan.
+        // Gebruikers die de e-mailvoorkeur 'statuspage' AAN hebben (= niet afgemeld).
+        // Dezelfde voorkeur die de gebruiker in Account → Meldingen en via de
+        // unsubscribe-link beheert (mail_opt_outs).
+        $statuspageId = MailCategory::where('key', 'statuspage')->value('id');
         $recipients = User::query()
-            ->where('settings->notify_status_emails', true)
             ->whereNotNull('email')
-            ->get(['id', 'email']);
+            ->get(['id', 'email'])
+            ->filter(fn ($u) => NotificationPreferenceService::wantsEmail($u->email, $statuspageId))
+            ->values();
 
         if ($recipients->isEmpty()) {
             $this->warn('Geen gebruikers aangemeld voor storing-/onderhoudsmeldingen.');

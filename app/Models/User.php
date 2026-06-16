@@ -35,6 +35,8 @@ class User extends Authenticatable
         'view_only',
         'share_uuid',
         'referred_by_id',
+        'email_verified_at',
+        'archived_at',
     ];
 
     /**
@@ -87,6 +89,7 @@ class User extends Authenticatable
     {
         return [
             'email_verified_at' => 'datetime',
+            'archived_at'       => 'datetime',
             'password'          => 'hashed',
             'settings'          => 'array',
             'trial_ends_at'     => 'datetime',
@@ -266,6 +269,90 @@ class User extends Authenticatable
     public function isViewOnly(): bool
     {
         return (bool) $this->view_only && ! $this->subscribed();
+    }
+
+    // ── E-mailverificatie ───────────────────────────────────────────
+    //
+    // Gratis (niet-betalende) accounts moeten hun e-mail bevestigen via een
+    // link in de mail. Dit weert nep-accounts. Een Stripe-betaling geldt als
+    // bewijs van echtheid: bij betaling wordt de e-mail automatisch geverifieerd
+    // (markEmailVerified). Eenmaal geverifieerd blijft geverifieerd.
+
+    /** Uren na registratie waarin een ongeverifieerd account nog vrij werkt. */
+    public const VERIFICATION_GRACE_HOURS = 24;
+
+    /** Dagen waarna een nog steeds ongeverifieerd, onbetaald account wordt gearchiveerd. */
+    public const VERIFICATION_ARCHIVE_DAYS = 90;
+
+    public function hasVerifiedEmail(): bool
+    {
+        return ! is_null($this->email_verified_at);
+    }
+
+    public function isArchived(): bool
+    {
+        return ! is_null($this->archived_at);
+    }
+
+    /** Zet de e-mail op geverifieerd (idempotent). Roep dit ook aan bij betaling. */
+    public function markEmailVerified(): bool
+    {
+        if ($this->hasVerifiedEmail()) {
+            return false;
+        }
+        $this->forceFill(['email_verified_at' => now()])->save();
+
+        return true;
+    }
+
+    /** Verificatie vereist? Ja zolang niet geverifieerd én geen actief abonnement. */
+    public function requiresEmailVerification(): bool
+    {
+        return ! $this->hasVerifiedEmail() && ! $this->subscribed();
+    }
+
+    /** Einde van de 24-uurs coulanceperiode na registratie. */
+    public function verificationGraceEndsAt(): \Illuminate\Support\Carbon
+    {
+        return ($this->created_at ?? now())->copy()->addHours(self::VERIFICATION_GRACE_HOURS);
+    }
+
+    public function isWithinVerificationGrace(): bool
+    {
+        return now()->lt($this->verificationGraceEndsAt());
+    }
+
+    /**
+     * Moet deze gebruiker de verificatie-"wall" zien? Pas ná de coulanceperiode
+     * (24u na registratie) en alleen als verificatie nog vereist is.
+     */
+    public function isEmailVerificationWalled(): bool
+    {
+        return $this->requiresEmailVerification() && ! $this->isWithinVerificationGrace();
+    }
+
+    /** Hash voor de signed verificatie-URL (Laravel-standaard: sha1 van e-mail). */
+    public function emailVerificationHash(): string
+    {
+        return sha1((string) $this->getEmailForVerification());
+    }
+
+    public function getEmailForVerification(): string
+    {
+        return (string) $this->email;
+    }
+
+    /** Compacte verificatie-status voor de frontend (login + /users/me). */
+    public function verificationState(): array
+    {
+        return [
+            'email_verified' => $this->hasVerifiedEmail(),
+            'required'       => $this->requiresEmailVerification(),
+            'grace_ends_at'  => $this->requiresEmailVerification()
+                ? $this->verificationGraceEndsAt()->toIso8601String()
+                : null,
+            'walled'         => $this->isEmailVerificationWalled(),
+        ];
     }
 
 }

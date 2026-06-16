@@ -6,6 +6,7 @@ use App\Http\Controllers\Auth\RegisterController;
 use App\Http\Controllers\Auth\LoginController;
 use App\Http\Controllers\Auth\LogoutController;
 use App\Http\Controllers\Auth\PasswordResetController;
+use App\Http\Controllers\Auth\EmailVerificationController;
 
 
 use App\Http\Controllers\UserController;
@@ -51,9 +52,14 @@ use App\Http\Controllers\SessionController;
 use App\Http\Controllers\NineLineController;
 use App\Http\Controllers\LeadController;
 use App\Http\Controllers\AppNotificationController;
+use App\Http\Controllers\MeCampaignMailController;
 use App\Http\Controllers\MediaController;
 use App\Http\Controllers\StatusPageController;
 use App\Http\Controllers\TodoController;
+use App\Http\Controllers\MailCampaignController;
+use App\Http\Controllers\MailPreferenceController;
+use App\Http\Controllers\MailUnsubscribeController;
+use App\Http\Controllers\MailTrackingController;
 
 /* Auth group */
 
@@ -66,6 +72,17 @@ Route::prefix('v1')->middleware(['api'])->group(function () {
     Route::post('/login', [LoginController::class, 'store']);
     Route::post('/logout', [LogoutController::class, 'destroy'])->middleware('auth:sanctum');
     Route::post('/logout-all', [LogoutController::class, 'logoutFromAllDevices'])->middleware('auth:sanctum');
+
+    // ── E-mailverificatie ────────────────────────────────────────────
+    // De link uit de mail (publiek; de signed URL is de authenticatie). Resend
+    // vereist een ingelogde gebruiker, maar staat bewust BUITEN de verificatie-
+    // middleware zodat een gewallde gebruiker 'm nog kan aanroepen.
+    Route::get('/email/verify/{id}/{hash}', [EmailVerificationController::class, 'verify'])
+        ->middleware('throttle:30,1')
+        ->name('verification.verify');
+    Route::post('/email/verification-notification', [EmailVerificationController::class, 'resend'])
+        ->middleware(['auth:sanctum', 'throttle:6,1'])
+        ->name('verification.send');
 
     Route::post('/password/reset-link', [PasswordResetController::class, 'sendResetLink'])
         ->middleware('throttle:6,1');
@@ -119,11 +136,19 @@ Route::prefix('v1')->middleware(['api'])->group(function () {
     // te informeren over de release. Throttled tegen e-mail-spam.
     Route::post('/leads', [LeadController::class, 'store'])
         ->middleware('throttle:6,1');
+
+    // ── Campagne-mail: publieke afmeld- + tracking-routes ───────────────
+    // Bewust hier (api.php) i.p.v. web.php: de SPA-catch-all (/{any}) in web.php
+    // zou anders elke GET opslokken. Token komt uit mail_sends.token.
+    Route::get ('/m/u/{token}', [MailUnsubscribeController::class, 'show'])->middleware('throttle:30,1');
+    Route::post('/m/u/{token}', [MailUnsubscribeController::class, 'update'])->middleware('throttle:30,1');
+    // Open-tracking-pixel (1×1 gif). Ruimere throttle want sommige clients prefetchen.
+    Route::get('/m/o/{token}.gif', [MailTrackingController::class, 'pixel'])->middleware('throttle:120,1');
 });
 
 
 Route::prefix('v1')->middleware(['api'])->group(function () {
-    Route::middleware(['auth:sanctum', \App\Http\Middleware\TrackLastSeen::class, \App\Http\Middleware\EnsureNotViewOnly::class])->group(function () {
+    Route::middleware(['auth:sanctum', \App\Http\Middleware\TrackLastSeen::class, \App\Http\Middleware\EnsureEmailVerified::class, \App\Http\Middleware\EnsureNotViewOnly::class])->group(function () {
 
         /* User group */
 
@@ -137,6 +162,10 @@ Route::prefix('v1')->middleware(['api'])->group(function () {
         Route::put('/user/password', [UserController::class, 'changePassword']);
         Route::post('/user/avatar', [UserController::class, 'uploadAvatar']);
         Route::delete('/user/avatar', [UserController::class, 'deleteAvatar']);
+
+        // E-mailvoorkeuren (Account → Meldingen): per-categorie af-/aanmelden.
+        Route::get('/mail-preferences', [MailPreferenceController::class, 'index']);
+        Route::put('/mail-preferences', [MailPreferenceController::class, 'update']);
 
         // Login-historie / actieve sessies (Account → Beveiliging).
         Route::get('/user/sessions', [SessionController::class, 'index']);
@@ -249,6 +278,7 @@ Route::prefix('v1')->middleware(['api'])->group(function () {
         Route::post('/missions', [MissionController::class, 'store']);
         Route::get('/missions/{id}', [MissionController::class, 'show']);
         Route::put('/missions/{id}', [MissionController::class, 'update']);
+        Route::post('/missions/{id}/dispatch-warning-order', [MissionController::class, 'dispatchWarningOrder']);
         Route::delete('/missions/{id}', [MissionController::class, 'destroy']);
 
         // ── Mission tasks (kort actiepunten per missie) ──────────────
@@ -360,6 +390,8 @@ Route::prefix('v1')->middleware(['api'])->group(function () {
         Route::post  ('/me/notifications/{id}/read',      [AppNotificationController::class, 'markRead']);
         Route::post  ('/me/notifications/read-all',       [AppNotificationController::class, 'markAllRead']);
         Route::delete('/me/notifications/{id}',           [AppNotificationController::class, 'destroy']);
+        // In-app weergave van een campagne-mail (push-melding → bericht lezen).
+        Route::get   ('/me/campaign-mail/{token}',        [MeCampaignMailController::class, 'show']);
 
         // Media-beheer: lijst van eigen geüploade bestanden en soft-delete
         // naar de prullenbak. /trash levert de items als type "media".
@@ -440,6 +472,38 @@ Route::prefix('v1')->middleware(['api'])->group(function () {
             Route::post  ('/admin/leads/{id}/mark-notified', [LeadController::class, 'adminMarkNotified']);
             Route::post  ('/admin/leads/{id}/send-download-mail', [LeadController::class, 'adminSendDownloadMail']);
             Route::delete('/admin/leads/{id}',              [LeadController::class, 'adminDestroy']);
+
+            // ── E-mailcampagnes ─────────────────────────────────────────
+            // Template-registry (door Claude geschreven backend-templates).
+            Route::get ('/admin/mail/templates',                 [MailCampaignController::class, 'templates']);
+            Route::get ('/admin/mail/templates/{key}/preview',   [MailCampaignController::class, 'previewTemplate']);
+            Route::post('/admin/mail/templates/{key}/test',      [MailCampaignController::class, 'testTemplate']);
+            // Unified contact-zoek (gebruikers + leads) voor de ontvanger-picker.
+            Route::get ('/admin/mail/contacts',                  [MailCampaignController::class, 'contacts']);
+            // Categorieën (de "soort" mail waar contacten zich per stuk voor afmelden).
+            Route::get   ('/admin/mail-categories',       [MailCampaignController::class, 'categories']);
+            Route::post  ('/admin/mail-categories',       [MailCampaignController::class, 'storeCategory']);
+            Route::put   ('/admin/mail-categories/{id}',  [MailCampaignController::class, 'updateCategory']);
+            Route::delete('/admin/mail-categories/{id}',  [MailCampaignController::class, 'destroyCategory']);
+            // Campagnes + ontvangers + verzenden + log.
+            Route::get   ('/admin/campaigns',                       [MailCampaignController::class, 'index']);
+            Route::post  ('/admin/campaigns',                       [MailCampaignController::class, 'store']);
+            Route::get   ('/admin/campaigns/{id}',                  [MailCampaignController::class, 'show']);
+            Route::put   ('/admin/campaigns/{id}',                  [MailCampaignController::class, 'update']);
+            Route::delete('/admin/campaigns/{id}',                  [MailCampaignController::class, 'destroy']);
+            Route::get   ('/admin/campaigns/{id}/recipients',       [MailCampaignController::class, 'recipients']);
+            Route::post  ('/admin/campaigns/{id}/recipients',       [MailCampaignController::class, 'addRecipients']);
+            Route::delete('/admin/campaigns/{id}/recipients/{rid}', [MailCampaignController::class, 'removeRecipient']);
+            Route::post  ('/admin/campaigns/{id}/leads',            [MailCampaignController::class, 'addLead']);
+            Route::post  ('/admin/campaigns/{id}/send',             [MailCampaignController::class, 'send']);
+            Route::get   ('/admin/campaigns/{id}/stats',            [MailCampaignController::class, 'stats']);
+            Route::get   ('/admin/campaigns/{id}/sends',            [MailCampaignController::class, 'sends']);
+            // Follow-up-regels (stuur mail X na N dagen o.b.v. een voorwaarde).
+            Route::get   ('/admin/campaigns/{id}/followups',          [MailCampaignController::class, 'followups']);
+            Route::post  ('/admin/campaigns/{id}/followups',          [MailCampaignController::class, 'storeFollowup']);
+            Route::post  ('/admin/campaigns/{id}/followups/reorder',  [MailCampaignController::class, 'reorderFollowups']);
+            Route::put   ('/admin/campaigns/{id}/followups/{fid}',    [MailCampaignController::class, 'updateFollowup']);
+            Route::delete('/admin/campaigns/{id}/followups/{fid}',    [MailCampaignController::class, 'destroyFollowup']);
 
             // ── Feature requests (publiek formulier op milmap.nl) ───────
             Route::get   ('/admin/feature-requests',      [FeatureRequestController::class, 'adminIndex']);

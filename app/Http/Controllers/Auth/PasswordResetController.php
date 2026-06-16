@@ -9,6 +9,7 @@ use Illuminate\Support\Facades\Password;
 use App\Models\User;
 use App\Mail\ResetPasswordMail;
 use Illuminate\Support\Facades\Mail;
+use Illuminate\Support\Facades\Log;
 use App\Mail\PasswordResetSuccess;
 
 class PasswordResetController extends Controller
@@ -27,8 +28,14 @@ class PasswordResetController extends Controller
             $frontendUrl = config('auth.passwords.users.url');
             $resetUrl = $frontendUrl . '?token=' . $token . '&email=' . urlencode($user->email);
 
-            // Send the custom reset password email
-            Mail::to($user->email)->send(new ResetPasswordMail($resetUrl));
+            // Send the custom reset password email. Een mislukte verzending mag
+            // de uniforme 200 (anti-enumeratie) niet breken met een 500 — log
+            // het en ga door.
+            try {
+                Mail::to($user->email)->send(new ResetPasswordMail($resetUrl));
+            } catch (\Throwable $e) {
+                Log::warning('[password-reset] kon reset-link niet versturen: ' . $e->getMessage());
+            }
         });
 
         return response()->json([
@@ -55,7 +62,13 @@ class PasswordResetController extends Controller
                     'password' => Hash::make($password),
                 ])->save();
 
-                Mail::to($user->email)->send(new PasswordResetSuccess($user));
+                // Wachtwoord is al gewijzigd; een mislukte bevestigingsmail mag
+                // de reset niet alsnog laten falen met een 500.
+                try {
+                    Mail::to($user->email)->send(new PasswordResetSuccess($user));
+                } catch (\Throwable $e) {
+                    Log::warning('[password-reset] kon bevestigingsmail niet versturen: ' . $e->getMessage());
+                }
             }
         );
     

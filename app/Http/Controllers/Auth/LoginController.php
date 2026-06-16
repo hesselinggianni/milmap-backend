@@ -9,6 +9,7 @@ use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Auth;
 use Illuminate\Support\Facades\Hash;
 use Illuminate\Support\Facades\Http;
+use Illuminate\Support\Facades\Log;
 use Illuminate\Support\Facades\Mail;
 use App\Models\User;
 use Illuminate\Validation\ValidationException;
@@ -55,6 +56,14 @@ class LoginController extends Controller
         RateLimiter::clear($emailKey);
         RateLimiter::clear($ipKey);
 
+        // Gearchiveerd account (>90 dagen ongeverifieerd): geen toegang meer.
+        // De gebruiker moet opnieuw registreren met hetzelfde e-mailadres.
+        if ($user->isArchived()) {
+            throw ValidationException::withMessages([
+                'email' => 'Dit account is gearchiveerd omdat het e-mailadres niet binnen 90 dagen is bevestigd. Maak opnieuw een account aan.',
+            ]);
+        }
+
         // Scope regular-login tokens to the 'user' ability so they can never
         // satisfy tokenCan('admin') — admin routes require a token minted via
         // the admin login flow (see AdminAuth middleware).
@@ -76,7 +85,7 @@ class LoginController extends Controller
 
         return response()->json([
             'message' => 'Logged in successfully.',
-            'user' => $user,
+            'user' => array_merge($user->toArray(), ['verification' => $user->verificationState()]),
             'token' => $token,
         ], 200);
     }
@@ -88,9 +97,15 @@ class LoginController extends Controller
         $device = $this->parseDevice($request->userAgent() ?? 'Onbekend');
         $loginTime = now()->setTimezone('Europe/Amsterdam')->format('d-m-Y \o\m H:i:s');
 
-        Mail::to($user->email)->send(
-            new LoginNotification($user->name ?? $user->email, $ip, $location, $device, $loginTime)
-        );
+        // Een mislukte notificatiemail (SMTP down/misconfig) mag het inloggen
+        // NOOIT blokkeren — stil loggen en doorgaan.
+        try {
+            Mail::to($user->email)->send(
+                new LoginNotification($user->name ?? $user->email, $ip, $location, $device, $loginTime)
+            );
+        } catch (\Throwable $e) {
+            Log::warning('[login] kon login-notificatie niet versturen: ' . $e->getMessage());
+        }
     }
 
     private function resolveLocation(string $ip): string

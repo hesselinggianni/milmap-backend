@@ -199,6 +199,71 @@ class MissionController extends Controller
     }
 
     /**
+     * Dispatch the warning order: stuur elke geaccepteerde deelnemer (behalve de
+     * verzender) een "New warning order"-melding. De owner/editor vult eerst het
+     * waarschuwingsbevel in en dispatcht het daarna; de deelnemers lezen het in
+     * en wie bewerkrechten heeft kan met de O-group beginnen.
+     * POST /api/v1/missions/{id}/dispatch-warning-order
+     */
+    public function dispatchWarningOrder($id)
+    {
+        $mission = Mission::findOrFail($id);
+        $userId = (int) Auth::id();
+
+        if (!$mission->canEdit($userId)) {
+            abort(403, 'You do not have permission to dispatch this mission');
+        }
+
+        $mission->loadMissing(['collaborators:id,mission_id,user_id,status']);
+
+        $recipientIds = collect();
+        if ($mission->owner_id) $recipientIds->push((int) $mission->owner_id);
+        foreach ($mission->collaborators ?? [] as $c) {
+            if ($c->user_id && $c->status === 'accepted') $recipientIds->push((int) $c->user_id);
+        }
+        // Niet naar jezelf.
+        $recipientIds = $recipientIds->unique()->reject(fn ($pid) => $pid === $userId)->values();
+
+        $count = 0;
+        foreach ($recipientIds as $pid) {
+            try {
+                \App\Models\AppNotification::create([
+                    'user_id' => $pid,
+                    'type'    => 'mission.warning_order',
+                    'title'   => 'New warning order',
+                    'body'    => 'Er staat een nieuw waarschuwingsbevel klaar voor "' . ($mission->name ?? 'Missie') . '". Lees het in.',
+                    'payload' => [
+                        'mission_id' => (string) $mission->id,
+                        'action_url' => '/missions/' . $mission->id . '?tab=warning',
+                    ],
+                ]);
+                $count++;
+            } catch (\Throwable $e) {
+                \Illuminate\Support\Facades\Log::warning('[mission] warning-order notify failed: ' . $e->getMessage());
+            }
+        }
+
+        // Real-time toast naar de deelnemers op het mission presence channel.
+        try {
+            $actor = Auth::user();
+            $name  = trim(($actor->first_name ?? '') . ' ' . ($actor->last_name ?? ''))
+                ?: ($actor->name ?? $actor->email ?? 'Iemand');
+
+            broadcast(new \App\Events\WarningOrderDispatched(
+                (string) $mission->id,
+                (string) ($mission->name ?? 'Missie'),
+                $userId,
+                $name,
+                now()->toIso8601String(),
+            ))->toOthers();
+        } catch (\Throwable $e) {
+            \Illuminate\Support\Facades\Log::warning('[mission] warning-order broadcast failed: ' . $e->getMessage());
+        }
+
+        return response()->json(['ok' => true, 'notified' => $count]);
+    }
+
+    /**
      * Delete a mission (owner only).
      * DELETE /api/v1/missions/{id}
      */

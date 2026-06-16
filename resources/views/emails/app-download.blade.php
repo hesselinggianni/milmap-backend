@@ -160,7 +160,7 @@
                           <table role="presentation" cellpadding="0" cellspacing="0" border="0" align="center" style="margin-top:18px;">
                             <tr>
                               <td style="background-color:{{ $blue }};border-radius:12px;">
-                                <a href="{{ $webAppUrl }}/account/abonnement" target="_blank"
+                                <a href="{{ $webAppUrl }}/checkout?coupon={{ urlencode($couponCode) }}" target="_blank"
                                    style="display:inline-block;padding:13px 30px;font-size:15px;font-weight:600;color:#ffffff;text-decoration:none;">
                                   Activeer mijn korting
                                 </a>

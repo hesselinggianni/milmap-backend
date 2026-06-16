@@ -190,6 +190,7 @@ class BillingController extends Controller
             'plan'       => 'required|string|in:pro_monthly,pro_yearly,team_monthly,team_yearly',
             'first_name' => 'nullable|string|max:100',
             'last_name'  => 'nullable|string|max:100',
+            'coupon'     => 'nullable|string|max:64',
         ]);
 
         $plans   = $this->plans();
@@ -271,6 +272,9 @@ class BillingController extends Controller
             if ($pmTypes = $this->paymentMethodTypes()) {
                 $sessionParams['payment_method_types'] = $pmTypes;
             }
+
+            // Korting uit de mail (bv. MILMAP-XXXX-XXXX) automatisch toepassen.
+            $sessionParams = $this->applyPromotionCode($sessionParams, $request->input('coupon'));
 
             $session = $this->stripe->checkout->sessions->create($sessionParams);
         } catch (\Stripe\Exception\ExceptionInterface $e) {
@@ -412,7 +416,8 @@ class BillingController extends Controller
     public function createCheckout(Request $request)
     {
         $request->validate([
-            'plan' => 'required|string|in:pro_monthly,pro_yearly,team_monthly,team_yearly',
+            'plan'   => 'required|string|in:pro_monthly,pro_yearly,team_monthly,team_yearly',
+            'coupon' => 'nullable|string|max:64',
         ]);
 
         $user   = $request->user();
@@ -466,12 +471,50 @@ class BillingController extends Controller
             $sessionParams['payment_method_types'] = $pmTypes;
         }
 
+        // Korting uit de mail (bv. MILMAP-XXXX-XXXX) automatisch toepassen.
+        $sessionParams = $this->applyPromotionCode($sessionParams, $request->input('coupon'));
+
         $session = $this->stripe->checkout->sessions->create($sessionParams);
 
         return response()->json([
             'checkout_url' => $session->url,
             'session_id'   => $session->id,
         ]);
+    }
+
+    /**
+     * Pas een promotiecode (de menselijke code uit de mail, bv. MILMAP-XXXX-XXXX)
+     * automatisch toe op een Checkout-sessie. We zoeken de bijbehorende Stripe
+     * promotion_code-id op en zetten 'discounts'. Omdat Stripe 'discounts' en
+     * 'allow_promotion_codes' niet samen toestaat, halen we dat laatste er dan af.
+     * Best-effort: bij een onbekende / verlopen / al-gebruikte code laten we de
+     * sessie met handmatig invoerbaar promo-veld staan (geen harde fout).
+     */
+    private function applyPromotionCode(array $params, ?string $code): array
+    {
+        $code = trim((string) $code);
+        if ($code === '') {
+            return $params;
+        }
+        try {
+            $matches = $this->stripe->promotionCodes->all([
+                'code'   => $code,
+                'active' => true,
+                'limit'  => 1,
+            ]);
+            $promo = $matches->data[0] ?? null;
+            if ($promo && $promo->id) {
+                $params['discounts'] = [['promotion_code' => $promo->id]];
+                unset($params['allow_promotion_codes']); // Stripe: niet samen met discounts
+            }
+        } catch (\Throwable $e) {
+            Log::warning('applyPromotionCode lookup failed', [
+                'code'  => $code,
+                'error' => $e->getMessage(),
+            ]);
+        }
+
+        return $params;
     }
 
     // ── POST /billing/portal ───────────────────────────────────────
@@ -845,6 +888,13 @@ class BillingController extends Controller
 
         Log::info('Subscription created for user', ['user_id' => $userId, 'stripe_sub' => $stripeSubId]);
 
+        // Een geslaagde Stripe-betaling geldt als bewijs van echtheid: markeer de
+        // e-mail meteen als geverifieerd, zodat de verificatie-wall niet voor
+        // betalende gebruikers verschijnt. Eenmaal geverifieerd blijft geverifieerd.
+        if (in_array($stripeSub->status, ['active', 'trialing'], true)) {
+            optional(User::find($userId))->markEmailVerified();
+        }
+
         // Stuur activatiemail als het een nieuw account betreft
         if ($isNewUser) {
             $this->sendActivationEmail($userId, $planKey);
@@ -894,6 +944,12 @@ class BillingController extends Controller
                 ? \Carbon\Carbon::createFromTimestamp($stripeSub->trial_end)
                 : null,
         ]);
+
+        // Wordt het abonnement (weer) actief, dan geldt de betaling als
+        // echtheidsbewijs → e-mail markeren als geverifieerd.
+        if (in_array($stripeSub->status, ['active', 'trialing'], true)) {
+            optional($sub->user)->markEmailVerified();
+        }
     }
 
     private function onSubscriptionDeleted(object $stripeSub): void

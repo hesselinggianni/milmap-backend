@@ -24,9 +24,20 @@ class RegisterController extends Controller
            $existingUser = User::where('email', $request->email)->first();
 
            if ($existingUser) {
-               throw ValidationException::withMessages([
-                   'email' => ['Deze gebruiker is al geregistreerd.'],
-               ]);
+               if ($existingUser->isArchived()) {
+                   // Gearchiveerd account (>90 dagen ongeverifieerd): geef het
+                   // e-mailslot vrij zodat ditzelfde adres opnieuw kan registreren.
+                   // Het dode account behoudt z'n data maar krijgt een vrijgemaakt
+                   // e-mailadres en kan niet meer inloggen.
+                   $existingUser->forceFill([
+                       'email' => $existingUser->email . '.archived.' . $existingUser->id,
+                   ])->save();
+                   $existingUser->tokens()->delete();
+               } else {
+                   throw ValidationException::withMessages([
+                       'email' => ['Deze gebruiker is al geregistreerd.'],
+                   ]);
+               }
            }
 
            
@@ -67,8 +78,18 @@ class RegisterController extends Controller
         // event on their Hub timeline (and can jump straight into the chat).
         $this->acceptChatInvites($user);
 
-        Mail::to('hesselinggianni@gmail.com')
-        ->send(new NewUserRegistered($user));
+        // Admin-notificatie "nieuwe gebruiker" — mag de registratie nooit
+        // breken als de mailserver hapert. Stil loggen en doorgaan.
+        try {
+            Mail::to('hesselinggianni@gmail.com')->send(new NewUserRegistered($user));
+        } catch (\Throwable $e) {
+            Log::warning('[register] kon admin-notificatie niet versturen: ' . $e->getMessage());
+        }
+
+        // Verificatiemail: gratis accounts moeten hun e-mail bevestigen (nep-account
+        // weren). Bij guest-checkout/betaling wordt het account elders automatisch
+        // geverifieerd, dus daar is dit niet nodig. Faalt nooit hard.
+        \App\Services\EmailVerificationService::send($user);
 
         // Generate a Sanctum token scoped to the regular-app 'user' ability so
         // it can never satisfy tokenCan('admin') (admin routes require a token
@@ -77,7 +98,7 @@ class RegisterController extends Controller
 
         return response()->json([
             'message' => 'User registered successfully.',
-            'user' => $user,
+            'user' => array_merge($user->toArray(), ['verification' => $user->verificationState()]),
             'token' => $token,
             'invites_accepted' => $invitesAccepted,
         ], 201);

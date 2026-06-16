@@ -7,6 +7,8 @@ use Illuminate\Foundation\Console\Kernel as ConsoleKernel;
 use App\Console\Commands\FetchEmails; // Voeg het juiste pad toe naar je command
 use App\Console\Commands\SendStatusNotification;
 use App\Console\Commands\NotifyNewMail;
+use App\Console\Commands\ArchiveUnverifiedUsers;
+use App\Console\Commands\ProcessMailFollowups;
 
 class Kernel extends ConsoleKernel
 {
@@ -19,6 +21,8 @@ class Kernel extends ConsoleKernel
         FetchEmails::class, // Voeg het command toe
         SendStatusNotification::class,
         NotifyNewMail::class,
+        ArchiveUnverifiedUsers::class,
+        ProcessMailFollowups::class,
     ];
 
     /**
@@ -39,6 +43,12 @@ class Kernel extends ConsoleKernel
             ->everyMinute()
             ->withoutOverlapping();
 
+        // Follow-up-campagnemails: scan elke minuut welke regels mogen uitgaan
+        // (vertraging op dag-niveau, dus per minuut scannen is ruim voldoende).
+        $schedule->command('mail:process-followups')
+            ->everyMinute()
+            ->withoutOverlapping();
+
         // Definitief verwijderen wat langer dan 60 dagen in de prullenbak zit.
         // Draait 's nachts (lage piek), met overlap-bescherming en logging.
         $schedule->command('trash:purge')
@@ -46,6 +56,14 @@ class Kernel extends ConsoleKernel
             ->withoutOverlapping()
             ->runInBackground()
             ->appendOutputTo(storage_path('logs/trash-purge.log'));
+
+        // Archiveer accounts die na 90 dagen nog niet zijn geverifieerd (en niet
+        // betalen). Het e-mailadres komt daarmee vrij om opnieuw te registreren.
+        $schedule->command('users:archive-unverified')
+            ->dailyAt('03:30')
+            ->withoutOverlapping()
+            ->runInBackground()
+            ->appendOutputTo(storage_path('logs/archive-unverified.log'));
     }
 
 

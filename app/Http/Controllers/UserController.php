@@ -134,7 +134,11 @@ class UserController extends Controller
             return response()->json(['message' => 'Unauthorized'], 401);
         }
 
-        return response()->json($user, 200);
+        // Verificatiestatus meesturen zodat de frontend de wall kan tonen.
+        return response()->json(
+            array_merge($user->toArray(), ['verification' => $user->verificationState()]),
+            200
+        );
     }
 
     /**
