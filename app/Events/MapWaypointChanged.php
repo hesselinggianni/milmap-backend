@@ -2,40 +2,40 @@
 
 namespace App\Events;
 
-use App\Models\Map;
-use Illuminate\Broadcasting\Channel;
+use App\Models\MapWaypoint;
 use Illuminate\Broadcasting\InteractsWithSockets;
-use Illuminate\Broadcasting\PresenceChannel;
 use Illuminate\Broadcasting\PrivateChannel;
 use Illuminate\Contracts\Broadcasting\ShouldBroadcast;
 use Illuminate\Foundation\Events\Dispatchable;
 use Illuminate\Queue\SerializesModels;
 
-class MapCollaboratorRemoved implements ShouldBroadcast
+class MapWaypointChanged implements ShouldBroadcast
 {
     use Dispatchable, InteractsWithSockets, SerializesModels;
 
     public function __construct(
-        public Map $map,
-        public int $userId,
+        public string $mapId,
+        public array  $waypoint,  // toClientArray() + deleted flag
+        public string $action,    // 'created' | 'updated' | 'deleted'
+        public int    $actorId,
     ) {}
 
     public function broadcastOn(): array
     {
-        return [
-            new PrivateChannel('map.' . $this->map->id),
-        ];
+        return [new PrivateChannel('map.' . $this->mapId)];
     }
 
     public function broadcastAs(): string
     {
-        return 'collaborator.removed';
+        return 'waypoint.changed';
     }
 
     public function broadcastWith(): array
     {
         return [
-            'user_id' => $this->userId,
+            'action'   => $this->action,
+            'waypoint' => $this->waypoint,
+            'actor_id' => $this->actorId,
         ];
     }
 }

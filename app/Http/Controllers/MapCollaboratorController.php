@@ -5,6 +5,7 @@ namespace App\Http\Controllers;
 use App\Models\Map;
 use App\Models\User;
 use App\Models\MapCollaborator;
+use App\Models\Invitation;
 use App\Mail\CollaborationInvite;
 use App\Events\MapCollaboratorAdded;
 use App\Events\MapCollaboratorRemoved;
@@ -29,23 +30,46 @@ class MapCollaboratorController extends Controller
             abort(403, 'Only the map owner can view collaborators');
         }
 
+        // Accepted / directly-added collaborators from map_collaborators table.
         $collaborators = $map->collaborators()
-            ->with(['user:id,first_name,last_name,email', 'inviter:id,first_name,last_name'])
+            ->with(['user:id,first_name,last_name,email'])
             ->get()
             ->map(fn($c) => [
-                'id' => $c->id,
-                'user_id' => $c->user_id,
-                'user_name' => $c->user?->full_name ?? $c->user?->email,
-                'email' => $c->user?->email,
-                'role' => $c->role ?? 'editor',
-                'status' => $c->status,
-                'invited_at' => $c->invited_at,
+                'id'          => $c->id,
+                'user_id'     => $c->user_id,
+                'user_name'   => $c->user?->full_name ?? $c->user?->email,
+                'email'       => $c->user?->email,
+                'role'        => $c->role ?? 'editor',
+                'status'      => $c->status,
+                'source'      => 'collaborator',
+                'invited_at'  => $c->invited_at,
                 'accepted_at' => $c->accepted_at,
             ]);
 
+        // Pending email invitations that haven't been accepted yet
+        // (they live in the polymorphic invitations table, not map_collaborators).
+        $pendingInvitations = Invitation::where('invitable_type', Map::class)
+            ->where('invitable_id', $mapId)
+            ->where('status', 'pending')
+            ->with(['invitedUser:id,first_name,last_name,email'])
+            ->get()
+            ->map(fn($i) => [
+                'id'          => $i->id,
+                'user_id'     => $i->invited_user_id,
+                'user_name'   => $i->invitedUser?->full_name ?? $i->email,
+                'email'       => $i->email,
+                'role'        => $i->role ?? 'viewer',
+                'status'      => 'pending',
+                'source'      => 'invitation',
+                'invited_at'  => $i->created_at,
+                'accepted_at' => null,
+            ]);
+
+        $all = $collaborators->concat($pendingInvitations)->values();
+
         return response()->json([
-            'collaborators' => $collaborators,
-            'total' => count($collaborators),
+            'collaborators' => $all,
+            'total'         => $all->count(),
         ]);
     }
 

@@ -22,7 +22,7 @@ class MapCollaboratorAdded implements ShouldBroadcast
     public function broadcastOn(): array
     {
         return [
-            new Channel('map.' . $this->collaborator->map_id),
+            new PrivateChannel('map.' . $this->collaborator->map_id),
         ];
     }
 

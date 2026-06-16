@@ -27,6 +27,7 @@ use App\Http\Controllers\AdminBillingController;
 use App\Http\Controllers\MapShareController;
 use App\Http\Controllers\BillingController;
 use App\Http\Controllers\MapCollaboratorController;
+use App\Http\Controllers\MapWaypointController;
 use App\Http\Controllers\RouteGenerationController;
 use App\Http\Controllers\ChatKeyController;
 use App\Http\Controllers\ChatPairingController;
@@ -267,6 +268,12 @@ Route::prefix('v1')->middleware(['api'])->group(function () {
         Route::post('/maps/{mapId}/collaborators', [MapCollaboratorController::class, 'store']);
         Route::put('/maps/{mapId}/collaborators/{userId}', [MapCollaboratorController::class, 'updateRole']);
         Route::delete('/maps/{mapId}/collaborators/{userId}', [MapCollaboratorController::class, 'destroy']);
+
+        // Map waypoints (collaboration sync)
+        Route::get('/maps/{mapId}/waypoints', [MapWaypointController::class, 'index']);
+        Route::post('/maps/{mapId}/waypoints', [MapWaypointController::class, 'store']);
+        Route::put('/maps/{mapId}/waypoints/{localId}', [MapWaypointController::class, 'update']);
+        Route::delete('/maps/{mapId}/waypoints/{localId}', [MapWaypointController::class, 'destroy']);
 
         // ── Missions (owner + collaborators with roles) ──────────────────
         // Literal invitation routes first so they aren't captured by {id}.
