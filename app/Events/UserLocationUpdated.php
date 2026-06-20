@@ -45,6 +45,9 @@ class UserLocationUpdated implements ShouldBroadcast
             'accuracy' => $this->location->accuracy,
             'heading' => $this->location->heading,
             'speed' => $this->location->speed,
+            'avatar_url' => $this->location->user->avatar_url,
+            'route_map_id' => $this->location->route_map_id,
+            'route_map_title' => $this->location->route_map_title,
         ];
     }
 

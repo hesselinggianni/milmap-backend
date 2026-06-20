@@ -32,6 +32,8 @@ class UserLocationController extends Controller
             'heading' => 'nullable|numeric|between:0,360',
             'speed' => 'nullable|numeric|min:0',
             'device_id' => 'nullable|string|max:255',
+            'route_map_id' => 'nullable|string|max:64',
+            'route_map_title' => 'nullable|string|max:255',
         ]);
 
         // Throttle updates: only allow 1 per second per user per map
@@ -78,7 +80,7 @@ class UserLocationController extends Controller
         // Get all fresh locations for this map with user data
         $locations = UserLocation::where('map_id', $mapId)
             ->where('last_updated_at', '>', now()->subMinutes(2))
-            ->with('user:id,name,email')
+            ->with('user:id,name,email,avatar_path')
             ->get()
             ->map(fn($loc) => $this->formatLocation($loc));
 
@@ -145,12 +147,15 @@ class UserLocationController extends Controller
         return [
             'user_id' => $location->user_id,
             'user_name' => $location->user->name,
+            'avatar_url' => $location->user->avatar_url,
             'map_id' => $location->map_id,
             'latitude' => (float) $location->latitude,
             'longitude' => (float) $location->longitude,
             'accuracy' => $location->accuracy ? (float) $location->accuracy : null,
             'heading' => $location->heading ? (float) $location->heading : null,
             'speed' => $location->speed ? (float) $location->speed : null,
+            'route_map_id' => $location->route_map_id,
+            'route_map_title' => $location->route_map_title,
             'last_updated_at' => $location->last_updated_at->toIso8601String(),
             'device_id' => $location->device_id,
         ];

@@ -47,6 +47,7 @@ use App\Http\Controllers\MissionTrackController;
 use App\Http\Controllers\MissionEvaluationController;
 use App\Http\Controllers\MissionCommsController;
 use App\Http\Controllers\TrashController;
+use App\Http\Controllers\MissionBriefingController;
 use App\Http\Controllers\StatsController;
 use App\Http\Controllers\SecurityController;
 use App\Http\Controllers\SessionController;
@@ -61,6 +62,7 @@ use App\Http\Controllers\MailCampaignController;
 use App\Http\Controllers\MailPreferenceController;
 use App\Http\Controllers\MailUnsubscribeController;
 use App\Http\Controllers\MailTrackingController;
+use App\Http\Controllers\ClothingOrderController;
 
 /* Auth group */
 
@@ -141,6 +143,16 @@ Route::prefix('v1')->middleware(['api'])->group(function () {
     // ── Campagne-mail: publieke afmeld- + tracking-routes ───────────────
     // Bewust hier (api.php) i.p.v. web.php: de SPA-catch-all (/{any}) in web.php
     // zou anders elke GET opslokken. Token komt uit mail_sends.token.
+    // ── Tijdelijke kledingbestel-lijst (trainingspak / shirts) ──────────
+    // Volledig publiek, los van users — bedoeld om later weer te verwijderen.
+    Route::get   ('/clothing/products', [ClothingOrderController::class, 'products']);
+    Route::get   ('/clothing/orders',   [ClothingOrderController::class, 'index']);
+    Route::post  ('/clothing/orders',   [ClothingOrderController::class, 'store'])->middleware('throttle:30,1');
+    // Wijzigen via e-mail-link (geheim edit_token in de URL).
+    Route::post  ('/clothing/request-edit',         [ClothingOrderController::class, 'requestEdit'])->middleware('throttle:6,1');
+    Route::get   ('/clothing/orders/by-token/{token}', [ClothingOrderController::class, 'showByToken']);
+    Route::put   ('/clothing/orders/by-token/{token}', [ClothingOrderController::class, 'updateByToken'])->middleware('throttle:30,1');
+
     Route::get ('/m/u/{token}', [MailUnsubscribeController::class, 'show'])->middleware('throttle:30,1');
     Route::post('/m/u/{token}', [MailUnsubscribeController::class, 'update'])->middleware('throttle:30,1');
     // Open-tracking-pixel (1×1 gif). Ruimere throttle want sommige clients prefetchen.
@@ -222,6 +234,7 @@ Route::prefix('v1')->middleware(['api'])->group(function () {
         Route::post('/routemaps', [RouteMapController::class, 'store']);
         Route::get('/routemaps/{id}', [RouteMapController::class, 'show']);
         Route::put('/routemaps/{id}', [RouteMapController::class, 'update']);
+        Route::patch('/routemaps/{id}/mission', [RouteMapController::class, 'linkMission']);
         Route::delete('/routemaps/{id}', [RouteMapController::class, 'destroy']);
         Route::delete('/routemaps', [RouteMapController::class, 'clear']);
         Route::get('/maps/{mapId}routemaps', [RouteMapController::class, 'index']);
@@ -288,9 +301,27 @@ Route::prefix('v1')->middleware(['api'])->group(function () {
         Route::post('/missions/{id}/dispatch-warning-order', [MissionController::class, 'dispatchWarningOrder']);
         Route::delete('/missions/{id}', [MissionController::class, 'destroy']);
 
+        // ── Mission briefing + presentation ──────────────────────────
+        Route::get   ('/missions/{id}/presentation',                [MissionBriefingController::class, 'presentation']);
+        Route::get   ('/missions/{id}/briefing',                    [MissionBriefingController::class, 'show']);
+        Route::put   ('/missions/{id}/briefing',                    [MissionBriefingController::class, 'update']);
+        Route::get   ('/missions/{id}/radio-channels',              [MissionBriefingController::class, 'listChannels']);
+        Route::post  ('/missions/{id}/radio-channels',              [MissionBriefingController::class, 'storeChannel']);
+        Route::put   ('/missions/{id}/radio-channels/{channelId}',  [MissionBriefingController::class, 'updateChannel']);
+        Route::delete('/missions/{id}/radio-channels/{channelId}',  [MissionBriefingController::class, 'destroyChannel']);
+        Route::get   ('/missions/{id}/risks',                       [MissionBriefingController::class, 'listRisks']);
+        Route::post  ('/missions/{id}/risks',                       [MissionBriefingController::class, 'storeRisk']);
+        Route::put   ('/missions/{id}/risks/{riskId}',              [MissionBriefingController::class, 'updateRisk']);
+        Route::delete('/missions/{id}/risks/{riskId}',              [MissionBriefingController::class, 'destroyRisk']);
+        Route::post  ('/missions/{id}/approve',                     [MissionBriefingController::class, 'approve']);
+        Route::post  ('/missions/{id}/unlock',                      [MissionBriefingController::class, 'unlock']);
+
         // ── Mission tasks (kort actiepunten per missie) ──────────────
         // Reorder + apply-template als aparte endpoints zodat één drag-drop
         // een minimale roundtrip blijft (één PUT van een ID-array).
+        // Alle taken die aan de ingelogde gebruiker zijn gekoppeld (cross-missie)
+        // — voedt de "Mijn taken"-widget op de Hub.
+        Route::get   ('/me/tasks',                            [MissionTaskController::class, 'mine']);
         Route::get   ('/missions/{id}/tasks',                [MissionTaskController::class, 'index']);
         // Toewijsbare personen + (eventueel) gekoppeld team voor de moderne
         // multi-select. Staat vóór /{taskId} zodat 'assignees' nooit als een

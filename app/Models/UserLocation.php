@@ -19,6 +19,8 @@ class UserLocation extends Model
         'heading',
         'speed',
         'device_id',
+        'route_map_id',
+        'route_map_title',
         'last_updated_at',
     ];
 

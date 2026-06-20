@@ -50,6 +50,49 @@ class MissionTaskController extends Controller
         return response()->json(['tasks' => $tasks->map(fn ($t) => $this->present($t))]);
     }
 
+    /**
+     * GET /me/tasks — alle taken die aan de ingelogde gebruiker zijn gekoppeld,
+     * over alle missies heen. Voedt de "Mijn taken"-widget op de Hub.
+     * Gekoppeld = directe toewijzing (legacy assignee_user_id óf de assignees-
+     * pivot) óf toegewezen aan een team waar de gebruiker geaccepteerd lid van is.
+     */
+    public function mine(Request $request)
+    {
+        $uid = Auth::id();
+
+        $teamIds = TeamMember::where('user_id', $uid)
+            ->pluck('team_id');
+
+        $tasks = MissionTask::query()
+            ->with(['mission:id,name,status'])
+            ->whereHas('mission')                       // missie bestaat nog
+            ->where(function ($q) use ($uid, $teamIds) {
+                $q->where('assignee_user_id', $uid)
+                  ->orWhereHas('assignees', fn ($a) => $a->where('users.id', $uid));
+                if ($teamIds->isNotEmpty()) {
+                    $q->orWhereIn('assigned_team_id', $teamIds);
+                }
+            })
+            ->orderByRaw('due_at IS NULL, due_at ASC')
+            ->orderBy('created_at')
+            ->get();
+
+        return response()->json([
+            'tasks' => $tasks->map(fn ($t) => [
+                'id'       => $t->id,
+                'title'    => $t->title,
+                'status'   => $t->status,
+                'priority' => $t->priority,
+                'due_at'   => optional($t->due_at)?->toIso8601String(),
+                'mission'  => $t->mission ? [
+                    'id'     => $t->mission->id,
+                    'name'   => $t->mission->name,
+                    'status' => $t->mission->status,
+                ] : null,
+            ]),
+        ]);
+    }
+
     public function store(Request $request, string $missionId)
     {
         $uid = Auth::id();

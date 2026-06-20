@@ -45,21 +45,28 @@ class ChatInviteController extends Controller
             }
         }
 
-        // Anti-spam: stuur de uitnodigingsmail hoogstens 1× per uur naar
-        // hetzelfde adres. Een mislukte verzending verbruikt de limiet niet,
-        // zodat een herkansing mogelijk blijft. Bewust op de ONTVANGER gescoped
-        // (productvereiste: "die persoon kan max. 1 mail per uur ontvangen") en
-        // met een eigen prefix, los van de chat-request-mail, zodat de twee
-        // kanalen elkaar nooit kunnen onderdrukken.
+        // ── Globale dagelijkse limiet per uitnodiger (25/dag) ───────────
+        // Voorkomt spam-campagnes. De limiet zit op de UITNODIGER, niet op de
+        // ontvanger, zodat één account niet tientallen mensen per dag kan
+        // bestoken. Venster: 24 uur (86400s). Retourneert een eigen vlag zodat
+        // de frontend een passende melding kan tonen.
+        $dailyKey         = 'chat-invite-daily:' . $inviter->id;
+        $dailyLimitReached = RateLimiter::tooManyAttempts($dailyKey, 25);
+
+        // ── Per-ontvanger uurlimiet ──────────────────────────────────────
+        // Bewust op de ONTVANGER gescoped: dezelfde persoon kan max. 1× per
+        // uur een uitnodigingsmail ontvangen, ongeacht hoeveel verschillende
+        // gebruikers hem uitnodigen. Eigen prefix, los van chat-request-mail.
         $throttleKey = 'chat-invite:' . sha1($email);
         $throttled   = RateLimiter::tooManyAttempts($throttleKey, 1);
 
         $emailed = false;
-        if (! $throttled) {
+        if (! $throttled && ! $dailyLimitReached) {
             try {
                 Mail::to($data['email'])->send(new ChatInviteMail($inviterName, $url));
                 $emailed = true;
-                RateLimiter::hit($throttleKey, 3600); // 1 uur
+                RateLimiter::hit($throttleKey, 3600);  // 1 uur (per ontvanger)
+                RateLimiter::hit($dailyKey,    86400); // 24 uur (per uitnodiger)
             } catch (\Throwable $e) {
                 // SMTP unreachable — the inviter can still copy/share the link.
                 Log::warning('[chat] invite email failed: ' . $e->getMessage());
@@ -67,9 +74,10 @@ class ChatInviteController extends Controller
         }
 
         return response()->json([
-            'url'       => $url,
-            'emailed'   => $emailed,
-            'throttled' => $throttled,
+            'url'               => $url,
+            'emailed'           => $emailed,
+            'throttled'         => $throttled,
+            'daily_limit_reached' => $dailyLimitReached,
         ]);
     }
 }

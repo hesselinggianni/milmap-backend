@@ -3,6 +3,7 @@
 namespace App\Http\Controllers;
 
 use App\Models\Map;
+use App\Models\Mission;
 use App\Models\RouteMap;
 use App\Models\MapShare;
 use Illuminate\Http\Request;
@@ -65,7 +66,30 @@ class RouteMapController extends Controller
             }
         }
 
-        return response()->json($routeMap);
+        return response()->json($this->presentRouteMap($routeMap));
+    }
+
+    /** Shape a route map for the API response, including the linked mission summary. */
+    private function presentRouteMap(RouteMap $routeMap): array
+    {
+        $data = $routeMap->toArray();
+
+        $data['linked_mission'] = null;
+        if ($routeMap->mission_id) {
+            $mission = Mission::find($routeMap->mission_id);
+            if ($mission && $mission->hasAccess(auth()->id())) {
+                $data['linked_mission'] = [
+                    'id'     => $mission->id,
+                    'name'   => $mission->name,
+                    'status' => $mission->status,
+                    'date'   => $mission->date?->toDateString(),
+                    'time'   => $mission->time,
+                    'ogroup' => $mission->ogroup,
+                ];
+            }
+        }
+
+        return $data;
     }
 
     public function getByMapId(Request $request, string $mapId)
@@ -229,6 +253,8 @@ class RouteMapController extends Controller
             'sterkte' => ['nullable', 'integer'],
             'kaartblad' => ['nullable', 'string'],
             'vtv_vta' => ['nullable', 'string'],
+
+            'mission_id' => ['nullable', 'uuid', 'exists:missions,id'],
         ]);
 
         // Ensure numeric fields are never null (DB columns are NOT NULL)
@@ -246,11 +272,52 @@ class RouteMapController extends Controller
         }
 
         $routeMap->update($validated);
+        $routeMap->refresh();
 
         return response()->json([
             'message' => 'RouteMap bijgewerkt',
-            'data' => $routeMap,
+            'data' => $this->presentRouteMap($routeMap),
         ]);
+    }
+
+    /*
+    |--------------------------------------------------------------------------
+    | LINK MISSION
+    |--------------------------------------------------------------------------
+    */
+
+    /**
+     * PATCH /api/v1/routemaps/{id}/mission
+     * Body: { mission_id: uuid } or { mission_id: null } to unlink.
+     */
+    public function linkMission(Request $request, string $id)
+    {
+        $routeMap = RouteMap::findOrFail($id);
+
+        // Access check
+        $map = $routeMap->map ?? \App\Models\Map::find($routeMap->map_id);
+        if ($map && (int) $map->owner_id !== auth()->id()) {
+            if (!$map->collaborators()->where('user_id', auth()->id())->where('status', 'accepted')->exists()) {
+                abort(403, 'Unauthorized');
+            }
+        }
+
+        $validated = $request->validate([
+            'mission_id' => ['nullable', 'uuid', 'exists:missions,id'],
+        ]);
+
+        // If linking, verify user has access to that mission
+        if ($validated['mission_id']) {
+            $mission = Mission::findOrFail($validated['mission_id']);
+            if (!$mission->hasAccess(auth()->id())) {
+                abort(403, 'No access to that mission');
+            }
+        }
+
+        $routeMap->update(['mission_id' => $validated['mission_id']]);
+        $routeMap->refresh();
+
+        return response()->json(['data' => $this->presentRouteMap($routeMap)]);
     }
 
     /*

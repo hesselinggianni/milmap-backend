@@ -19,6 +19,7 @@ class RouteMap extends Model
 
     protected $fillable = [
         'map_id',
+        'mission_id',
         'owner_id',
         'title',
         'date',
@@ -77,6 +78,11 @@ class RouteMap extends Model
     public function map()
     {
         return $this->belongsTo(Map::class, 'map_id');
+    }
+
+    public function mission()
+    {
+        return $this->belongsTo(Mission::class, 'mission_id');
     }
 
     public function generatedRoutes()

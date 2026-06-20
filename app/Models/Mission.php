@@ -17,6 +17,8 @@ class Mission extends Model
         'owner_id',
         'linked_team_id',
         'name',
+        'mission_number',
+        'classification',
         'description',
         'status',
         'date',
@@ -24,12 +26,17 @@ class Mission extends Model
         'ogroup',
         'map',
         'logo',
+        'approved_by',
+        'approved_at',
+        'locked',
     ];
 
     protected $casts = [
-        'ogroup' => 'array',
-        'map' => 'array',
-        'date' => 'date',
+        'ogroup'      => 'array',
+        'map'         => 'array',
+        'date'        => 'date',
+        'approved_at' => 'datetime',
+        'locked'      => 'boolean',
     ];
 
     public function newUniqueId()
@@ -59,6 +66,31 @@ class Mission extends Model
     public function linkedTeam()
     {
         return $this->belongsTo(Team::class, 'linked_team_id');
+    }
+
+    public function briefing()
+    {
+        return $this->hasOne(MissionBriefing::class, 'mission_id');
+    }
+
+    public function radioChannels()
+    {
+        return $this->hasMany(MissionRadioChannel::class, 'mission_id')->orderBy('sort_order');
+    }
+
+    public function risks()
+    {
+        return $this->hasMany(MissionRisk::class, 'mission_id')->orderBy('sort_order');
+    }
+
+    public function routeMaps()
+    {
+        return $this->hasMany(RouteMap::class, 'mission_id');
+    }
+
+    public function auditLog()
+    {
+        return $this->hasMany(MissionAuditLog::class, 'mission_id')->latest('created_at');
     }
 
     /**
