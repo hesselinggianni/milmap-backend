@@ -59,6 +59,31 @@ class ConversationController extends Controller
      */
     public function store(Request $request)
     {
+        // ── Groep aanmaken ──────────────────────────────────────────
+        if ($request->input('type') === 'channel') {
+            $data = $request->validate([
+                'name'       => ['required', 'string', 'max:100'],
+                'user_ids'   => ['required', 'array', 'min:1', 'max:49'],
+                'user_ids.*' => ['integer', 'exists:users,id', 'distinct'],
+            ]);
+
+            $me      = Auth::id();
+            $members = collect($data['user_ids'])->map(fn ($id) => (int) $id)->push($me)->unique()->values();
+
+            $conversation = Conversation::create([
+                'type'       => 'channel',
+                'name'       => $data['name'],
+                'created_by' => $me,
+            ]);
+            $conversation->participants()->attach($members->all());
+            $conversation->load('participants:id,first_name,last_name,avatar_path,email,public_key,last_seen_at,settings');
+
+            return response()->json([
+                'conversation' => $this->present($conversation, $me),
+            ], 201);
+        }
+
+        // ── Direct (1-op-1) gesprek ─────────────────────────────────
         $data = $request->validate([
             'user_id' => ['required', 'integer', 'exists:users,id'],
         ]);

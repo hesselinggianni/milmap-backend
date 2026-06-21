@@ -28,7 +28,7 @@ class ClothingOrderController extends Controller
     public const PRODUCTS = [
         ['key' => 'tshirt_desert',   'name' => 'T-shirt desert',      'price' => 20,  'color' => 'Desert',          'swatch' => '#c8a96a', 'sizes' => ['S','M','L','XL','XXL','3XL','4XL']],
         ['key' => 'tshirt_milgr',    'name' => 'T-shirt mil. gr.',    'price' => 20,  'color' => 'Militair groen',  'swatch' => '#4b5320', 'sizes' => ['S','M','L','XL','XXL','3XL','4XL']],
-        ['key' => 'tshirt_milgr_h',  'name' => 'T-shirt mil. gr. h',  'price' => 20,  'color' => 'Militair groen',  'swatch' => '#4b5320', 'sizes' => ['S','M','L','XL','XXL','3XL','4XL']],
+        ['key' => 'tshirt_milgr_h',  'name' => 'T-shirt militair groen licht', 'price' => 20, 'color' => 'Militair groen', 'swatch' => '#4b5320', 'sizes' => ['S','M','L','XL','XXL','3XL','4XL']],
         ['key' => 'tshirt_sport',    'name' => 'T-shirt sport',       'price' => 20,  'color' => 'Zwart',           'swatch' => '#1a1a1a', 'sizes' => ['S','M','L','XL','XXL','3XL','4XL']],
         ['key' => 'hemd_sport',      'name' => 'Hemd sport',          'price' => 20,  'color' => 'Zwart',           'swatch' => '#1a1a1a', 'sizes' => ['S','M','L','XL','XXL','3XL','4XL']],
         ['key' => 'hoodie',          'name' => 'Hoodie',              'price' => 35,  'color' => 'Zwart',           'swatch' => '#1a1a1a', 'sizes' => ['S','M','L','XL','XXL','3XL','4XL']],
