@@ -38,6 +38,8 @@ class RouteMap extends Model
         'total_elevation',
 
         'meta',
+        'column_settings',
+        'column_order',
 
         'bijlage',
         'callsign',
@@ -52,6 +54,8 @@ class RouteMap extends Model
         'date' => 'date:Y-m-d',
 
         'meta' => 'array',
+        'column_settings' => 'array',
+        'column_order' => 'array',
         'bijlage' => 'array',
         'sterkte' => 'integer',
 

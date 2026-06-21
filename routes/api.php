@@ -218,7 +218,14 @@ Route::prefix('v1')->middleware(['api'])->group(function () {
 
         Route::get('/maps', [MapController::class, 'index']);
         Route::get('/maps/me', [MapController::class, 'myMaps']);
-        Route::get('/maps/{id}/{lonlat}', [MapController::class, 'show']);
+        // Let op: {lonlat} is een legacy coördinaat-segment dat door show() wordt
+        // genegeerd. Zonder constraint slokt deze greedy route álle GET
+        // sub-resources op (/maps/{id}/shares, /collaborators, /waypoints …) en
+        // geeft hij het Map-object terug i.p.v. de sub-resource. De constraint
+        // beperkt {lonlat} tot coördinaat-tekens, zodat woord-segmenten
+        // doorvallen naar hun eigen route.
+        Route::get('/maps/{id}/{lonlat}', [MapController::class, 'show'])
+            ->where('lonlat', '[-0-9.,/]+');
         Route::post('/maps', [MapController::class, 'store']);
         Route::put('/maps/{id}', [MapController::class, 'update']);
         Route::delete('/maps/{id}', [MapController::class, 'destroy']);

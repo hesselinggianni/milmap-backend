@@ -246,6 +246,8 @@ class RouteMapController extends Controller
             'total_elevation' => ['nullable', 'numeric'],
 
             'meta' => ['nullable', 'array'],
+            'column_settings' => ['nullable', 'array'],
+            'column_order' => ['nullable', 'array'],
 
             'bijlage' => ['nullable', 'array'],
             'callsign' => ['nullable', 'string'],
@@ -355,7 +357,22 @@ class RouteMapController extends Controller
     */
 
     /**
-     * Upload an image for a checkpoint
+     * Afbeeldingen van een checkpoint als platte array, met backward-compat
+     * voor de oude losse `flyoverImage`.
+     */
+    private function checkpointImages(array $loc): array
+    {
+        if (!empty($loc['images']) && is_array($loc['images'])) {
+            return array_values(array_filter($loc['images']));
+        }
+        if (!empty($loc['flyoverImage'])) {
+            return [$loc['flyoverImage']];
+        }
+        return [];
+    }
+
+    /**
+     * Upload an image for a checkpoint (max 3 per punt)
      * POST /api/v1/routemaps/{id}/checkpoints/{checkpointId}/upload-image
      */
     public function uploadCheckpointImage(string $id, string $checkpointId)
@@ -389,7 +406,7 @@ class RouteMapController extends Controller
             // Find the checkpoint location
             $checkpointIndex = null;
             foreach ($locations as $index => $loc) {
-                if ($loc['id'] === $checkpointId) {
+                if ((string) ($loc['id'] ?? '') === (string) $checkpointId) {
                     $checkpointIndex = $index;
                     break;
                 }
@@ -401,37 +418,34 @@ class RouteMapController extends Controller
                 ], 404);
             }
 
-            // Get ImageUploadService
-            $uploadService = new \App\Services\ImageUploadService();
+            // Bestaande afbeeldingen (max 3 per punt). Backward-compat: een oude
+            // losse flyoverImage telt als eerste afbeelding.
+            $images = $this->checkpointImages($locations[$checkpointIndex]);
+            if (count($images) >= 3) {
+                return response()->json([
+                    'message' => 'Maximaal 3 afbeeldingen per punt',
+                ], 422);
+            }
 
-            // Upload the image
+            // Upload de nieuwe afbeelding en voeg toe aan de lijst.
+            $uploadService = new \App\Services\ImageUploadService();
             $uploadResult = $uploadService->store(
                 $request->file('image'),
                 $id,
                 $checkpointId
             );
 
-            // Delete old image if it exists
-            if (!empty($locations[$checkpointIndex]['flyoverImage'])) {
-                $oldFilename = $uploadService->getFilenameFromUrl(
-                    $locations[$checkpointIndex]['flyoverImage']
-                );
-                if ($oldFilename) {
-                    $uploadService->delete($id, $oldFilename);
-                }
-            }
-
-            // Update location with new image URL
-            $locations[$checkpointIndex]['flyoverImage'] = $uploadResult['url'];
+            $images[] = $uploadResult['url'];
+            $locations[$checkpointIndex]['images'] = array_values($images);
+            // flyoverImage = eerste afbeelding (backward-compat).
+            $locations[$checkpointIndex]['flyoverImage'] = $images[0] ?? null;
 
             // Save route map
             $routeMap->update(['locations' => $locations]);
 
-            // Broadcast update for real-time sync
-            // broadcast(new \App\Events\RouteMapUpdated($routeMap))->toOthers();
-
             return response()->json([
                 'url' => $uploadResult['url'],
+                'images' => $locations[$checkpointIndex]['images'],
                 'location' => $locations[$checkpointIndex],
             ]);
         } catch (\Exception $e) {
@@ -467,7 +481,7 @@ class RouteMapController extends Controller
             // Find the checkpoint location
             $checkpointIndex = null;
             foreach ($locations as $index => $loc) {
-                if ($loc['id'] === $checkpointId) {
+                if ((string) ($loc['id'] ?? '') === (string) $checkpointId) {
                     $checkpointIndex = $index;
                     break;
                 }
@@ -479,28 +493,37 @@ class RouteMapController extends Controller
                 ], 404);
             }
 
-            // Delete file from storage
-            if (!empty($locations[$checkpointIndex]['flyoverImage'])) {
-                $uploadService = new \App\Services\ImageUploadService();
-                $filename = $uploadService->getFilenameFromUrl(
-                    $locations[$checkpointIndex]['flyoverImage']
-                );
+            $images = $this->checkpointImages($locations[$checkpointIndex]);
+            $targetUrl = request('url');
+            $uploadService = new \App\Services\ImageUploadService();
+
+            if ($targetUrl) {
+                // Verwijder één specifieke afbeelding.
+                $images = array_values(array_filter($images, fn ($u) => $u !== $targetUrl));
+                $filename = $uploadService->getFilenameFromUrl($targetUrl);
                 if ($filename) {
                     $uploadService->delete($id, $filename);
                 }
+            } else {
+                // Geen url meegegeven → verwijder alle afbeeldingen van dit punt.
+                foreach ($images as $u) {
+                    $filename = $uploadService->getFilenameFromUrl($u);
+                    if ($filename) {
+                        $uploadService->delete($id, $filename);
+                    }
+                }
+                $images = [];
             }
 
-            // Clear flyoverImage field
-            $locations[$checkpointIndex]['flyoverImage'] = null;
+            $locations[$checkpointIndex]['images'] = $images;
+            $locations[$checkpointIndex]['flyoverImage'] = $images[0] ?? null;
 
             // Save route map
             $routeMap->update(['locations' => $locations]);
 
-            // Broadcast update for real-time sync
-            // broadcast(new \App\Events\RouteMapUpdated($routeMap))->toOthers();
-
             return response()->json([
                 'message' => 'Afbeelding verwijderd',
+                'images' => $images,
                 'location' => $locations[$checkpointIndex],
             ]);
         } catch (\Exception $e) {

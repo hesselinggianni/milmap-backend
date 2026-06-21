@@ -3,6 +3,7 @@
 namespace App\Http\Controllers;
 
 use App\Models\Map;
+use App\Models\Mission;
 use App\Models\User;
 use App\Models\MapCollaborator;
 use App\Models\Invitation;
@@ -18,19 +19,24 @@ use Illuminate\Support\Facades\Mail;
 class MapCollaboratorController extends Controller
 {
     /**
-     * Get all collaborators for a map
+     * Get all users with access to a map.
      * GET /api/v1/maps/{mapId}/collaborators
+     *
+     * Returns three categories:
+     *   source='collaborator'  – directly added via map sharing
+     *   source='invitation'    – pending e-mail invite
+     *   source='mission'       – access via a mission linked to this map
+     *
+     * Non-owners get a read-only view (own entry only hidden; all others
+     * visible so collaborators can see who else is on the map).
      */
     public function index($mapId)
     {
         $map = Map::findOrFail($mapId);
 
-        // Only owner can view collaborators
-        if ((int) $map->owner_id !== Auth::id()) {
-            abort(403, 'Only the map owner can view collaborators');
-        }
+        $isOwner = (int) $map->owner_id === Auth::id();
 
-        // Accepted / directly-added collaborators from map_collaborators table.
+        // ── Direct map collaborators ──────────────────────────────────────────
         $collaborators = $map->collaborators()
             ->with(['user:id,first_name,last_name,email'])
             ->get()
@@ -38,7 +44,7 @@ class MapCollaboratorController extends Controller
                 'id'          => $c->id,
                 'user_id'     => $c->user_id,
                 'user_name'   => $c->user?->full_name ?? $c->user?->email,
-                'email'       => $c->user?->email,
+                'email'       => $isOwner ? ($c->user?->email) : null,
                 'role'        => $c->role ?? 'editor',
                 'status'      => $c->status,
                 'source'      => 'collaborator',
@@ -46,30 +52,87 @@ class MapCollaboratorController extends Controller
                 'accepted_at' => $c->accepted_at,
             ]);
 
-        // Pending email invitations that haven't been accepted yet
-        // (they live in the polymorphic invitations table, not map_collaborators).
-        $pendingInvitations = Invitation::where('invitable_type', Map::class)
-            ->where('invitable_id', $mapId)
-            ->where('status', 'pending')
-            ->with(['invitedUser:id,first_name,last_name,email'])
-            ->get()
-            ->map(fn($i) => [
-                'id'          => $i->id,
-                'user_id'     => $i->invited_user_id,
-                'user_name'   => $i->invitedUser?->full_name ?? $i->email,
-                'email'       => $i->email,
-                'role'        => $i->role ?? 'viewer',
-                'status'      => 'pending',
-                'source'      => 'invitation',
-                'invited_at'  => $i->created_at,
-                'accepted_at' => null,
-            ]);
+        // ── Pending e-mail invitations (owner-only — invites contain e-mails) ─
+        $pendingInvitations = collect();
+        if ($isOwner) {
+            $pendingInvitations = Invitation::where('invitable_type', Map::class)
+                ->where('invitable_id', $mapId)
+                ->where('status', 'pending')
+                ->with(['invitedUser:id,first_name,last_name,email'])
+                ->get()
+                ->map(fn($i) => [
+                    'id'          => $i->id,
+                    'user_id'     => $i->invited_user_id,
+                    'user_name'   => $i->invitedUser?->full_name ?? $i->email,
+                    'email'       => $i->email,
+                    'role'        => $i->role ?? 'viewer',
+                    'status'      => 'pending',
+                    'source'      => 'invitation',
+                    'invited_at'  => $i->created_at,
+                    'accepted_at' => null,
+                ]);
+        }
 
-        $all = $collaborators->concat($pendingInvitations)->values();
+        // ── Mission participants (missions whose map.id points to this map) ───
+        // missions.map is a JSON column: { id: "<uuid>", source: "server"|"local", title: "..." }
+        $linkedMissions = Mission::whereNotNull('map')
+            ->whereRaw("JSON_UNQUOTE(JSON_EXTRACT(`map`, '$.id')) = ?", [$mapId])
+            ->whereRaw("JSON_UNQUOTE(JSON_EXTRACT(`map`, '$.source')) = 'server'")
+            ->with([
+                'collaborators' => fn($q) => $q->where('status', 'accepted')
+                    ->with('user:id,first_name,last_name,email'),
+                'owner:id,first_name,last_name,email',
+            ])
+            ->get();
+
+        // Collect all unique mission participants keyed by user_id
+        $missionUsers = collect();
+        foreach ($linkedMissions as $mission) {
+            // Mission owner
+            if ($mission->owner) {
+                $missionUsers[$mission->owner->id] = [
+                    'user_id'       => $mission->owner->id,
+                    'user_name'     => $mission->owner->full_name,
+                    'email'         => $isOwner ? $mission->owner->email : null,
+                    'role'          => 'admin',
+                    'status'        => 'accepted',
+                    'source'        => 'mission',
+                    'mission_name'  => $mission->name,
+                    'mission_id'    => $mission->id,
+                ];
+            }
+            // Mission collaborators
+            foreach ($mission->collaborators as $mc) {
+                if (!$mc->user) continue;
+                if (!isset($missionUsers[$mc->user_id])) {
+                    $missionUsers[$mc->user_id] = [
+                        'user_id'      => $mc->user_id,
+                        'user_name'    => $mc->user->full_name ?? $mc->user->email,
+                        'email'        => $isOwner ? $mc->user->email : null,
+                        'role'         => $mc->role ?? 'viewer',
+                        'status'       => 'accepted',
+                        'source'       => 'mission',
+                        'mission_name' => $mission->name,
+                        'mission_id'   => $mission->id,
+                    ];
+                }
+            }
+        }
+
+        // Remove the map owner from mission list (they're the owner, not a participant)
+        $missionUsers->forget($map->owner_id);
+        // Remove users already in the direct collaborators list
+        $directIds = $collaborators->pluck('user_id')->all();
+        $missionParticipants = $missionUsers->filter(
+            fn($u) => !in_array($u['user_id'], $directIds)
+        )->values();
+
+        $all = $collaborators->concat($pendingInvitations)->concat($missionParticipants)->values();
 
         return response()->json([
             'collaborators' => $all,
             'total'         => $all->count(),
+            'is_owner'      => $isOwner,
         ]);
     }
 
