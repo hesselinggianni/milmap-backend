@@ -6,25 +6,35 @@
   <title>KoffieMatters — Beleef Goede Koffie</title>
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link href="https://fonts.googleapis.com/css2?family=Inter:ital,opsz,wght@0,14..32,300;0,14..32,400;0,14..32,500;0,14..32,600;0,14..32,700;1,14..32,400&display=swap" rel="stylesheet">
+
+  <!-- ════════════════════════════════════════════════════════════════
+       FOTO'S — vervang onderstaande src-URL's door de echte
+       koffiematters.nl afbeeldingen. Elke <img> heeft een blauw/oranje
+       gradient-fallback, dus tot je de juiste URL invult blijft het er
+       netjes uitzien (kapotte URL's worden automatisch verborgen).
+       Zoek naar  data-photo  in dit bestand om alle slots te vinden.
+       ════════════════════════════════════════════════════════════════ -->
+
   <style>
-    *, *::before, *::after {
-      margin: 0;
-      padding: 0;
-      box-sizing: border-box;
-    }
+    *, *::before, *::after { margin: 0; padding: 0; box-sizing: border-box; }
 
     :root {
-      --black:         #1D1D1F;
-      --gray-dark:     #3A3A3C;
-      --gray-mid:      #6E6E73;
-      --gray-light:    #D2D2D7;
-      --gray-bg:       #F5F5F7;
+      /* ─── Huisstijl ─── */
+      --blue:          #1763B5;   /* primair */
+      --blue-dark:     #0E4480;
+      --blue-deep:     #0A2E57;   /* donkere secties */
+      --blue-soft:     #EAF2FB;   /* pale tint */
+      --orange:        #F5821F;   /* accent */
+      --orange-soft:   #FF9A3D;
+      --orange-pale:   #FFF3E8;
+      --coffee:        #5C3B22;   /* warme tertiaire toon */
+
+      --black:         #16202B;
+      --gray-dark:     #34404C;
+      --gray-mid:      #677687;
+      --gray-light:    #D3DBE3;
+      --gray-bg:       #F4F7FA;
       --white:         #FFFFFF;
-      --coffee:        #6F4E37;
-      --coffee-light:  #C8A97A;
-      --coffee-pale:   #F9F5F0;
-      --accent:        #7B5134;
-      --accent-hover:  #5E3D26;
     }
 
     html { scroll-behavior: smooth; }
@@ -50,49 +60,43 @@
       backdrop-filter: saturate(180%) blur(20px);
       -webkit-backdrop-filter: saturate(180%) blur(20px);
       background: rgba(255,255,255,0.82);
-      border-bottom: 1px solid rgba(0,0,0,0.06);
+      border-bottom: 1px solid rgba(10,46,87,0.07);
       transition: background 0.3s ease, box-shadow 0.3s ease;
     }
-
     nav.scrolled {
       background: rgba(255,255,255,0.96);
-      box-shadow: 0 1px 28px rgba(0,0,0,0.08);
+      box-shadow: 0 1px 28px rgba(10,46,87,0.1);
     }
 
     .nav-logo {
       font-size: 18px;
       font-weight: 600;
-      color: var(--black);
+      color: var(--blue-deep);
       letter-spacing: -0.4px;
       text-decoration: none;
     }
-    .nav-logo span { color: var(--accent); }
+    .nav-logo span { color: var(--orange); }
 
-    .nav-links {
-      display: flex;
-      gap: 36px;
-      list-style: none;
-    }
+    .nav-links { display: flex; gap: 36px; list-style: none; }
     .nav-links a {
       font-size: 14px;
-      font-weight: 400;
       color: var(--gray-dark);
       text-decoration: none;
       transition: color 0.2s;
     }
-    .nav-links a:hover { color: var(--black); }
+    .nav-links a:hover { color: var(--blue); }
 
     .nav-cta {
       font-size: 14px;
       font-weight: 500;
       color: var(--white);
-      background: var(--black);
+      background: var(--blue);
       padding: 9px 20px;
       border-radius: 980px;
       text-decoration: none;
       transition: background 0.2s, transform 0.2s;
     }
-    .nav-cta:hover { background: var(--gray-dark); transform: scale(1.02); }
+    .nav-cta:hover { background: var(--blue-dark); transform: scale(1.02); }
 
     /* ─── Hero ─── */
     .hero {
@@ -103,36 +107,44 @@
       justify-content: center;
       text-align: center;
       padding: 120px 48px 80px;
-      background: var(--white);
+      background:
+        radial-gradient(ellipse 70% 50% at 50% -10%, var(--blue-soft) 0%, transparent 60%),
+        var(--white);
       position: relative;
     }
 
     .hero-eyebrow {
-      display: inline-block;
+      display: inline-flex;
+      align-items: center;
+      gap: 8px;
       font-size: 12px;
       font-weight: 600;
-      color: var(--accent);
+      color: var(--blue);
       letter-spacing: 0.12em;
       text-transform: uppercase;
       margin-bottom: 22px;
+      padding: 6px 14px;
+      background: var(--blue-soft);
+      border-radius: 980px;
       opacity: 0;
       animation: fadeUp 0.8s ease 0.2s forwards;
     }
+    .hero-eyebrow .dot { width: 6px; height: 6px; border-radius: 50%; background: var(--orange); }
 
     .hero-title {
       font-size: clamp(48px, 8vw, 86px);
       font-weight: 700;
       line-height: 1.04;
       letter-spacing: -0.035em;
-      color: var(--black);
-      max-width: 860px;
+      color: var(--blue-deep);
+      max-width: 880px;
       margin: 0 auto 28px;
       opacity: 0;
       animation: fadeUp 0.8s ease 0.4s forwards;
     }
     .hero-title em {
       font-style: normal;
-      background: linear-gradient(135deg, var(--accent) 0%, var(--coffee-light) 100%);
+      background: linear-gradient(120deg, var(--orange) 0%, var(--orange-soft) 100%);
       -webkit-background-clip: text;
       -webkit-text-fill-color: transparent;
       background-clip: text;
@@ -142,7 +154,7 @@
       font-size: 20px;
       font-weight: 300;
       color: var(--gray-mid);
-      max-width: 520px;
+      max-width: 540px;
       margin: 0 auto 52px;
       line-height: 1.55;
       opacity: 0;
@@ -158,615 +170,387 @@
     }
 
     .btn-primary {
-      display: inline-flex;
-      align-items: center;
-      gap: 6px;
-      font-size: 16px;
-      font-weight: 500;
+      display: inline-flex; align-items: center; gap: 7px;
+      font-size: 16px; font-weight: 500;
       color: var(--white);
-      background: var(--black);
+      background: var(--blue);
       padding: 15px 30px;
       border-radius: 980px;
       text-decoration: none;
-      transition: background 0.22s, transform 0.22s;
+      transition: background 0.22s, transform 0.22s, box-shadow 0.22s;
+      box-shadow: 0 8px 24px rgba(23,99,181,0.28);
     }
-    .btn-primary:hover { background: var(--gray-dark); transform: scale(1.025); }
+    .btn-primary:hover { background: var(--blue-dark); transform: scale(1.025); box-shadow: 0 12px 30px rgba(23,99,181,0.34); }
 
     .btn-ghost {
-      display: inline-flex;
-      align-items: center;
-      gap: 6px;
-      font-size: 16px;
-      font-weight: 500;
-      color: var(--accent);
+      display: inline-flex; align-items: center; gap: 6px;
+      font-size: 16px; font-weight: 500;
+      color: var(--orange);
       padding: 15px 30px;
       border-radius: 980px;
       text-decoration: none;
       transition: background 0.22s;
     }
-    .btn-ghost:hover { background: var(--coffee-pale); }
+    .btn-ghost:hover { background: var(--orange-pale); }
 
-    /* Hero visual card */
+    /* Hero visual card (photo) */
     .hero-visual {
       margin-top: 72px;
       width: 100%;
-      max-width: 940px;
-      height: 380px;
+      max-width: 980px;
+      height: 440px;
       border-radius: 26px;
       overflow: hidden;
       position: relative;
-      box-shadow: 0 40px 90px rgba(0,0,0,0.16);
+      box-shadow: 0 40px 90px rgba(10,46,87,0.22);
       opacity: 0;
       animation: fadeUp 1s ease 1.0s forwards;
-      background: #18090100;
+      /* fallback gradient onder de foto */
+      background: linear-gradient(135deg, var(--blue-deep) 0%, var(--blue) 45%, var(--orange) 120%);
     }
 
-    .hero-bg-gradient {
+    .photo {
       position: absolute;
       inset: 0;
-      background: linear-gradient(135deg,
-        #0f0500 0%,
-        #2e1208 25%,
-        #5c3220 50%,
-        #8b6040 70%,
-        #c8a97a 100%
-      );
+      width: 100%;
+      height: 100%;
+      object-fit: cover;
+      display: block;
     }
 
-    .hero-bg-grain {
+    .hero-scrim {
       position: absolute;
       inset: 0;
-      background-image: url("data:image/svg+xml,%3Csvg viewBox='0 0 200 200' xmlns='http://www.w3.org/2000/svg'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.75' numOctaves='4' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23n)' opacity='0.05'/%3E%3C/svg%3E");
-      opacity: 0.4;
+      background: linear-gradient(180deg, rgba(10,46,87,0.05) 0%, rgba(10,46,87,0.0) 30%, rgba(10,46,87,0.55) 100%);
     }
-
-    .hero-glow {
+    .hero-scrim-side {
       position: absolute;
-      top: -60px; left: 50%;
-      transform: translateX(-50%);
-      width: 600px; height: 400px;
-      background: radial-gradient(ellipse, rgba(200,169,122,0.22) 0%, transparent 70%);
+      inset: 0;
+      background: linear-gradient(105deg, rgba(10,46,87,0.45) 0%, transparent 55%);
     }
 
     .hero-badge {
       position: absolute;
-      top: 36px; left: 48px;
-      background: rgba(255,255,255,0.1);
+      top: 28px; right: 28px;
+      background: rgba(255,255,255,0.16);
       backdrop-filter: blur(12px);
-      border: 1px solid rgba(255,255,255,0.18);
-      border-radius: 12px;
+      border: 1px solid rgba(255,255,255,0.28);
+      border-radius: 14px;
       padding: 14px 20px;
       color: var(--white);
+      text-align: right;
     }
-    .hero-badge-label { font-size: 11px; color: rgba(255,255,255,0.5); letter-spacing: 0.08em; text-transform: uppercase; margin-bottom: 4px; }
-    .hero-badge-value { font-size: 22px; font-weight: 600; letter-spacing: -0.02em; }
+    .hero-badge-label { font-size: 11px; color: rgba(255,255,255,0.7); letter-spacing: 0.08em; text-transform: uppercase; margin-bottom: 4px; }
+    .hero-badge-value { font-size: 24px; font-weight: 700; letter-spacing: -0.02em; }
+    .hero-badge-value span { color: var(--orange-soft); }
 
     .hero-tagline {
       position: absolute;
-      bottom: 40px; left: 48px;
+      bottom: 36px; left: 40px;
       color: var(--white);
+      text-align: left;
     }
-    .hero-tagline strong { display: block; font-size: 26px; font-weight: 600; letter-spacing: -0.025em; margin-bottom: 4px; }
-    .hero-tagline span { font-size: 14px; color: rgba(255,255,255,0.55); }
+    .hero-tagline strong { display: block; font-size: 28px; font-weight: 700; letter-spacing: -0.025em; margin-bottom: 4px; }
+    .hero-tagline span { font-size: 14px; color: rgba(255,255,255,0.78); }
 
-    /* Floating pills */
     .hero-pills {
       position: absolute;
-      bottom: 36px; right: 48px;
-      display: flex;
-      flex-direction: column;
-      gap: 8px;
-      align-items: flex-end;
+      bottom: 36px; right: 40px;
+      display: flex; flex-direction: column; gap: 8px; align-items: flex-end;
     }
     .pill {
-      display: flex;
-      align-items: center;
-      gap: 8px;
-      background: rgba(255,255,255,0.1);
+      display: flex; align-items: center; gap: 8px;
+      background: rgba(255,255,255,0.16);
       backdrop-filter: blur(12px);
-      border: 1px solid rgba(255,255,255,0.15);
+      border: 1px solid rgba(255,255,255,0.22);
       border-radius: 980px;
       padding: 8px 16px;
-      font-size: 13px;
-      color: rgba(255,255,255,0.8);
+      font-size: 13px; color: var(--white);
       animation: pillFloat 3s ease-in-out infinite;
     }
     .pill:nth-child(2) { animation-delay: 0.5s; }
     .pill:nth-child(3) { animation-delay: 1s; }
     .pill-dot { width: 7px; height: 7px; border-radius: 50%; background: #4ade80; }
 
-    /* Decorative circles */
-    .hero-circle {
-      position: absolute;
-      top: 50%; right: 160px;
-      transform: translateY(-50%);
-      width: 140px; height: 140px;
-      border-radius: 50%;
-      background: radial-gradient(circle at 35% 35%, rgba(255,255,255,0.12), rgba(255,255,255,0.03));
-      border: 1px solid rgba(255,255,255,0.12);
-      display: flex;
-      align-items: center;
-      justify-content: center;
-    }
-    .hero-circle-inner {
-      width: 80px; height: 80px;
-      border-radius: 50%;
-      background: radial-gradient(circle at 35% 35%, rgba(255,255,255,0.15), rgba(255,255,255,0.04));
-      border: 1px solid rgba(255,255,255,0.15);
-    }
-
     /* ─── Section helpers ─── */
     .section-header { text-align: center; margin-bottom: 64px; }
-
     .eyebrow {
       display: block;
-      font-size: 12px;
-      font-weight: 600;
-      color: var(--accent);
-      letter-spacing: 0.12em;
-      text-transform: uppercase;
+      font-size: 12px; font-weight: 600;
+      color: var(--orange);
+      letter-spacing: 0.12em; text-transform: uppercase;
       margin-bottom: 16px;
     }
-
     .section-title {
       font-size: clamp(34px, 5vw, 52px);
-      font-weight: 700;
-      letter-spacing: -0.028em;
-      color: var(--black);
-      line-height: 1.1;
-      margin-bottom: 16px;
+      font-weight: 700; letter-spacing: -0.028em;
+      color: var(--blue-deep); line-height: 1.1; margin-bottom: 16px;
     }
-
     .section-sub {
-      font-size: 17px;
-      font-weight: 300;
-      color: var(--gray-mid);
-      max-width: 460px;
-      margin: 0 auto;
-      line-height: 1.6;
+      font-size: 17px; font-weight: 300;
+      color: var(--gray-mid); max-width: 480px;
+      margin: 0 auto; line-height: 1.6;
     }
 
     /* ─── Services ─── */
-    .services {
-      padding: 120px 48px;
-      background: var(--gray-bg);
-    }
-
+    .services { padding: 120px 48px; background: var(--gray-bg); }
     .services-grid {
       display: grid;
       grid-template-columns: repeat(3, 1fr);
-      gap: 22px;
-      max-width: 1160px;
+      gap: 24px;
+      max-width: 1180px;
       margin: 0 auto;
     }
 
     .service-card {
       background: var(--white);
       border-radius: 22px;
-      padding: 44px 38px;
-      border: 1px solid rgba(0,0,0,0.05);
+      border: 1px solid rgba(10,46,87,0.06);
       position: relative;
       overflow: hidden;
       cursor: pointer;
+      display: flex;
+      flex-direction: column;
       transition: transform 0.35s cubic-bezier(0.25,0.1,0.25,1),
                   box-shadow 0.35s cubic-bezier(0.25,0.1,0.25,1);
     }
+    .service-card:hover { transform: translateY(-8px); box-shadow: 0 26px 60px rgba(10,46,87,0.14); }
 
-    .service-card::after {
-      content: '';
+    /* photo band on top of each card */
+    .service-photo {
+      position: relative;
+      height: 184px;
+      overflow: hidden;
+      background: linear-gradient(135deg, var(--blue-deep), var(--blue));
+    }
+    .service-card:nth-child(2) .service-photo { background: linear-gradient(135deg, var(--blue-dark), var(--blue)); }
+    .service-card:nth-child(3) .service-photo { background: linear-gradient(135deg, var(--coffee), var(--orange)); }
+    .service-photo .photo { transition: transform 0.6s cubic-bezier(0.25,0.1,0.25,1); }
+    .service-card:hover .service-photo .photo { transform: scale(1.06); }
+
+    .service-tag {
       position: absolute;
-      top: 0; left: 0; right: 0;
-      height: 2px;
-      background: linear-gradient(90deg, var(--coffee), var(--coffee-light));
-      transform: scaleX(0);
-      transform-origin: left;
-      transition: transform 0.35s cubic-bezier(0.25,0.1,0.25,1);
+      top: 16px; left: 16px;
+      font-size: 11px; font-weight: 700;
+      letter-spacing: 0.08em; text-transform: uppercase;
+      color: var(--white);
+      background: rgba(10,46,87,0.55);
+      backdrop-filter: blur(8px);
+      border: 1px solid rgba(255,255,255,0.2);
+      padding: 6px 12px;
+      border-radius: 980px;
     }
+    .service-card:nth-child(3) .service-tag { background: rgba(92,59,34,0.55); }
 
-    .service-card:hover {
-      transform: translateY(-7px);
-      box-shadow: 0 24px 56px rgba(0,0,0,0.1);
-    }
-    .service-card:hover::after { transform: scaleX(1); }
-
-    .service-num {
-      position: absolute;
-      top: 36px; right: 36px;
-      font-size: 60px;
-      font-weight: 700;
-      color: rgba(0,0,0,0.04);
-      letter-spacing: -0.04em;
-      line-height: 1;
-      pointer-events: none;
-    }
+    .service-body { padding: 30px 32px 34px; display: flex; flex-direction: column; flex: 1; }
 
     .service-icon-wrap {
-      width: 52px; height: 52px;
-      background: var(--coffee-pale);
-      border-radius: 14px;
-      display: flex;
-      align-items: center;
-      justify-content: center;
-      margin-bottom: 28px;
+      width: 46px; height: 46px;
+      background: var(--blue-soft);
+      border-radius: 13px;
+      display: flex; align-items: center; justify-content: center;
+      margin-bottom: 20px; margin-top: -53px;
+      position: relative; z-index: 2;
+      border: 4px solid var(--white);
+      box-sizing: content-box;
       transition: background 0.3s;
     }
-    .service-card:hover .service-icon-wrap { background: var(--accent); }
+    .service-card:nth-child(3) .service-icon-wrap { background: var(--orange-pale); }
+    .service-card:hover .service-icon-wrap { background: var(--blue); }
+    .service-card:nth-child(3):hover .service-icon-wrap { background: var(--orange); }
     .service-card:hover .service-icon-wrap svg path,
     .service-card:hover .service-icon-wrap svg rect,
     .service-card:hover .service-icon-wrap svg line,
-    .service-card:hover .service-icon-wrap svg circle {
-      stroke: #fff;
-    }
-
-    .service-badge {
-      font-size: 10px;
-      font-weight: 700;
-      color: var(--accent);
-      letter-spacing: 0.12em;
-      text-transform: uppercase;
-      margin-bottom: 8px;
-    }
+    .service-card:hover .service-icon-wrap svg circle { stroke: #fff; }
 
     .service-title {
-      font-size: 24px;
-      font-weight: 700;
-      letter-spacing: -0.022em;
-      color: var(--black);
-      line-height: 1.2;
-      margin-bottom: 14px;
+      font-size: 23px; font-weight: 700;
+      letter-spacing: -0.022em; color: var(--blue-deep);
+      line-height: 1.2; margin-bottom: 12px;
     }
-
     .service-desc {
-      font-size: 14px;
-      line-height: 1.7;
-      color: var(--gray-mid);
-      margin-bottom: 30px;
+      font-size: 14px; line-height: 1.7;
+      color: var(--gray-mid); margin-bottom: 26px; flex: 1;
     }
-
     .service-cta {
-      display: inline-flex;
-      align-items: center;
-      gap: 5px;
-      font-size: 14px;
-      font-weight: 500;
-      color: var(--accent);
-      text-decoration: none;
-      transition: gap 0.2s;
+      display: inline-flex; align-items: center; gap: 5px;
+      font-size: 14px; font-weight: 500;
+      color: var(--blue);
+      text-decoration: none; transition: gap 0.2s, color 0.2s;
     }
+    .service-card:nth-child(3) .service-cta { color: var(--orange); }
     .service-cta:hover { gap: 10px; }
     .service-cta svg { transition: transform 0.2s; }
     .service-cta:hover svg { transform: translateX(3px); }
 
-    /* ─── Why section ─── */
-    .why {
-      padding: 120px 48px;
-      background: var(--white);
-    }
-
+    /* ─── Why ─── */
+    .why { padding: 120px 48px; background: var(--white); }
     .why-inner {
-      max-width: 1160px;
-      margin: 0 auto;
-      display: grid;
-      grid-template-columns: 1fr 1fr;
-      gap: 80px;
-      align-items: center;
+      max-width: 1180px; margin: 0 auto;
+      display: grid; grid-template-columns: 1fr 1fr;
+      gap: 80px; align-items: center;
     }
-
-    .why-usps {
-      display: flex;
-      flex-direction: column;
-      gap: 36px;
-      margin-top: 48px;
-    }
-
-    .usp-row {
-      display: flex;
-      gap: 18px;
-      align-items: flex-start;
-    }
-
+    .why-usps { display: flex; flex-direction: column; gap: 34px; margin-top: 44px; }
+    .usp-row { display: flex; gap: 18px; align-items: flex-start; }
     .usp-icon {
-      width: 42px; height: 42px;
-      background: var(--coffee-pale);
+      width: 44px; height: 44px;
       border-radius: 12px;
-      display: flex;
-      align-items: center;
-      justify-content: center;
+      display: flex; align-items: center; justify-content: center;
       flex-shrink: 0;
-      font-size: 18px;
     }
-
-    .usp-text h3 {
-      font-size: 16px;
-      font-weight: 600;
-      color: var(--black);
-      margin-bottom: 5px;
-      letter-spacing: -0.01em;
-    }
-    .usp-text p {
-      font-size: 14px;
-      color: var(--gray-mid);
-      line-height: 1.65;
-    }
+    .usp-icon svg { width: 20px; height: 20px; }
+    .usp-row:nth-child(odd) .usp-icon { background: var(--blue-soft); }
+    .usp-row:nth-child(even) .usp-icon { background: var(--orange-pale); }
+    .usp-text h3 { font-size: 16px; font-weight: 600; color: var(--blue-deep); margin-bottom: 5px; letter-spacing: -0.01em; }
+    .usp-text p { font-size: 14px; color: var(--gray-mid); line-height: 1.65; }
 
     .why-visual {
-      border-radius: 24px;
-      height: 520px;
-      position: relative;
-      overflow: hidden;
-      background: linear-gradient(160deg, #110600 0%, #3a1a08 40%, #7b5134 80%, #c8a97a 100%);
+      border-radius: 24px; height: 540px;
+      position: relative; overflow: hidden;
+      background: linear-gradient(160deg, var(--blue-deep) 0%, var(--blue) 55%, var(--orange) 130%);
+      box-shadow: 0 30px 70px rgba(10,46,87,0.2);
     }
-
-    .why-glow {
-      position: absolute;
-      top: -40px; right: -60px;
-      width: 400px; height: 400px;
-      background: radial-gradient(ellipse, rgba(200,169,122,0.2) 0%, transparent 65%);
+    .why-scrim {
+      position: absolute; inset: 0;
+      background: linear-gradient(180deg, rgba(10,46,87,0.5) 0%, transparent 28%, transparent 55%, rgba(10,46,87,0.6) 100%);
     }
-
     .why-stats {
-      position: absolute;
-      bottom: 36px; left: 36px; right: 36px;
-      display: grid;
-      grid-template-columns: repeat(3, 1fr);
-      gap: 14px;
+      position: absolute; bottom: 32px; left: 32px; right: 32px;
+      display: grid; grid-template-columns: repeat(3, 1fr); gap: 12px;
     }
-
     .stat-card {
-      background: rgba(255,255,255,0.09);
+      background: rgba(255,255,255,0.14);
       backdrop-filter: blur(14px);
-      border: 1px solid rgba(255,255,255,0.14);
-      border-radius: 16px;
-      padding: 20px;
-      text-align: center;
+      border: 1px solid rgba(255,255,255,0.2);
+      border-radius: 16px; padding: 18px; text-align: center;
     }
-    .stat-num {
-      font-size: 30px;
-      font-weight: 700;
-      color: var(--white);
-      letter-spacing: -0.03em;
-      line-height: 1;
-      margin-bottom: 4px;
-    }
-    .stat-label {
-      font-size: 12px;
-      color: rgba(255,255,255,0.5);
-    }
+    .stat-num { font-size: 30px; font-weight: 700; color: var(--white); letter-spacing: -0.03em; line-height: 1; margin-bottom: 4px; }
+    .stat-label { font-size: 12px; color: rgba(255,255,255,0.7); }
 
-    /* Floating quote */
     .why-quote {
-      position: absolute;
-      top: 36px; left: 36px; right: 36px;
-      background: rgba(255,255,255,0.08);
+      position: absolute; top: 32px; left: 32px; right: 32px;
+      background: rgba(255,255,255,0.14);
       backdrop-filter: blur(12px);
-      border: 1px solid rgba(255,255,255,0.12);
-      border-radius: 16px;
-      padding: 22px 24px;
+      border: 1px solid rgba(255,255,255,0.2);
+      border-radius: 16px; padding: 22px 24px;
     }
-    .why-quote-text {
-      font-size: 15px;
-      font-style: italic;
-      color: rgba(255,255,255,0.82);
-      line-height: 1.55;
-      margin-bottom: 12px;
-    }
-    .why-quote-author {
-      font-size: 12px;
-      color: rgba(255,255,255,0.4);
-    }
-    .why-quote-author strong { color: rgba(255,255,255,0.7); font-style: normal; }
+    .why-quote-text { font-size: 15px; font-style: italic; color: rgba(255,255,255,0.92); line-height: 1.55; margin-bottom: 12px; }
+    .why-quote-author { font-size: 12px; color: rgba(255,255,255,0.6); }
+    .why-quote-author strong { color: var(--white); font-style: normal; }
 
     /* ─── Process ─── */
-    .process {
-      padding: 120px 48px;
-      background: var(--coffee-pale);
-    }
-
+    .process { padding: 120px 48px; background: var(--blue-soft); }
     .steps {
-      display: grid;
-      grid-template-columns: repeat(4, 1fr);
-      gap: 28px;
-      max-width: 1160px;
-      margin: 64px auto 0;
-      position: relative;
+      display: grid; grid-template-columns: repeat(4, 1fr);
+      gap: 28px; max-width: 1180px; margin: 64px auto 0; position: relative;
     }
-
     .steps::before {
       content: '';
-      position: absolute;
-      top: 27px;
-      left: calc(12.5% + 28px);
-      right: calc(12.5% + 28px);
-      height: 1px;
-      background: linear-gradient(90deg, transparent, var(--gray-light), var(--gray-light), transparent);
+      position: absolute; top: 27px;
+      left: calc(12.5% + 28px); right: calc(12.5% + 28px);
+      height: 2px;
+      background: linear-gradient(90deg, transparent, var(--blue) 20%, var(--orange) 80%, transparent);
+      opacity: 0.4;
     }
-
-    .step {
-      text-align: center;
-      position: relative;
-    }
-
+    .step { text-align: center; position: relative; }
     .step-bubble {
-      width: 54px; height: 54px;
-      border-radius: 50%;
+      width: 54px; height: 54px; border-radius: 50%;
       background: var(--white);
       border: 1.5px solid var(--gray-light);
-      display: flex;
-      align-items: center;
-      justify-content: center;
+      display: flex; align-items: center; justify-content: center;
       margin: 0 auto 22px;
-      font-size: 15px;
-      font-weight: 600;
-      color: var(--black);
-      position: relative;
-      z-index: 1;
+      font-size: 15px; font-weight: 600; color: var(--blue);
+      position: relative; z-index: 1;
       transition: background 0.3s, border-color 0.3s, color 0.3s, transform 0.3s;
     }
-
-    .step:hover .step-bubble {
-      background: var(--black);
-      border-color: var(--black);
-      color: var(--white);
-      transform: scale(1.08);
-    }
-
-    .step h3 {
-      font-size: 16px;
-      font-weight: 600;
-      color: var(--black);
-      margin-bottom: 8px;
-      letter-spacing: -0.01em;
-    }
-    .step p {
-      font-size: 13px;
-      color: var(--gray-mid);
-      line-height: 1.65;
-    }
+    .step:hover .step-bubble { background: var(--blue); border-color: var(--blue); color: var(--white); transform: scale(1.08); }
+    .step h3 { font-size: 16px; font-weight: 600; color: var(--blue-deep); margin-bottom: 8px; letter-spacing: -0.01em; }
+    .step p { font-size: 13px; color: var(--gray-mid); line-height: 1.65; }
 
     /* ─── CTA ─── */
     .cta {
-      padding: 120px 48px;
-      background: var(--black);
-      text-align: center;
+      padding: 120px 48px; text-align: center;
+      background:
+        radial-gradient(ellipse 60% 70% at 80% 20%, rgba(245,130,31,0.22) 0%, transparent 60%),
+        var(--blue-deep);
     }
-
-    .cta .eyebrow { color: var(--coffee-light); }
+    .cta .eyebrow { color: var(--orange-soft); }
     .cta .section-title { color: var(--white); }
-    .cta .section-sub { color: rgba(255,255,255,0.45); }
-
-    .cta-btns {
-      display: flex;
-      gap: 14px;
-      justify-content: center;
-      margin-top: 48px;
-    }
+    .cta .section-sub { color: rgba(255,255,255,0.6); }
+    .cta-btns { display: flex; gap: 14px; justify-content: center; margin-top: 48px; }
 
     .btn-light {
-      display: inline-flex;
-      align-items: center;
-      gap: 8px;
-      font-size: 16px;
-      font-weight: 500;
-      color: var(--black);
-      background: var(--white);
-      padding: 15px 30px;
-      border-radius: 980px;
-      text-decoration: none;
-      transition: background 0.22s, transform 0.22s;
+      display: inline-flex; align-items: center; gap: 8px;
+      font-size: 16px; font-weight: 500;
+      color: var(--blue-deep); background: var(--white);
+      padding: 15px 30px; border-radius: 980px;
+      text-decoration: none; transition: background 0.22s, transform 0.22s;
     }
     .btn-light:hover { background: var(--gray-bg); transform: scale(1.02); }
 
-    .btn-outline {
-      display: inline-flex;
-      align-items: center;
-      gap: 8px;
-      font-size: 16px;
-      font-weight: 500;
-      color: var(--white);
-      background: transparent;
-      padding: 15px 30px;
-      border-radius: 980px;
-      border: 1px solid rgba(255,255,255,0.22);
-      text-decoration: none;
-      transition: background 0.22s, border-color 0.22s;
+    .btn-accent {
+      display: inline-flex; align-items: center; gap: 8px;
+      font-size: 16px; font-weight: 500;
+      color: var(--white); background: var(--orange);
+      padding: 15px 30px; border-radius: 980px;
+      text-decoration: none; transition: background 0.22s, transform 0.22s;
+      box-shadow: 0 8px 24px rgba(245,130,31,0.3);
     }
-    .btn-outline:hover { background: rgba(255,255,255,0.08); border-color: rgba(255,255,255,0.5); }
+    .btn-accent:hover { background: var(--orange-soft); transform: scale(1.02); }
 
     /* ─── Footer ─── */
-    footer {
-      background: var(--black);
-      border-top: 1px solid rgba(255,255,255,0.07);
-      padding: 64px 48px 40px;
-    }
-
+    footer { background: var(--blue-deep); padding: 64px 48px 40px; }
     .footer-grid {
-      max-width: 1160px;
-      margin: 0 auto;
-      display: grid;
-      grid-template-columns: 1.8fr 1fr 1fr 1fr;
-      gap: 48px;
-      padding-bottom: 48px;
-      border-bottom: 1px solid rgba(255,255,255,0.07);
+      max-width: 1180px; margin: 0 auto;
+      display: grid; grid-template-columns: 1.8fr 1fr 1fr 1fr; gap: 48px;
+      padding-bottom: 48px; border-bottom: 1px solid rgba(255,255,255,0.1);
     }
-
     .footer-logo { font-size: 17px; font-weight: 600; color: var(--white); margin-bottom: 12px; }
-    .footer-logo span { color: var(--coffee-light); }
-
-    .footer-desc { font-size: 13px; color: rgba(255,255,255,0.38); line-height: 1.75; max-width: 210px; }
-
+    .footer-logo span { color: var(--orange-soft); }
+    .footer-desc { font-size: 13px; color: rgba(255,255,255,0.5); line-height: 1.75; max-width: 220px; }
     .footer-col h4 {
-      font-size: 11px;
-      font-weight: 600;
-      color: rgba(255,255,255,0.4);
-      letter-spacing: 0.1em;
-      text-transform: uppercase;
-      margin-bottom: 18px;
+      font-size: 11px; font-weight: 600;
+      color: rgba(255,255,255,0.5);
+      letter-spacing: 0.1em; text-transform: uppercase; margin-bottom: 18px;
     }
     .footer-col ul { list-style: none; display: flex; flex-direction: column; gap: 10px; }
-    .footer-col ul a {
-      font-size: 13px;
-      color: rgba(255,255,255,0.55);
-      text-decoration: none;
-      transition: color 0.2s;
-    }
-    .footer-col ul a:hover { color: var(--white); }
-
+    .footer-col ul a { font-size: 13px; color: rgba(255,255,255,0.68); text-decoration: none; transition: color 0.2s; }
+    .footer-col ul a:hover { color: var(--orange-soft); }
     .footer-bottom {
-      max-width: 1160px;
-      margin: 32px auto 0;
-      display: flex;
-      align-items: center;
-      justify-content: space-between;
+      max-width: 1180px; margin: 32px auto 0;
+      display: flex; align-items: center; justify-content: space-between;
     }
-    .footer-bottom p { font-size: 12px; color: rgba(255,255,255,0.25); }
+    .footer-bottom p { font-size: 12px; color: rgba(255,255,255,0.4); }
     .footer-meta { display: flex; gap: 24px; }
-    .footer-meta a {
-      font-size: 12px;
-      color: rgba(255,255,255,0.25);
-      text-decoration: none;
-      transition: color 0.2s;
-    }
-    .footer-meta a:hover { color: rgba(255,255,255,0.55); }
+    .footer-meta a { font-size: 12px; color: rgba(255,255,255,0.4); text-decoration: none; transition: color 0.2s; }
+    .footer-meta a:hover { color: rgba(255,255,255,0.8); }
 
     /* ─── Scroll reveal ─── */
     .reveal {
-      opacity: 0;
-      transform: translateY(28px);
-      transition: opacity 0.7s cubic-bezier(0.16,1,0.3,1),
-                  transform 0.7s cubic-bezier(0.16,1,0.3,1);
+      opacity: 0; transform: translateY(28px);
+      transition: opacity 0.7s cubic-bezier(0.16,1,0.3,1), transform 0.7s cubic-bezier(0.16,1,0.3,1);
     }
     .reveal.in { opacity: 1; transform: none; }
 
     /* ─── Keyframes ─── */
-    @keyframes fadeUp {
-      from { opacity: 0; transform: translateY(22px); }
-      to   { opacity: 1; transform: none; }
-    }
-
-    @keyframes pillFloat {
-      0%, 100% { transform: translateY(0); }
-      50%       { transform: translateY(-5px); }
-    }
+    @keyframes fadeUp { from { opacity: 0; transform: translateY(22px); } to { opacity: 1; transform: none; } }
+    @keyframes pillFloat { 0%,100% { transform: translateY(0); } 50% { transform: translateY(-5px); } }
 
     /* ─── Responsive ─── */
     @media (max-width: 900px) {
       nav { padding: 0 24px; }
       .nav-links { display: none; }
-
       .hero { padding: 100px 24px 60px; }
       .hero-actions { flex-direction: column; align-items: center; }
-      .hero-visual { height: 280px; }
-      .hero-circle, .hero-pills { display: none; }
-
+      .hero-visual { height: 300px; }
+      .hero-pills { display: none; }
       .services, .why, .process, .cta { padding: 80px 24px; }
       footer { padding: 56px 24px 36px; }
-
       .services-grid { grid-template-columns: 1fr; }
       .why-inner { grid-template-columns: 1fr; gap: 48px; }
-      .why-visual { height: 380px; }
+      .why-visual { height: 420px; }
       .steps { grid-template-columns: 1fr 1fr; }
       .steps::before { display: none; }
-
       .footer-grid { grid-template-columns: 1fr 1fr; gap: 32px; }
       .footer-bottom { flex-direction: column; gap: 16px; text-align: center; }
     }
@@ -788,7 +572,7 @@
 
   <!-- ─── Hero ─── -->
   <section class="hero">
-    <span class="hero-eyebrow">Koffiespecialist — Since 2015</span>
+    <span class="hero-eyebrow"><span class="dot"></span> Koffiespecialist — Sinds 2015</span>
 
     <h1 class="hero-title">
       Goede koffie.<br>
@@ -805,22 +589,19 @@
     </div>
 
     <div class="hero-visual">
-      <div class="hero-bg-gradient"></div>
-      <div class="hero-bg-grain"></div>
-      <div class="hero-glow"></div>
+      <!-- data-photo: HERO — bijv. sfeerfoto barista / espressomachine -->
+      <img class="photo" data-photo src="https://koffiematters.nl/wp-content/uploads/hero.jpg" alt="KoffieMatters koffiemachine" loading="eager" onerror="this.style.display='none'">
+      <div class="hero-scrim-side"></div>
+      <div class="hero-scrim"></div>
 
       <div class="hero-badge">
-        <div class="hero-badge-label">Responstijd</div>
-        <div class="hero-badge-value">≤ 4u</div>
+        <div class="hero-badge-label">Service responstijd</div>
+        <div class="hero-badge-value">≤ <span>4 uur</span></div>
       </div>
 
       <div class="hero-tagline">
         <strong>Espresso Perfection</strong>
         <span>Voor horeca, kantoor &amp; thuis</span>
-      </div>
-
-      <div class="hero-circle">
-        <div class="hero-circle-inner"></div>
       </div>
 
       <div class="hero-pills">
@@ -843,63 +624,72 @@
 
       <!-- Kopen -->
       <div class="service-card reveal">
-        <div class="service-num">01</div>
-        <div class="service-icon-wrap">
-          <svg width="22" height="22" viewBox="0 0 24 24" fill="none">
-            <path d="M6 2L3 6v14a2 2 0 002 2h14a2 2 0 002-2V6l-3-4z" stroke="#7B5134" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/>
-            <line x1="3" y1="6" x2="21" y2="6" stroke="#7B5134" stroke-width="1.8" stroke-linecap="round"/>
-            <path d="M16 10a4 4 0 01-8 0" stroke="#7B5134" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/>
-          </svg>
+        <div class="service-photo">
+          <!-- data-photo: DIENST 1 — koffiemachine kopen -->
+          <img class="photo" data-photo src="https://koffiematters.nl/wp-content/uploads/dienst-kopen.jpg" alt="Koffiemachine kopen" loading="lazy" onerror="this.style.display='none'">
+          <span class="service-tag">01 — Kopen</span>
         </div>
-        <div class="service-badge">01 — Kopen</div>
-        <h3 class="service-title">Koffiemachine<br>kopen</h3>
-        <p class="service-desc">Kies uit ons zorgvuldig geselecteerde assortiment van topmerken. Van compacte thuismachines tot professionele horeca-apparatuur — wij helpen je de perfecte match vinden.</p>
-        <a href="#" class="service-cta">
-          Bekijk machines
-          <svg width="15" height="15" viewBox="0 0 16 16" fill="none">
-            <path d="M3 8h10M9 4l4 4-4 4" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/>
-          </svg>
-        </a>
+        <div class="service-body">
+          <div class="service-icon-wrap">
+            <svg width="22" height="22" viewBox="0 0 24 24" fill="none">
+              <path d="M6 2L3 6v14a2 2 0 002 2h14a2 2 0 002-2V6l-3-4z" stroke="#1763B5" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/>
+              <line x1="3" y1="6" x2="21" y2="6" stroke="#1763B5" stroke-width="1.8" stroke-linecap="round"/>
+              <path d="M16 10a4 4 0 01-8 0" stroke="#1763B5" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/>
+            </svg>
+          </div>
+          <h3 class="service-title">Koffiemachine kopen</h3>
+          <p class="service-desc">Kies uit ons zorgvuldig geselecteerde assortiment van topmerken. Van compacte thuismachines tot professionele horeca-apparatuur — wij helpen je de perfecte match vinden.</p>
+          <a href="#" class="service-cta">
+            Bekijk machines
+            <svg width="15" height="15" viewBox="0 0 16 16" fill="none"><path d="M3 8h10M9 4l4 4-4 4" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/></svg>
+          </a>
+        </div>
       </div>
 
       <!-- Leasen -->
       <div class="service-card reveal" style="transition-delay:0.1s">
-        <div class="service-num">02</div>
-        <div class="service-icon-wrap">
-          <svg width="22" height="22" viewBox="0 0 24 24" fill="none">
-            <rect x="1" y="4" width="22" height="16" rx="2" stroke="#7B5134" stroke-width="1.8"/>
-            <line x1="1" y1="10" x2="23" y2="10" stroke="#7B5134" stroke-width="1.8"/>
-            <line x1="5" y1="15" x2="9" y2="15" stroke="#7B5134" stroke-width="1.8" stroke-linecap="round"/>
-          </svg>
+        <div class="service-photo">
+          <!-- data-photo: DIENST 2 — koffiemachine leasen -->
+          <img class="photo" data-photo src="https://koffiematters.nl/wp-content/uploads/dienst-leasen.jpg" alt="Koffiemachine leasen" loading="lazy" onerror="this.style.display='none'">
+          <span class="service-tag">02 — Leasen</span>
         </div>
-        <div class="service-badge">02 — Leasen</div>
-        <h3 class="service-title">Koffiemachine<br>leasen</h3>
-        <p class="service-desc">Altijd de nieuwste machine zonder grote investering. Flexibele leasecontracten voor bedrijven van elk formaat, inclusief service en onderhoud — niks om over na te denken.</p>
-        <a href="#" class="service-cta">
-          Lease opties
-          <svg width="15" height="15" viewBox="0 0 16 16" fill="none">
-            <path d="M3 8h10M9 4l4 4-4 4" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/>
-          </svg>
-        </a>
+        <div class="service-body">
+          <div class="service-icon-wrap">
+            <svg width="22" height="22" viewBox="0 0 24 24" fill="none">
+              <rect x="1" y="4" width="22" height="16" rx="2" stroke="#1763B5" stroke-width="1.8"/>
+              <line x1="1" y1="10" x2="23" y2="10" stroke="#1763B5" stroke-width="1.8"/>
+              <line x1="5" y1="15" x2="9" y2="15" stroke="#1763B5" stroke-width="1.8" stroke-linecap="round"/>
+            </svg>
+          </div>
+          <h3 class="service-title">Koffiemachine leasen</h3>
+          <p class="service-desc">Altijd de nieuwste machine zonder grote investering. Flexibele leasecontracten voor bedrijven van elk formaat, inclusief service en onderhoud — niks om over na te denken.</p>
+          <a href="#" class="service-cta">
+            Lease opties
+            <svg width="15" height="15" viewBox="0 0 16 16" fill="none"><path d="M3 8h10M9 4l4 4-4 4" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/></svg>
+          </a>
+        </div>
       </div>
 
       <!-- Onderhoud & Reparatie -->
       <div class="service-card reveal" style="transition-delay:0.2s">
-        <div class="service-num">03</div>
-        <div class="service-icon-wrap">
-          <svg width="22" height="22" viewBox="0 0 24 24" fill="none">
-            <path d="M14.7 6.3a1 1 0 000 1.4l1.6 1.6a1 1 0 001.4 0l3.77-3.77a6 6 0 01-7.94 7.94l-6.91 6.91a2.12 2.12 0 01-3-3l6.91-6.91a6 6 0 017.94-7.94l-3.76 3.76z" stroke="#7B5134" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/>
-          </svg>
+        <div class="service-photo">
+          <!-- data-photo: DIENST 3 — onderhoud & reparatie -->
+          <img class="photo" data-photo src="https://koffiematters.nl/wp-content/uploads/dienst-onderhoud.jpg" alt="Onderhoud en reparatie" loading="lazy" onerror="this.style.display='none'">
+          <span class="service-tag">03 — Service</span>
         </div>
-        <div class="service-badge">03 — Service</div>
-        <h3 class="service-title">Onderhoud &amp;<br>reparatie</h3>
-        <p class="service-desc">Onze gecertificeerde koffie-engineers houden jouw machine in topconditie. Preventief onderhoud, snelle reparaties met originele onderdelen — binnen 4 uur ter plaatse.</p>
-        <a href="#" class="service-cta">
-          Service aanvragen
-          <svg width="15" height="15" viewBox="0 0 16 16" fill="none">
-            <path d="M3 8h10M9 4l4 4-4 4" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/>
-          </svg>
-        </a>
+        <div class="service-body">
+          <div class="service-icon-wrap">
+            <svg width="22" height="22" viewBox="0 0 24 24" fill="none">
+              <path d="M14.7 6.3a1 1 0 000 1.4l1.6 1.6a1 1 0 001.4 0l3.77-3.77a6 6 0 01-7.94 7.94l-6.91 6.91a2.12 2.12 0 01-3-3l6.91-6.91a6 6 0 017.94-7.94l-3.76 3.76z" stroke="#F5821F" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/>
+            </svg>
+          </div>
+          <h3 class="service-title">Onderhoud &amp; reparatie</h3>
+          <p class="service-desc">Onze gecertificeerde koffie-engineers houden jouw machine in topconditie. Preventief onderhoud, snelle reparaties met originele onderdelen — binnen 4 uur ter plaatse.</p>
+          <a href="#" class="service-cta">
+            Service aanvragen
+            <svg width="15" height="15" viewBox="0 0 16 16" fill="none"><path d="M3 8h10M9 4l4 4-4 4" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/></svg>
+          </a>
+        </div>
       </div>
 
     </div>
@@ -915,7 +705,9 @@
 
         <div class="why-usps">
           <div class="usp-row">
-            <div class="usp-icon">⚡</div>
+            <div class="usp-icon">
+              <svg viewBox="0 0 24 24" fill="none"><path d="M13 2L4 14h7l-1 8 9-12h-7l1-8z" stroke="#1763B5" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/></svg>
+            </div>
             <div class="usp-text">
               <h3>Snelle servicerespons</h3>
               <p>Bij een storing zijn wij er snel bij. Onze engineers zijn door het hele land beschikbaar voor spoedservice binnen 4 uur.</p>
@@ -923,7 +715,9 @@
           </div>
 
           <div class="usp-row">
-            <div class="usp-icon">🏆</div>
+            <div class="usp-icon">
+              <svg viewBox="0 0 24 24" fill="none"><path d="M12 2l2.4 6.9H22l-6 4.4 2.3 7L12 16.8 5.7 20.3 8 13.3l-6-4.4h7.6L12 2z" stroke="#F5821F" stroke-width="1.6" stroke-linejoin="round"/></svg>
+            </div>
             <div class="usp-text">
               <h3>Gecertificeerde expertise</h3>
               <p>Al onze monteurs zijn gecertificeerd en gespecialiseerd in de beste koffiemachinemerken op de markt.</p>
@@ -931,7 +725,9 @@
           </div>
 
           <div class="usp-row">
-            <div class="usp-icon">🤝</div>
+            <div class="usp-icon">
+              <svg viewBox="0 0 24 24" fill="none"><path d="M16 18a4 4 0 00-8 0M12 12a4 4 0 100-8 4 4 0 000 8z" stroke="#1763B5" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/></svg>
+            </div>
             <div class="usp-text">
               <h3>Persoonlijk advies</h3>
               <p>Geen standaardoplossingen. Wij luisteren naar jouw wensen en vinden de machine die perfect bij jou past.</p>
@@ -939,7 +735,9 @@
           </div>
 
           <div class="usp-row">
-            <div class="usp-icon">☕</div>
+            <div class="usp-icon">
+              <svg viewBox="0 0 24 24" fill="none"><path d="M18 8h1a3 3 0 010 6h-1M3 8h15v5a5 5 0 01-5 5H8a5 5 0 01-5-5V8z" stroke="#F5821F" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"/></svg>
+            </div>
             <div class="usp-text">
               <h3>Complete ontzorging</h3>
               <p>Van advies tot installatie, van bonen tot onderhoud — alles uit één hand, zodat jij je kunt focussen op je business.</p>
@@ -949,7 +747,9 @@
       </div>
 
       <div class="why-visual reveal" style="transition-delay:0.2s">
-        <div class="why-glow"></div>
+        <!-- data-photo: WAAROM — sfeerfoto showroom / team / machine -->
+        <img class="photo" data-photo src="https://koffiematters.nl/wp-content/uploads/showroom.jpg" alt="KoffieMatters showroom" loading="lazy" onerror="this.style.display='none'">
+        <div class="why-scrim"></div>
 
         <div class="why-quote">
           <p class="why-quote-text">"Binnen een dag stond de nieuwe machine er. De service is uitstekend — we bellen ze elke keer weer."</p>
@@ -957,18 +757,9 @@
         </div>
 
         <div class="why-stats">
-          <div class="stat-card">
-            <div class="stat-num">10+</div>
-            <div class="stat-label">Jaar ervaring</div>
-          </div>
-          <div class="stat-card">
-            <div class="stat-num">500+</div>
-            <div class="stat-label">Tevreden klanten</div>
-          </div>
-          <div class="stat-card">
-            <div class="stat-num">24/7</div>
-            <div class="stat-label">Bereikbaar</div>
-          </div>
+          <div class="stat-card"><div class="stat-num">10+</div><div class="stat-label">Jaar ervaring</div></div>
+          <div class="stat-card"><div class="stat-num">500+</div><div class="stat-label">Tevreden klanten</div></div>
+          <div class="stat-card"><div class="stat-num">24/7</div><div class="stat-label">Bereikbaar</div></div>
         </div>
       </div>
 
@@ -989,19 +780,16 @@
         <h3>Gratis adviesgesprek</h3>
         <p>Vertel ons over jouw situatie. Wij stellen de juiste vragen en denken met je mee.</p>
       </div>
-
       <div class="step reveal" style="transition-delay:0.1s">
         <div class="step-bubble">02</div>
         <h3>Passend aanbod</h3>
         <p>Op maat gemaakt voorstel: kopen, leasen of een onderhoudscontract — jij kiest.</p>
       </div>
-
       <div class="step reveal" style="transition-delay:0.2s">
         <div class="step-bubble">03</div>
-        <h3>Installatie & instructie</h3>
+        <h3>Installatie &amp; instructie</h3>
         <p>Wij installeren alles professioneel en zorgen dat je alles weet over jouw machine.</p>
       </div>
-
       <div class="step reveal" style="transition-delay:0.3s">
         <div class="step-bubble">04</div>
         <h3>Langdurige support</h3>
@@ -1017,10 +805,9 @@
       <h2 class="section-title">Klaar voor betere koffie?</h2>
       <p class="section-sub">Neem contact op voor een vrijblijvend adviesgesprek. Wij staan voor je klaar.</p>
     </div>
-
     <div class="cta-btns reveal" style="transition-delay:0.2s">
       <a href="tel:0582896638" class="btn-light">📞 058 289 66 38</a>
-      <a href="mailto:service@koffiematters.nl" class="btn-outline">service@koffiematters.nl →</a>
+      <a href="mailto:service@koffiematters.nl" class="btn-accent">service@koffiematters.nl →</a>
     </div>
   </section>
 
@@ -1031,7 +818,6 @@
         <div class="footer-logo">Koffie<span>Matters</span></div>
         <p class="footer-desc">De specialist in koffiemachines voor zakelijk en privégebruik. Al meer dan 10 jaar jouw vertrouwde partner in koffie.</p>
       </div>
-
       <div class="footer-col">
         <h4>Diensten</h4>
         <ul>
@@ -1041,7 +827,6 @@
           <li><a href="#">Reparatie</a></li>
         </ul>
       </div>
-
       <div class="footer-col">
         <h4>Machines</h4>
         <ul>
@@ -1051,7 +836,6 @@
           <li><a href="#">Thuis</a></li>
         </ul>
       </div>
-
       <div class="footer-col">
         <h4>Contact</h4>
         <ul>
@@ -1062,7 +846,6 @@
         </ul>
       </div>
     </div>
-
     <div class="footer-bottom">
       <p>© 2025 KoffieMatters. Alle rechten voorbehouden.</p>
       <div class="footer-meta">
@@ -1097,30 +880,24 @@
 
     // Counter animation on stats
     function animateCount(el, target, suffix = '') {
-      const duration = 1600;
-      const start = performance.now();
+      const duration = 1600, start = performance.now();
       const update = (now) => {
         const p = Math.min((now - start) / duration, 1);
         const ease = 1 - Math.pow(1 - p, 4);
-        const val = Math.round(ease * target);
-        el.textContent = val + suffix;
+        el.textContent = Math.round(ease * target) + suffix;
         if (p < 1) requestAnimationFrame(update);
       };
       requestAnimationFrame(update);
     }
-
     const statsObserver = new IntersectionObserver((entries) => {
       entries.forEach(e => {
         if (!e.isIntersecting) return;
-        const el = e.target;
-        const raw = el.dataset.count;
+        const el = e.target, raw = el.dataset.count;
         if (!raw) return;
-        const suffix = el.dataset.suffix || '';
-        animateCount(el, parseInt(raw), suffix);
+        animateCount(el, parseInt(raw), el.dataset.suffix || '');
         statsObserver.unobserve(el);
       });
     }, { threshold: 0.5 });
-
     document.querySelectorAll('.stat-num').forEach(el => {
       const text = el.textContent.trim();
       if (text.includes('+')) { el.dataset.count = text.replace('+',''); el.dataset.suffix = '+'; }
