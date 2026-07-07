@@ -50,11 +50,8 @@
           <!-- Footer -->
           <tr>
             <td style="background-color:#01163d;border-top:1px solid #1e293b;padding:18px 24px;text-align:center;">
-              <p style="margin:0 0 4px;font-size:12px;font-weight:700;color:#cbd5e1;letter-spacing:0.02em;">
+              <p style="margin:0;font-size:12px;font-weight:700;color:#cbd5e1;letter-spacing:0.02em;">
                 Milmap
-              </p>
-              <p style="margin:0;font-size:11px;color:#64748b;line-height:1.5;">
-                Alleen voor geautoriseerd trainingsgebruik
               </p>
             </td>
           </tr>
