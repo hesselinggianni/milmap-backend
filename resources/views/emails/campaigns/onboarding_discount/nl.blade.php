@@ -10,6 +10,12 @@
     {{ $name ? $name . ', stap' : 'Stap' }} nu over — met korting
   </h1>
 
+  <table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0" style="margin:6px 0 20px;">
+    <tr><td align="center">
+      <img src="https://milmap.nl/email/onboarding/onboarding_discount.png" alt="Tijdelijke actie op MilMap Premium" width="520" style="width:100%;max-width:520px;height:auto;border:0;display:block;outline:none;text-decoration:none;" />
+    </td></tr>
+  </table>
+
   <p style="margin:0 0 16px;">
     Nog steeds twijfel je? We geven je een extra zetje: neem nu een MilMap-abonnement en
     profiteer van onze tijdelijke actie. Zo werk je zonder beperkingen verder — in het

@@ -10,6 +10,12 @@
     How units use MilMap
   </h1>
 
+  <table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0" style="margin:6px 0 20px;">
+    <tr><td align="center">
+      <img src="https://milmap.nl/email/onboarding/onboarding_case.png" alt="Route card with checkpoints in MilMap" width="520" style="width:100%;max-width:520px;height:auto;border:0;display:block;outline:none;text-decoration:none;" />
+    </td></tr>
+  </table>
+
   <p style="margin:0 0 16px;">
     A reconnaissance unit used MilMap during a mountain exercise to plan routes, carry
     PDF route cards and navigate offline with no signal.

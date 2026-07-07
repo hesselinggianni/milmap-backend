@@ -10,6 +10,12 @@
     De kracht van MilMap
   </h1>
 
+  <table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0" style="margin:6px 0 20px;">
+    <tr><td align="center">
+      <img src="https://milmap.nl/email/onboarding/onboarding_advanced.png" alt="Missiebriefing en terreinprofiel in MilMap" width="520" style="width:100%;max-width:520px;height:auto;border:0;display:block;outline:none;text-decoration:none;" />
+    </td></tr>
+  </table>
+
   <p style="margin:0 0 16px;">
     {{ $name ? $name . ', je' : 'Je' }} kunt veel meer dan kaarten tekenen. Deze functies
     maken echt het verschil in het veld:

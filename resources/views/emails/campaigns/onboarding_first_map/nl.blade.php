@@ -10,6 +10,12 @@
     {{ $name ? $name . ', maak' : 'Maak' }} je eerste kaart
   </h1>
 
+  <table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0" style="margin:6px 0 20px;">
+    <tr><td align="center">
+      <img src="https://milmap.nl/email/onboarding/onboarding_first_map.png" alt="Nieuwe kaart maken met MGRS-coördinaten" width="520" style="width:100%;max-width:520px;height:auto;border:0;display:block;outline:none;text-decoration:none;" />
+    </td></tr>
+  </table>
+
   <p style="margin:0 0 16px;">
     In een paar minuten heb je je eerste operationele kaart klaar. Zo doe je het:
   </p>
