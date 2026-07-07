@@ -19,10 +19,7 @@ class UserLocationController extends Controller
     {
         // Verify user has access to this map
         $map = Map::findOrFail($mapId);
-
-        if (!$map->users->contains(Auth::id())) {
-            return response()->json(['error' => 'Unauthorized'], 403);
-        }
+        $this->authorize('view', $map);
 
         // Validate location data
         $validated = $request->validate([
@@ -72,10 +69,7 @@ class UserLocationController extends Controller
     {
         // Verify user has access to this map
         $map = Map::findOrFail($mapId);
-
-        if (!$map->users->contains(Auth::id())) {
-            return response()->json(['error' => 'Unauthorized'], 403);
-        }
+        $this->authorize('view', $map);
 
         // Get all fresh locations for this map with user data
         $locations = UserLocation::where('map_id', $mapId)
@@ -98,10 +92,7 @@ class UserLocationController extends Controller
     {
         // Verify user has access to this map
         $map = Map::findOrFail($mapId);
-
-        if (!$map->users->contains(Auth::id())) {
-            return response()->json(['error' => 'Unauthorized'], 403);
-        }
+        $this->authorize('view', $map);
 
         $location = UserLocation::where('map_id', $mapId)
             ->where('user_id', Auth::id())

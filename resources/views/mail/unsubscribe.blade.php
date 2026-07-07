@@ -4,7 +4,7 @@
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <meta name="robots" content="noindex">
-  <title>Afmelden — MilMap</title>
+  <title>Afmelden — Milmap</title>
   <style>
     body{margin:0;background:#0a0f1a;color:#cbd5e1;font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,sans-serif;}
     .wrap{max-width:480px;margin:0 auto;padding:56px 18px;}
@@ -56,7 +56,7 @@
         </form>
       @endif
     </div>
-    <p class="muted">MilMap · milmap.nl</p>
+    <p class="muted">Milmap · milmap.nl</p>
   </div>
 </body>
 </html>

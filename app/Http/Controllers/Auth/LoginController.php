@@ -85,7 +85,10 @@ class LoginController extends Controller
 
         return response()->json([
             'message' => 'Logged in successfully.',
-            'user' => array_merge($user->toArray(), ['verification' => $user->verificationState()]),
+            'user' => array_merge($user->toArray(), [
+                'verification' => $user->verificationState(),
+                'premium'      => $user->premiumState(),
+            ]),
             'token' => $token,
         ], 200);
     }

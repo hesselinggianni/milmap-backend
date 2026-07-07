@@ -1,0 +1,1886 @@
+[
+ {
+  "kind": "header",
+  "sort": 1,
+  "regel": "140",
+  "level": 1,
+  "name": "DUTY-FREE SPIRITS & LIQUORS"
+ },
+ {
+  "kind": "header",
+  "sort": 2,
+  "regel": "142",
+  "level": 2,
+  "name": "DIV APERITIEVEN"
+ },
+ {
+  "kind": "item",
+  "sort": 3,
+  "regel": "143",
+  "code": "7302100",
+  "name": "Campari  100cl/28,5%",
+  "price": 13.7
+ },
+ {
+  "kind": "item",
+  "sort": 4,
+  "regel": "144",
+  "code": "7302200",
+  "name": "Pernod  100cl/40%",
+  "price": 13.0
+ },
+ {
+  "kind": "item",
+  "sort": 5,
+  "regel": "145",
+  "code": "7302300",
+  "name": "Ricard 45  100cl/45%",
+  "price": 12.4
+ },
+ {
+  "kind": "header",
+  "sort": 6,
+  "regel": "147",
+  "level": 2,
+  "name": "BRANDEWIJN"
+ },
+ {
+  "kind": "item",
+  "sort": 7,
+  "regel": "148",
+  "code": "7304002",
+  "name": "Brandewijn Mispelblom 100cl/35%",
+  "price": 8.3
+ },
+ {
+  "kind": "header",
+  "sort": 8,
+  "regel": "150",
+  "level": 2,
+  "name": "BRANDY"
+ },
+ {
+  "kind": "item",
+  "sort": 9,
+  "regel": "151",
+  "code": "7308160",
+  "name": "Metaxa 7 Stars  100cl/40%",
+  "price": 18.4
+ },
+ {
+  "kind": "header",
+  "sort": 10,
+  "regel": "153",
+  "level": 2,
+  "name": "COGNAC"
+ },
+ {
+  "kind": "item",
+  "sort": 11,
+  "regel": "154",
+  "code": "7312011",
+  "name": "Cognac Remy Martin VSOP 100cl/40%",
+  "price": 53.6
+ },
+ {
+  "kind": "item",
+  "sort": 12,
+  "regel": "155",
+  "code": "7312014",
+  "name": "Cognac Hennessy VSOP 100cl/40%",
+  "price": 73.2
+ },
+ {
+  "kind": "item",
+  "sort": 13,
+  "regel": "156",
+  "code": "7312160",
+  "name": "Cognac Hennessy VS  100cl/40%",
+  "price": 44.7
+ },
+ {
+  "kind": "header",
+  "sort": 14,
+  "regel": "158",
+  "level": 2,
+  "name": "GIN"
+ },
+ {
+  "kind": "item",
+  "sort": 15,
+  "regel": "159",
+  "code": "7316002",
+  "name": "Gin Bombay Sapphire 100cl/40%",
+  "price": 15.2
+ },
+ {
+  "kind": "item",
+  "sort": 16,
+  "regel": "160",
+  "code": "7316003",
+  "name": "Gin Hendricks 100cl/44%",
+  "price": 33.0
+ },
+ {
+  "kind": "item",
+  "sort": 17,
+  "regel": "161",
+  "code": "7316004",
+  "name": "Gin Tanqueray No10 100cl/47,3%",
+  "price": 24.5
+ },
+ {
+  "kind": "item",
+  "sort": 18,
+  "regel": "162",
+  "code": "7316006",
+  "name": "Gin Gordon Pink 100cl/37,5%",
+  "price": 9.7
+ },
+ {
+  "kind": "item",
+  "sort": 19,
+  "regel": "163",
+  "code": "7316007",
+  "name": "Gin Rutte 70cl/43%",
+  "price": 23.4
+ },
+ {
+  "kind": "item",
+  "sort": 20,
+  "regel": "164",
+  "code": "7316008",
+  "name": "Gin Bobbys 100cl/42%",
+  "price": 19.8
+ },
+ {
+  "kind": "item",
+  "sort": 21,
+  "regel": "165",
+  "code": "7316009",
+  "name": "Gin Gordon 100cl/37,5%",
+  "price": 8.1
+ },
+ {
+  "kind": "item",
+  "sort": 22,
+  "regel": "166",
+  "code": "7316011",
+  "name": "Gin Crafters Wild Forest 70cl/47%",
+  "price": 25.3
+ },
+ {
+  "kind": "item",
+  "sort": 23,
+  "regel": "167",
+  "code": "7316012",
+  "name": "Gin Crafters Aromatic Flower 70cl/44,3%",
+  "price": 23.7
+ },
+ {
+  "kind": "item",
+  "sort": 24,
+  "regel": "168",
+  "code": "7316013",
+  "name": "Gin Hendricks Amazonia 100cl/43,4%",
+  "price": 36.3
+ },
+ {
+  "kind": "item",
+  "sort": 25,
+  "regel": "169",
+  "code": "7316014",
+  "name": "Gin Tanqueray Rangpur 100cl/41,3%",
+  "price": 15.5
+ },
+ {
+  "kind": "item",
+  "sort": 26,
+  "regel": "170",
+  "code": "7316015",
+  "name": "Gin Tanqueray Malacca 100cl/41,3%",
+  "price": 15.5
+ },
+ {
+  "kind": "item",
+  "sort": 27,
+  "regel": "171",
+  "code": "7316016",
+  "name": "Gin Tanqueray Flor de Sevilla 100cl/41,3%",
+  "price": 15.5
+ },
+ {
+  "kind": "item",
+  "sort": 28,
+  "regel": "172",
+  "code": "7316017",
+  "name": "Gin Glendalough Rose 70cl/37,5%",
+  "price": 16.2
+ },
+ {
+  "kind": "item",
+  "sort": 29,
+  "regel": "173",
+  "code": "7316018",
+  "name": "Gin Glendalough Wild botanical 70cl/41%",
+  "price": 16.0
+ },
+ {
+  "kind": "item",
+  "sort": 30,
+  "regel": "174",
+  "code": "7316019",
+  "name": "Gin Tobermory Hebridean Mountain 70cl/43,3%",
+  "price": 11.1
+ },
+ {
+  "kind": "item",
+  "sort": 31,
+  "regel": "175",
+  "code": "7316020",
+  "name": "Gin Hendricks 100cl/41,4%",
+  "price": 33.7
+ },
+ {
+  "kind": "header",
+  "sort": 32,
+  "regel": "177",
+  "level": 2,
+  "name": "BESSEN JENEVER"
+ },
+ {
+  "kind": "item",
+  "sort": 33,
+  "regel": "178",
+  "code": "7320120",
+  "name": "Bessenjenever Coebergh 100cl/20%",
+  "price": 6.2
+ },
+ {
+  "kind": "header",
+  "sort": 34,
+  "regel": "180",
+  "level": 2,
+  "name": "JONGE JENEVER"
+ },
+ {
+  "kind": "item",
+  "sort": 35,
+  "regel": "181",
+  "code": "7328003",
+  "name": "Jonge Jenever Bols  70cl/35% Delftsblauwe Kruik",
+  "price": 25.0
+ },
+ {
+  "kind": "item",
+  "sort": 36,
+  "regel": "182",
+  "code": "7328100",
+  "name": "Jonge Jenever Bokma 100cl/35%",
+  "price": 5.5
+ },
+ {
+  "kind": "item",
+  "sort": 37,
+  "regel": "183",
+  "code": "7328110",
+  "name": "Jonge Jenever Bols  100cl/35%",
+  "price": 5.3
+ },
+ {
+  "kind": "item",
+  "sort": 38,
+  "regel": "184",
+  "code": "7328300",
+  "name": "Jonge Jenever Ketel 1 100cl/35%",
+  "price": 7.9
+ },
+ {
+  "kind": "header",
+  "sort": 39,
+  "regel": "186",
+  "level": 2,
+  "name": "KRUIDEN JENEVER"
+ },
+ {
+  "kind": "item",
+  "sort": 40,
+  "regel": "187",
+  "code": "7332004",
+  "name": "Schrobbeler Kruidenbitter 100cl/21,5%",
+  "price": 12.7
+ },
+ {
+  "kind": "item",
+  "sort": 41,
+  "regel": "188",
+  "code": "7332005",
+  "name": "Texels Juttertje Kruidenbitter 70cl/30%",
+  "price": 7.0
+ },
+ {
+  "kind": "item",
+  "sort": 42,
+  "regel": "189",
+  "code": "7332008",
+  "name": "Jagermeister Cold Brew Coffee 100cl/33%",
+  "price": 14.6
+ },
+ {
+  "kind": "item",
+  "sort": 43,
+  "regel": "190",
+  "code": "7332009",
+  "name": "Jagermeister Manifest 100cl/38%",
+  "price": 22.7
+ },
+ {
+  "kind": "item",
+  "sort": 44,
+  "regel": "191",
+  "code": "7332010",
+  "name": "Jagermeister Mini Meisters 10pc/20cl/35%",
+  "price": 5.9
+ },
+ {
+  "kind": "item",
+  "sort": 45,
+  "regel": "192",
+  "code": "7332100",
+  "name": "Berenburg Sonnema 100cl/30%",
+  "price": 10.1
+ },
+ {
+  "kind": "item",
+  "sort": 46,
+  "regel": "193",
+  "code": "7332200",
+  "name": "Jagermeister  100cl/35%",
+  "price": 11.7
+ },
+ {
+  "kind": "header",
+  "sort": 47,
+  "regel": "195",
+  "level": 2,
+  "name": "OUDE JENEVER"
+ },
+ {
+  "kind": "item",
+  "sort": 48,
+  "regel": "196",
+  "code": "7336100",
+  "name": "Oude Jenever Bokma  100cl/38%",
+  "price": 5.9
+ },
+ {
+  "kind": "item",
+  "sort": 49,
+  "regel": "197",
+  "code": "7336110",
+  "name": "Zeer Oude Jenever Bols 100cl/35%",
+  "price": 5.9
+ },
+ {
+  "kind": "header",
+  "sort": 50,
+  "regel": "199",
+  "level": 2,
+  "name": "DIVERSE JENEVERS"
+ },
+ {
+  "kind": "item",
+  "sort": 51,
+  "regel": "200",
+  "code": "7338013",
+  "name": "Tequila Montezuma Aztec gold 100cl/40%",
+  "price": 4.9
+ },
+ {
+  "kind": "item",
+  "sort": 52,
+  "regel": "201",
+  "code": "7338021",
+  "name": "Jose Cuervo Tequila Especial Reposado 100CL/35%",
+  "price": 15.0
+ },
+ {
+  "kind": "item",
+  "sort": 53,
+  "regel": "202",
+  "code": "7338022",
+  "name": "Tequila Sierra Reposado 100cl 35%",
+  "price": 9.5
+ },
+ {
+  "kind": "item",
+  "sort": 54,
+  "regel": "203",
+  "code": "7338150",
+  "name": "Corenwijn Bols  100cl/38% 2 Year aged",
+  "price": 11.7
+ },
+ {
+  "kind": "header",
+  "sort": 55,
+  "regel": "205",
+  "level": 2,
+  "name": "RUM"
+ },
+ {
+  "kind": "item",
+  "sort": 56,
+  "regel": "206",
+  "code": "7340013",
+  "name": "Rum Bacardi Aged 8 Years 100cl/40%",
+  "price": 24.4
+ },
+ {
+  "kind": "item",
+  "sort": 57,
+  "regel": "207",
+  "code": "7340020",
+  "name": "Rum bacardi carta blanca 100cl/37,5%",
+  "price": 11.3
+ },
+ {
+  "kind": "item",
+  "sort": 58,
+  "regel": "208",
+  "code": "7340028",
+  "name": "Rum Bacardi Spiced 100cl/35% Oakheart",
+  "price": 11.5
+ },
+ {
+  "kind": "item",
+  "sort": 59,
+  "regel": "209",
+  "code": "7340029",
+  "name": "Rum Captain Morgan Spiced Gold 100cl/35%",
+  "price": 8.5
+ },
+ {
+  "kind": "item",
+  "sort": 60,
+  "regel": "210",
+  "code": "7340037",
+  "name": "Rum Zacapa Centenario 23 Years old 100cl/40%",
+  "price": 51.6
+ },
+ {
+  "kind": "item",
+  "sort": 61,
+  "regel": "211",
+  "code": "7340039",
+  "name": "Rum Pyrat Xo Reserve 70cl/40%",
+  "price": 21.2
+ },
+ {
+  "kind": "item",
+  "sort": 62,
+  "regel": "212",
+  "code": "7340040",
+  "name": "Rum Bacardi Gran Reserva Diez 10Yr 100cl/40%",
+  "price": 42.2
+ },
+ {
+  "kind": "item",
+  "sort": 63,
+  "regel": "213",
+  "code": "7340041",
+  "name": "Rum Captain Morgan Black Spiced  100cl/40%",
+  "price": 9.8
+ },
+ {
+  "kind": "item",
+  "sort": 64,
+  "regel": "214",
+  "code": "7340042",
+  "name": "Rum The Demon Share 6 years old 70cl/40%",
+  "price": 19.1
+ },
+ {
+  "kind": "item",
+  "sort": 65,
+  "regel": "215",
+  "code": "7340045",
+  "name": "Rum Kraken Black Spiced 100cl/40%",
+  "price": 18.0
+ },
+ {
+  "kind": "item",
+  "sort": 66,
+  "regel": "216",
+  "code": "7340046",
+  "name": "Zacapa Rum Edicion Negra Solera Gran Res Tube 100cl/43%",
+  "price": 91.0
+ },
+ {
+  "kind": "item",
+  "sort": 67,
+  "regel": "217",
+  "code": "7340047",
+  "name": "Rum Havana Club Seleccion de Maestros 70cl/45%",
+  "price": 42.3
+ },
+ {
+  "kind": "item",
+  "sort": 68,
+  "regel": "218",
+  "code": "7340048",
+  "name": "Rum Bacardi Anejo cuatro aged 4 years 100cl/40%",
+  "price": 18.1
+ },
+ {
+  "kind": "item",
+  "sort": 69,
+  "regel": "219",
+  "code": "7340049",
+  "name": "Rum Havana Club Anejo Especial Brown 100cl/37,5%",
+  "price": 16.1
+ },
+ {
+  "kind": "item",
+  "sort": 70,
+  "regel": "220",
+  "code": "7340050",
+  "name": "Rum Bacardi Caribbean Spiced 100cl/40%",
+  "price": 17.8
+ },
+ {
+  "kind": "item",
+  "sort": 71,
+  "regel": "221",
+  "code": "7340051",
+  "name": "Rum Bacardi Limon  100cl/27%",
+  "price": 12.4
+ },
+ {
+  "kind": "item",
+  "sort": 72,
+  "regel": "222",
+  "code": "7340052",
+  "name": "Rum Bacardi Razz  100cl/27%",
+  "price": 12.4
+ },
+ {
+  "kind": "item",
+  "sort": 73,
+  "regel": "223",
+  "code": "7340053",
+  "name": "Rum The Demon Share 12 years old 70cl/41%",
+  "price": 41.3
+ },
+ {
+  "kind": "item",
+  "sort": 74,
+  "regel": "224",
+  "code": "7340054",
+  "name": "Rum Havana Club Anejo 3 Anos Blanco 100cl/37,5%",
+  "price": 14.9
+ },
+ {
+  "kind": "item",
+  "sort": 75,
+  "regel": "225",
+  "code": "7340055",
+  "name": "Rum Don Papa Masskara 70cl/40%",
+  "price": 21.5
+ },
+ {
+  "kind": "item",
+  "sort": 76,
+  "regel": "226",
+  "code": "7340056",
+  "name": "Rum Don Papa Baroko 70cl/40%",
+  "price": 24.1
+ },
+ {
+  "kind": "item",
+  "sort": 77,
+  "regel": "227",
+  "code": "7340057",
+  "name": "Rum Don Papa Single Island 70cl/40%",
+  "price": 25.3
+ },
+ {
+  "kind": "item",
+  "sort": 78,
+  "regel": "228",
+  "code": "7340120",
+  "name": "Rum Bacardi Carta Blanca 100cl/40%",
+  "price": 11.3
+ },
+ {
+  "kind": "item",
+  "sort": 79,
+  "regel": "229",
+  "code": "7340150",
+  "name": "Rum Bacardi Oro/Gold 100cl/40%",
+  "price": 12.0
+ },
+ {
+  "kind": "item",
+  "sort": 80,
+  "regel": "230",
+  "code": "7340160",
+  "name": "Rum Bacardi Black 100cl/40%",
+  "price": 12.0
+ },
+ {
+  "kind": "item",
+  "sort": 81,
+  "regel": "231",
+  "code": "7340300",
+  "name": "Rum Captain Morgan Dark 100cl/40%",
+  "price": 8.5
+ },
+ {
+  "kind": "header",
+  "sort": 82,
+  "regel": "233",
+  "level": 2,
+  "name": "VIEUX"
+ },
+ {
+  "kind": "item",
+  "sort": 83,
+  "regel": "234",
+  "code": "7342180",
+  "name": "Vieux De Kuyper 100cl/35%",
+  "price": 9.1
+ },
+ {
+  "kind": "header",
+  "sort": 84,
+  "regel": "236",
+  "level": 2,
+  "name": "WHISKY SCOTCH"
+ },
+ {
+  "kind": "item",
+  "sort": 85,
+  "regel": "237",
+  "code": "7344001",
+  "name": "Whisky Chivas Regal 100cl/40%",
+  "price": 35.9
+ },
+ {
+  "kind": "item",
+  "sort": 86,
+  "regel": "238",
+  "code": "7344021",
+  "name": "Whisky Johnnie Walker Red Label 100cl/40%",
+  "price": 12.1
+ },
+ {
+  "kind": "item",
+  "sort": 87,
+  "regel": "239",
+  "code": "7344026",
+  "name": "Whisky Johnnie Walker Black Label  100cl/40%",
+  "price": 29.0
+ },
+ {
+  "kind": "item",
+  "sort": 88,
+  "regel": "240",
+  "code": "7344027",
+  "name": "Whisky Johnnie Walker Gold Reserve 100cl/40%",
+  "price": 41.3
+ },
+ {
+  "kind": "item",
+  "sort": 89,
+  "regel": "241",
+  "code": "7344028",
+  "name": "Whisky Johnnie Walker Blue Label  100cl/40%",
+  "price": 199.9
+ },
+ {
+  "kind": "item",
+  "sort": 90,
+  "regel": "242",
+  "code": "7344031",
+  "name": "Whisky Johnnie Walker Double Black Label 100cl/40%",
+  "price": 34.2
+ },
+ {
+  "kind": "item",
+  "sort": 91,
+  "regel": "243",
+  "code": "7344036",
+  "name": "Whisky Johnnie Walker Blue Elusive Umami 100cl/43%",
+  "price": 289.1
+ },
+ {
+  "kind": "item",
+  "sort": 92,
+  "regel": "244",
+  "code": "7344170",
+  "name": "Whisky Famous Grouse 100cl/40%",
+  "price": 11.0
+ },
+ {
+  "kind": "header",
+  "sort": 93,
+  "regel": "246",
+  "level": 2,
+  "name": "WHISKEY USA & CANADA"
+ },
+ {
+  "kind": "item",
+  "sort": 94,
+  "regel": "247",
+  "code": "7348001",
+  "name": "Whiskey Bourbon Jack Daniels Black  100cl/40%",
+  "price": 19.2
+ },
+ {
+  "kind": "item",
+  "sort": 95,
+  "regel": "248",
+  "code": "7348002",
+  "name": "Whiskey Bourbon Four Roses 100cl/40%",
+  "price": 13.8
+ },
+ {
+  "kind": "item",
+  "sort": 96,
+  "regel": "249",
+  "code": "7348004",
+  "name": "Whiskey Jack Daniels Gentlemen Jack 100cl/40%",
+  "price": 32.6
+ },
+ {
+  "kind": "item",
+  "sort": 97,
+  "regel": "250",
+  "code": "7348005",
+  "name": "Whiskey Jack Daniels Honey 100cl/35%",
+  "price": 19.2
+ },
+ {
+  "kind": "item",
+  "sort": 98,
+  "regel": "251",
+  "code": "7348012",
+  "name": "Whiskey Jim Beam Red Stag 100cl/32,5%",
+  "price": 16.5
+ },
+ {
+  "kind": "item",
+  "sort": 99,
+  "regel": "252",
+  "code": "7348014",
+  "name": "Whisky Bearface Elementally aged triple oak 70cl/42,5%",
+  "price": 17.4
+ },
+ {
+  "kind": "item",
+  "sort": 100,
+  "regel": "253",
+  "code": "7348140",
+  "name": "Whiskey Bourbon Jim Beam 100cl/40%",
+  "price": 10.5
+ },
+ {
+  "kind": "header",
+  "sort": 101,
+  "regel": "255",
+  "level": 2,
+  "name": "WHISKY JAPAN"
+ },
+ {
+  "kind": "item",
+  "sort": 102,
+  "regel": "256",
+  "code": "7352174",
+  "name": "Whisky Toki Suntory  100cl/43%",
+  "price": 26.1
+ },
+ {
+  "kind": "item",
+  "sort": 103,
+  "regel": "257",
+  "code": "7352175",
+  "name": "Whisky Hibiki Japanese Harmony Suntory  70cl/43%",
+  "price": 64.2
+ },
+ {
+  "kind": "header",
+  "sort": 104,
+  "regel": "259",
+  "level": 2,
+  "name": "WHISKY SINGLE MALT"
+ },
+ {
+  "kind": "item",
+  "sort": 105,
+  "regel": "260",
+  "code": "7340176",
+  "name": "Whisky The Dalmore The Trio Three Cask Finishes 70cl/40%",
+  "price": 41.5
+ },
+ {
+  "kind": "item",
+  "sort": 106,
+  "regel": "261",
+  "code": "7352002",
+  "name": "Whisky Malt Talisker 10 Years 100cl/45,8%",
+  "price": 43.7
+ },
+ {
+  "kind": "item",
+  "sort": 107,
+  "regel": "262",
+  "code": "7352006",
+  "name": "Whisky lagavulin 16 years 70cl/43%",
+  "price": 81.0
+ },
+ {
+  "kind": "item",
+  "sort": 108,
+  "regel": "263",
+  "code": "7352021",
+  "name": "Whisky malt laphroaig 10 years 100cl/40%",
+  "price": 39.4
+ },
+ {
+  "kind": "item",
+  "sort": 109,
+  "regel": "264",
+  "code": "7352022",
+  "name": "Whisky Malt Cragganmore 12 Years  100cl/40%",
+  "price": 42.6
+ },
+ {
+  "kind": "item",
+  "sort": 110,
+  "regel": "265",
+  "code": "7352048",
+  "name": "Whisky Oban 14 yr gbx 70cl/43%",
+  "price": 44.7
+ },
+ {
+  "kind": "item",
+  "sort": 111,
+  "regel": "266",
+  "code": "7352050",
+  "name": "Whisky Dalwhinnie Highland Single Malt 15 Years 100cl/43%",
+  "price": 45.2
+ },
+ {
+  "kind": "item",
+  "sort": 112,
+  "regel": "267",
+  "code": "7352052",
+  "name": "Whisky Oban Little Bay Tube 100cl/43%",
+  "price": 63.1
+ },
+ {
+  "kind": "item",
+  "sort": 113,
+  "regel": "268",
+  "code": "7352053",
+  "name": "Whisky Talisker Dark Storm 100cl/45,8%",
+  "price": 43.3
+ },
+ {
+  "kind": "item",
+  "sort": 114,
+  "regel": "269",
+  "code": "7352091",
+  "name": "Whisky Glenlivet Triple Cask Distillers Reserve 100cl/40%",
+  "price": 42.6
+ },
+ {
+  "kind": "item",
+  "sort": 115,
+  "regel": "270",
+  "code": "7352096",
+  "name": "Whisky Bunnahabhain Eirigh Na Greine 100cl/46,3%",
+  "price": 34.5
+ },
+ {
+  "kind": "item",
+  "sort": 116,
+  "regel": "271",
+  "code": "7352107",
+  "name": "Whisky Laphroaig PX Cask 100cl/48%",
+  "price": 68.3
+ },
+ {
+  "kind": "item",
+  "sort": 117,
+  "regel": "272",
+  "code": "7352110",
+  "name": "Whisky Auchentoshan American Oak Reserve 100cl/40%",
+  "price": 29.2
+ },
+ {
+  "kind": "item",
+  "sort": 118,
+  "regel": "273",
+  "code": "7352115",
+  "name": "Whisky Isle of Jura The Paps 19 years old 70cl/45,6%",
+  "price": 65.0
+ },
+ {
+  "kind": "item",
+  "sort": 119,
+  "regel": "274",
+  "code": "7352121",
+  "name": "Whisky Benriach Triple 10years 70cl/43% Op/Op",
+  "price": 30.0
+ },
+ {
+  "kind": "item",
+  "sort": 120,
+  "regel": "275",
+  "code": "7352122",
+  "name": "Whisky Benriach Quarter Casks Classic 70cl/46%",
+  "price": 30.0
+ },
+ {
+  "kind": "item",
+  "sort": 121,
+  "regel": "276",
+  "code": "7352123",
+  "name": "Whisky Fettercairn aged 12 years 100cl/40%",
+  "price": 54.7
+ },
+ {
+  "kind": "item",
+  "sort": 122,
+  "regel": "277",
+  "code": "7352127",
+  "name": "Whisky Glenfiddich Project XX Giftbox 70cl/47%",
+  "price": 45.6
+ },
+ {
+  "kind": "item",
+  "sort": 123,
+  "regel": "278",
+  "code": "7352131",
+  "name": "Whisky Glenfiddich Perpetual Collection Vat 02 100cl/43%",
+  "price": 54.6
+ },
+ {
+  "kind": "item",
+  "sort": 124,
+  "regel": "279",
+  "code": "7352132",
+  "name": "Whisky Glenfiddich Perpetual Collection Vat 01 100cl/40%",
+  "price": 44.1
+ },
+ {
+  "kind": "item",
+  "sort": 125,
+  "regel": "280",
+  "code": "7352133",
+  "name": "Whisky Tamnavulin Tempranillo Cask 100cl/40%",
+  "price": 24.1
+ },
+ {
+  "kind": "item",
+  "sort": 126,
+  "regel": "281",
+  "code": "7352138",
+  "name": "Whisky The Balvenie Creation Of A Classic 70cl/43%",
+  "price": 50.3
+ },
+ {
+  "kind": "item",
+  "sort": 127,
+  "regel": "282",
+  "code": "7352139",
+  "name": "Whiskey Glendalough mizunara single malt 7 years 70cl/46%",
+  "price": 44.8
+ },
+ {
+  "kind": "item",
+  "sort": 128,
+  "regel": "283",
+  "code": "7352141",
+  "name": "Whisky Glen Allachie 8 years 70cl/46%",
+  "price": 29.3
+ },
+ {
+  "kind": "item",
+  "sort": 129,
+  "regel": "284",
+  "code": "7352142",
+  "name": "Whisky The Dalmore Quartet Four Cask Finish 100cl/41,5%",
+  "price": 73.1
+ },
+ {
+  "kind": "item",
+  "sort": 130,
+  "regel": "285",
+  "code": "7352143",
+  "name": "Whisky Glengoyne Spirit of Time 10 Years 100cl/46%",
+  "price": 50.7
+ },
+ {
+  "kind": "item",
+  "sort": 131,
+  "regel": "286",
+  "code": "7352144",
+  "name": "Whisky The Balvenie Madeira Cask 15 years 70cl/43%",
+  "price": 105.6
+ },
+ {
+  "kind": "item",
+  "sort": 132,
+  "regel": "287",
+  "code": "7352145",
+  "name": "Whisky Glenfiddich Perpetual Collection Vat 03 70cl/50,2%",
+  "price": 60.2
+ },
+ {
+  "kind": "item",
+  "sort": 133,
+  "regel": "288",
+  "code": "7352150",
+  "name": "Whisky Aberfeldy Madeira Cask 12 Years Old 70cl/40%",
+  "price": 28.7
+ },
+ {
+  "kind": "item",
+  "sort": 134,
+  "regel": "289",
+  "code": "7352153",
+  "name": "Whisky Glenfiddich Perpetual Collection Vat 04 70cl/47,8%",
+  "price": 98.1
+ },
+ {
+  "kind": "item",
+  "sort": 135,
+  "regel": "290",
+  "code": "7352156",
+  "name": "Whisky The Balvenie Pedro Ximinez cask 18yrs 70cl/48,7%",
+  "price": 199.9
+ },
+ {
+  "kind": "item",
+  "sort": 136,
+  "regel": "291",
+  "code": "7352157",
+  "name": "Whisky Tomatin Bourbon Barrels Aged 21 years 70cl/46%",
+  "price": 127.3
+ },
+ {
+  "kind": "item",
+  "sort": 137,
+  "regel": "292",
+  "code": "7352158",
+  "name": "Whisky Tomatin Aged 8 years 100cl/40%",
+  "price": 19.7
+ },
+ {
+  "kind": "item",
+  "sort": 138,
+  "regel": "293",
+  "code": "7352159",
+  "name": "Whisky Tomatin Moscatel Cask Aged 16 years 70cl/46%",
+  "price": 64.4
+ },
+ {
+  "kind": "item",
+  "sort": 139,
+  "regel": "294",
+  "code": "7352161",
+  "name": "Whisky Tomatin Aged 12 years 100cl/43%",
+  "price": 24.1
+ },
+ {
+  "kind": "item",
+  "sort": 140,
+  "regel": "295",
+  "code": "7352162",
+  "name": "Whisky The Dalmore Quintet Five Cask Finish 70cl/44,5%",
+  "price": 86.6
+ },
+ {
+  "kind": "item",
+  "sort": 141,
+  "regel": "296",
+  "code": "7352164",
+  "name": "Whisky Aberlour Double Cask 13 Years 70cl/40%",
+  "price": 51.4
+ },
+ {
+  "kind": "item",
+  "sort": 142,
+  "regel": "297",
+  "code": "7352165",
+  "name": "Whisky Ardbeg Smoketrails Cote Rotie Edition 100cl/46%",
+  "price": 65.0
+ },
+ {
+  "kind": "item",
+  "sort": 143,
+  "regel": "298",
+  "code": "7352166",
+  "name": "Whisky Ardbeg An OA 100cl/46,6%",
+  "price": 48.1
+ },
+ {
+  "kind": "item",
+  "sort": 144,
+  "regel": "299",
+  "code": "7352167",
+  "name": "Whisky Singleton Of Glendullan Golden Autumn 100cl/41,8%",
+  "price": 49.4
+ },
+ {
+  "kind": "item",
+  "sort": 145,
+  "regel": "300",
+  "code": "7352168",
+  "name": "Whisky Tomatin Aged 13 years Double Cask 100cl/43%",
+  "price": 28.5
+ },
+ {
+  "kind": "item",
+  "sort": 146,
+  "regel": "301",
+  "code": "7352169",
+  "name": "Whisky The Balvenie 12 Years Montilla Cask 70cl/47,3%",
+  "price": 63.1
+ },
+ {
+  "kind": "item",
+  "sort": 147,
+  "regel": "302",
+  "code": "7352170",
+  "name": "Whisky Bruichladdich Classic Laddie Scottish Barley70cl/50%",
+  "price": 35.1
+ },
+ {
+  "kind": "item",
+  "sort": 148,
+  "regel": "303",
+  "code": "7352171",
+  "name": "Whisky Glenfarclas Aged 11 Years 100cl/46%",
+  "price": 27.2
+ },
+ {
+  "kind": "item",
+  "sort": 149,
+  "regel": "304",
+  "code": "7352172",
+  "name": "Whisky Glenfarclas 105 Cask strength 100cl/60%",
+  "price": 38.7
+ },
+ {
+  "kind": "item",
+  "sort": 150,
+  "regel": "305",
+  "code": "7352173",
+  "name": "Whisky Glen Garioch Aged 12 Years  100cl/48%",
+  "price": 27.3
+ },
+ {
+  "kind": "header",
+  "sort": 151,
+  "regel": "307",
+  "level": 2,
+  "name": "WHISKY BLENDED MALT"
+ },
+ {
+  "kind": "item",
+  "sort": 152,
+  "regel": "308",
+  "code": "7352113",
+  "name": "Whisky Monkey Shoulder Blended Malt 100cl/40%",
+  "price": 30.8
+ },
+ {
+  "kind": "header",
+  "sort": 153,
+  "regel": "310",
+  "level": 2,
+  "name": "WHISKY DIVERSEN"
+ },
+ {
+  "kind": "item",
+  "sort": 154,
+  "regel": "311",
+  "code": "7354001",
+  "name": "Whisky Irish John Jameson Triple Distilled 100cl/40%",
+  "price": 18.1
+ },
+ {
+  "kind": "item",
+  "sort": 155,
+  "regel": "312",
+  "code": "7354003",
+  "name": "Whiskey Irish Redbreast Single Pot Still  12 Years 70cl/40cl",
+  "price": 36.8
+ },
+ {
+  "kind": "item",
+  "sort": 156,
+  "regel": "313",
+  "code": "7354004",
+  "name": "Whisky Canadian Club 100cl/40%",
+  "price": 12.1
+ },
+ {
+  "kind": "item",
+  "sort": 157,
+  "regel": "314",
+  "code": "7354005",
+  "name": "Whiskey Irish Teeling Small Batch 100cl/46%",
+  "price": 24.0
+ },
+ {
+  "kind": "header",
+  "sort": 158,
+  "regel": "316",
+  "level": 2,
+  "name": "WODKA"
+ },
+ {
+  "kind": "item",
+  "sort": 159,
+  "regel": "317",
+  "code": "7356020",
+  "name": "Wodka Bols  100cl/37,5%",
+  "price": 4.8
+ },
+ {
+  "kind": "item",
+  "sort": 160,
+  "regel": "318",
+  "code": "7356025",
+  "name": "Wodka Grey Goose 100cl/40%",
+  "price": 39.1
+ },
+ {
+  "kind": "item",
+  "sort": 161,
+  "regel": "319",
+  "code": "7356026",
+  "name": "Wodka Belvedere 100cl/40%",
+  "price": 34.7
+ },
+ {
+  "kind": "item",
+  "sort": 162,
+  "regel": "320",
+  "code": "7356027",
+  "name": "Wodka Ciroc 100cl/40%",
+  "price": 29.3
+ },
+ {
+  "kind": "item",
+  "sort": 163,
+  "regel": "321",
+  "code": "7356028",
+  "name": "Wodka RED Eristoff 100cl/18%",
+  "price": 11.3
+ },
+ {
+  "kind": "item",
+  "sort": 164,
+  "regel": "322",
+  "code": "7356041",
+  "name": "Wodka Absolut Vanilia 100cl/38%",
+  "price": 12.8
+ },
+ {
+  "kind": "item",
+  "sort": 165,
+  "regel": "323",
+  "code": "7356042",
+  "name": "Wodka Absolut blue 100cl/40%",
+  "price": 11.3
+ },
+ {
+  "kind": "item",
+  "sort": 166,
+  "regel": "324",
+  "code": "7356043",
+  "name": "Wodka Absolut 100 100cl/50%",
+  "price": 17.5
+ },
+ {
+  "kind": "item",
+  "sort": 167,
+  "regel": "325",
+  "code": "7356200",
+  "name": "Wodka Smirnoff Red  100cl/40%",
+  "price": 6.9
+ },
+ {
+  "kind": "header",
+  "sort": 168,
+  "regel": "327",
+  "level": 2,
+  "name": "LIKEUREN BOLS"
+ },
+ {
+  "kind": "item",
+  "sort": 169,
+  "regel": "328",
+  "code": "7364011",
+  "name": "Bols curacao blue 70cl/21%",
+  "price": 5.5
+ },
+ {
+  "kind": "header",
+  "sort": 170,
+  "regel": "330",
+  "level": 2,
+  "name": "LIKEUREN DIV BINNENLANDS"
+ },
+ {
+  "kind": "item",
+  "sort": 171,
+  "regel": "331",
+  "code": "7338011",
+  "name": "Gold Strike Cinnamon Schnapps 50cl/50%",
+  "price": 7.9
+ },
+ {
+  "kind": "item",
+  "sort": 172,
+  "regel": "332",
+  "code": "7368002",
+  "name": "Oranjebitter De Kuyper 50cl/30%",
+  "price": 4.8
+ },
+ {
+  "kind": "item",
+  "sort": 173,
+  "regel": "333",
+  "code": "7368006",
+  "name": "Dark Mark 70cl/16%",
+  "price": 9.1
+ },
+ {
+  "kind": "item",
+  "sort": 174,
+  "regel": "334",
+  "code": "7368010",
+  "name": "Pisang Ambon 70cl/17%",
+  "price": 8.2
+ },
+ {
+  "kind": "item",
+  "sort": 175,
+  "regel": "335",
+  "code": "7368012",
+  "name": "Boswandeling  70cl/15%",
+  "price": 12.1
+ },
+ {
+  "kind": "item",
+  "sort": 176,
+  "regel": "336",
+  "code": "7368013",
+  "name": "Boswandeling Pink Raspberry Caramel 70cl/14,9%",
+  "price": 12.1
+ },
+ {
+  "kind": "item",
+  "sort": 177,
+  "regel": "337",
+  "code": "7368014",
+  "name": "Van Meers Stroopwafel Liqueur 70cl/15%",
+  "price": 5.1
+ },
+ {
+  "kind": "item",
+  "sort": 178,
+  "regel": "338",
+  "code": "7368150",
+  "name": "Peachtree  100cl/20%",
+  "price": 8.5
+ },
+ {
+  "kind": "header",
+  "sort": 179,
+  "regel": "340",
+  "level": 2,
+  "name": "LIKEUREN DIV BUITENLANDS"
+ },
+ {
+  "kind": "item",
+  "sort": 180,
+  "regel": "341",
+  "code": "7372003",
+  "name": "Southern Comfort  100cl/35%",
+  "price": 8.7
+ },
+ {
+  "kind": "item",
+  "sort": 181,
+  "regel": "342",
+  "code": "7372014",
+  "name": "Sheridans Double Liqueur 100cl/15,5%",
+  "price": 17.0
+ },
+ {
+  "kind": "item",
+  "sort": 182,
+  "regel": "343",
+  "code": "7372016",
+  "name": "Passoa  100cl/17%",
+  "price": 9.0
+ },
+ {
+  "kind": "item",
+  "sort": 183,
+  "regel": "344",
+  "code": "7372018",
+  "name": "Amaretto Di Saronno  100cl/28%",
+  "price": 13.9
+ },
+ {
+  "kind": "item",
+  "sort": 184,
+  "regel": "345",
+  "code": "7372019",
+  "name": "Tia Maria Coffee Liqueur 100cl/20%",
+  "price": 13.8
+ },
+ {
+  "kind": "item",
+  "sort": 185,
+  "regel": "346",
+  "code": "7372028",
+  "name": "Licor 43  100cl/31%",
+  "price": 12.6
+ },
+ {
+  "kind": "item",
+  "sort": 186,
+  "regel": "347",
+  "code": "7372032",
+  "name": "Amarula Wild Fruit Cream 100cl/17%",
+  "price": 9.5
+ },
+ {
+  "kind": "item",
+  "sort": 187,
+  "regel": "348",
+  "code": "7372035",
+  "name": "Cellini Limoncello 70cl/30%",
+  "price": 6.3
+ },
+ {
+  "kind": "item",
+  "sort": 188,
+  "regel": "349",
+  "code": "7372036",
+  "name": "Aperol Aperitive Fratelli Barbieri 100cl/11%",
+  "price": 16.2
+ },
+ {
+  "kind": "item",
+  "sort": 189,
+  "regel": "350",
+  "code": "7372040",
+  "name": "Villa Massa Limoncello 100cl/30%",
+  "price": 14.1
+ },
+ {
+  "kind": "item",
+  "sort": 190,
+  "regel": "351",
+  "code": "7372043",
+  "name": "Baileys Irish Cream Salted Caramel 100cl/17%",
+  "price": 14.6
+ },
+ {
+  "kind": "item",
+  "sort": 191,
+  "regel": "352",
+  "code": "7372045",
+  "name": "Baileys Irish Cream Strawberry Cream 70cl/17%",
+  "price": 15.4
+ },
+ {
+  "kind": "item",
+  "sort": 192,
+  "regel": "353",
+  "code": "7372046",
+  "name": "Flugel 40fl/2cl/10%",
+  "price": 27.3
+ },
+ {
+  "kind": "item",
+  "sort": 193,
+  "regel": "354",
+  "code": "7372056",
+  "name": "Vana Tallin 100cl/40%",
+  "price": 13.2
+ },
+ {
+  "kind": "item",
+  "sort": 194,
+  "regel": "355",
+  "code": "7372057",
+  "name": "Fireball Cinnamon Whisky Liqueur 100cl/33%",
+  "price": 7.9
+ },
+ {
+  "kind": "item",
+  "sort": 195,
+  "regel": "356",
+  "code": "7372058",
+  "name": "Southern Comfort Black 100cl/40%",
+  "price": 9.1
+ },
+ {
+  "kind": "item",
+  "sort": 196,
+  "regel": "357",
+  "code": "7372060",
+  "name": "Sambuca Romana liqueur 100cl/40%",
+  "price": 9.0
+ },
+ {
+  "kind": "item",
+  "sort": 197,
+  "regel": "358",
+  "code": "7372061",
+  "name": "Sourz Redberry 70cl/15%",
+  "price": 7.2
+ },
+ {
+  "kind": "item",
+  "sort": 198,
+  "regel": "359",
+  "code": "7372062",
+  "name": "Sourz Apple 70cl/15%",
+  "price": 7.2
+ },
+ {
+  "kind": "item",
+  "sort": 199,
+  "regel": "360",
+  "code": "7372063",
+  "name": "Salmari Salmiak Liquor 70cl/25%",
+  "price": 11.4
+ },
+ {
+  "kind": "item",
+  "sort": 200,
+  "regel": "361",
+  "code": "7372064",
+  "name": "Kahlua Coffee Liqueur 100cl/16%",
+  "price": 15.1
+ },
+ {
+  "kind": "item",
+  "sort": 201,
+  "regel": "362",
+  "code": "7372067",
+  "name": "Licor 43 Creme Brulee 70cl/16%",
+  "price": 13.9
+ },
+ {
+  "kind": "item",
+  "sort": 202,
+  "regel": "363",
+  "code": "7372068",
+  "name": "Patron XO Cafe Tequila Coffee Liqueur 70cl 35%",
+  "price": 28.7
+ },
+ {
+  "kind": "item",
+  "sort": 203,
+  "regel": "364",
+  "code": "7372069",
+  "name": "Malibu  100cl/18%",
+  "price": 12.6
+ },
+ {
+  "kind": "item",
+  "sort": 204,
+  "regel": "365",
+  "code": "7372110",
+  "name": "Baileys Irish Cream 100cl/17%",
+  "price": 14.6
+ },
+ {
+  "kind": "item",
+  "sort": 205,
+  "regel": "366",
+  "code": "7372130",
+  "name": "Benedictine D.O.M.  100cl/40%",
+  "price": 25.5
+ },
+ {
+  "kind": "item",
+  "sort": 206,
+  "regel": "367",
+  "code": "7372140",
+  "name": "Cointreau Triple Sec 100cl/40%",
+  "price": 23.4
+ },
+ {
+  "kind": "header",
+  "sort": 207,
+  "regel": "369",
+  "level": 2,
+  "name": "PARTY SHOTS"
+ },
+ {
+  "kind": "item",
+  "sort": 208,
+  "regel": "370",
+  "code": "7372029",
+  "name": "Flugel 10-Pack 2cl/10%",
+  "price": 7.8
+ },
+ {
+  "kind": "item",
+  "sort": 209,
+  "regel": "371",
+  "code": "7372049",
+  "name": "El Chapo shots 16btl/20ml 25%",
+  "price": 17.7
+ },
+ {
+  "kind": "item",
+  "sort": 210,
+  "regel": "372",
+  "code": "7372050",
+  "name": "Fuck Off shots 16btl/20ml 15%",
+  "price": 18.1
+ },
+ {
+  "kind": "item",
+  "sort": 211,
+  "regel": "373",
+  "code": "7372051",
+  "name": "Rheinspritzer red 7btl/20ml 15%",
+  "price": 7.2
+ },
+ {
+  "kind": "item",
+  "sort": 212,
+  "regel": "374",
+  "code": "7372052",
+  "name": "Rheinspritzer green 7btl/20ml 15%",
+  "price": 7.2
+ },
+ {
+  "kind": "item",
+  "sort": 213,
+  "regel": "375",
+  "code": "7372053",
+  "name": "Bougies 12btl/20ml 15%",
+  "price": 13.7
+ },
+ {
+  "kind": "item",
+  "sort": 214,
+  "regel": "376",
+  "code": "7372054",
+  "name": "Dark Mark 10btl/20ml 14,9% party pack",
+  "price": 8.0
+ },
+ {
+  "kind": "item",
+  "sort": 215,
+  "regel": "377",
+  "code": "7372065",
+  "name": "Party Mark 10btl/20ml 17,6% party pack",
+  "price": 7.9
+ },
+ {
+  "kind": "header",
+  "sort": 216,
+  "regel": "563",
+  "level": 1,
+  "name": "DUTY-FREE TABACCO"
+ },
+ {
+  "kind": "header",
+  "sort": 217,
+  "regel": "565",
+  "level": 2,
+  "name": "CIGARETTES"
+ },
+ {
+  "kind": "item",
+  "sort": 218,
+  "regel": "566",
+  "code": "8005002",
+  "name": "Kent Surround ks ftr 200/10x20",
+  "price": 21.0
+ },
+ {
+  "kind": "item",
+  "sort": 219,
+  "regel": "567",
+  "code": "8005011",
+  "name": "Pall Mall ks ftr Blue box Light 200/10x20",
+  "price": 18.0
+ },
+ {
+  "kind": "item",
+  "sort": 220,
+  "regel": "568",
+  "code": "8005027",
+  "name": "L en M Red ksf  200/10x20",
+  "price": 18.0
+ },
+ {
+  "kind": "item",
+  "sort": 221,
+  "regel": "569",
+  "code": "8005030",
+  "name": "Gauloises Blondes Legeres ksf (Rood) 200/10x20",
+  "price": 21.0
+ },
+ {
+  "kind": "item",
+  "sort": 222,
+  "regel": "570",
+  "code": "8005033",
+  "name": "L en M Blue ksf  Lights box 200/10x20",
+  "price": 18.0
+ },
+ {
+  "kind": "item",
+  "sort": 223,
+  "regel": "571",
+  "code": "8005051",
+  "name": "Pall Mall ks ftr New Orleans Red 200/10x20",
+  "price": 18.0
+ },
+ {
+  "kind": "item",
+  "sort": 224,
+  "regel": "572",
+  "code": "8005052",
+  "name": "West Red  ks ftr 200/10x20",
+  "price": 18.0
+ },
+ {
+  "kind": "item",
+  "sort": 225,
+  "regel": "573",
+  "code": "8005160",
+  "name": "Camel Yellow KS Filter Box Sleeve 10x20",
+  "price": 31.0
+ },
+ {
+  "kind": "item",
+  "sort": 226,
+  "regel": "574",
+  "code": "8005180",
+  "name": "Camel Blue ks ftr  200/10x20",
+  "price": 31.0
+ },
+ {
+  "kind": "item",
+  "sort": 227,
+  "regel": "575",
+  "code": "8005271",
+  "name": "Gauloises Blondes ksf (Blauw) 200/10x20",
+  "price": 21.0
+ },
+ {
+  "kind": "item",
+  "sort": 228,
+  "regel": "576",
+  "code": "8005390",
+  "name": "Lucky Strike ks ftr Red 200/10x20",
+  "price": 21.0
+ },
+ {
+  "kind": "item",
+  "sort": 229,
+  "regel": "577",
+  "code": "8005410",
+  "name": "Marlboro Box Ftr Blend of USA Sleeve 10x20",
+  "price": 31.0
+ },
+ {
+  "kind": "item",
+  "sort": 230,
+  "regel": "578",
+  "code": "8005420",
+  "name": "Marlboro GOLD (light) ftr Blend of Usa 200/10x20",
+  "price": 31.0
+ },
+ {
+  "kind": "header",
+  "sort": 231,
+  "regel": "580",
+  "level": 2,
+  "name": "TABACCO"
+ },
+ {
+  "kind": "item",
+  "sort": 232,
+  "regel": "581",
+  "code": "8010100",
+  "name": "Brandaris TTT fivepack 5x50gr",
+  "price": 30.0
+ },
+ {
+  "kind": "item",
+  "sort": 233,
+  "regel": "582",
+  "code": "8010140",
+  "name": "Drum fivepack 5x50gr",
+  "price": 30.0
+ },
+ {
+  "kind": "item",
+  "sort": 234,
+  "regel": "583",
+  "code": "8010310",
+  "name": "Van Nelle Stevige shag (half) 5x50gr",
+  "price": 30.0
+ },
+ {
+  "kind": "item",
+  "sort": 235,
+  "regel": "584",
+  "code": "8010320",
+  "name": "Van Nelle Special Quality TTT fivepack 5x50gr",
+  "price": 30.0
+ },
+ {
+  "kind": "header",
+  "sort": 236,
+  "regel": "586",
+  "level": 2,
+  "name": "CIGARS & CIGARILLOS"
+ },
+ {
+  "kind": "item",
+  "sort": 237,
+  "regel": "587",
+  "code": "8020006",
+  "name": "Balmoral Dominican Selection Collection kist/12st",
+  "price": 23.0
+ },
+ {
+  "kind": "item",
+  "sort": 238,
+  "regel": "588",
+  "code": "8020025",
+  "name": "Signature Henri Wintermans Box 20pc",
+  "price": 6.4
+ },
+ {
+  "kind": "item",
+  "sort": 239,
+  "regel": "589",
+  "code": "8020026",
+  "name": "Signature Henri Wintermans 100/5x20pc",
+  "price": 31.9
+ }
+]

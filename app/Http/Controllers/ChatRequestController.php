@@ -61,6 +61,34 @@ class ChatRequestController extends Controller
             return response()->json(['status' => 'connected', 'conversation_id' => $conversationId]);
         }
 
+        // Privacy-gate: check recipient's messaging preference before creating
+        // any request record.
+        $recipient   = User::find($other);
+        $privacyMode = data_get($recipient?->settings, 'chat_privacy_mode', 'everyone');
+
+        if ($privacyMode === 'everyone') {
+            // Auto-connect — no request/accept needed.
+            $cid = $this->ensureDirectConversation($me, $other);
+            return response()->json(['status' => 'connected', 'conversation_id' => $cid]);
+        }
+
+        if ($privacyMode === 'contacts') {
+            if ($this->sharesMission($me, $other)) {
+                $cid = $this->ensureDirectConversation($me, $other);
+                return response()->json(['status' => 'connected', 'conversation_id' => $cid]);
+            }
+            return response()->json(['status' => 'not_allowed']);
+        }
+
+        if ($privacyMode === 'invite_only') {
+            $myEmail = Auth::user()->email ?? '';
+            if ($this->hasInvited($other, $myEmail)) {
+                $cid = $this->ensureDirectConversation($me, $other);
+                return response()->json(['status' => 'connected', 'conversation_id' => $cid]);
+            }
+            return response()->json(['status' => 'not_allowed']);
+        }
+
         // The other person already requested ME → accept it and connect.
         $incoming = ChatRequest::where('requester_id', $other)
             ->where('recipient_id', $me)
@@ -246,6 +274,30 @@ class ChatRequestController extends Controller
         } catch (\Throwable $e) {
             Log::warning('[chat] request email failed: ' . $e->getMessage());
         }
+    }
+
+    protected function sharesMission(int $a, int $b): bool
+    {
+        $missionIds = DB::table('missions')->where('owner_id', $a)->pluck('id')
+            ->merge(
+                DB::table('mission_collaborators')
+                    ->where('user_id', $a)->where('status', 'accepted')
+                    ->pluck('mission_id')
+            )->unique();
+
+        if ($missionIds->isEmpty()) return false;
+
+        return DB::table('missions')->where('owner_id', $b)->whereIn('id', $missionIds)->exists()
+            || DB::table('mission_collaborators')
+                ->where('user_id', $b)->where('status', 'accepted')
+                ->whereIn('mission_id', $missionIds)->exists();
+    }
+
+    protected function hasInvited(int $inviterId, string $email): bool
+    {
+        return \App\Models\ChatInvite::where('inviter_id', $inviterId)
+            ->where('email', mb_strtolower(trim($email)))
+            ->exists();
     }
 
     protected function findDirectConversation(int $a, int $b): ?string

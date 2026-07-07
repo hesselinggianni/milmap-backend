@@ -4,6 +4,7 @@ namespace App\Policies;
 
 use App\Models\User;
 use App\Models\Map;
+use App\Models\Mission;
 
 class MapPolicy
 {
@@ -26,11 +27,17 @@ class MapPolicy
             return true;
         }
 
-        // Check if user is an accepted collaborator
-        return $map->collaborators()
+        // Direct map collaborator (accepted invite)
+        if ($map->collaborators()
             ->where('user_id', $user->id)
             ->where('status', 'accepted')
-            ->exists();
+            ->exists()) {
+            return true;
+        }
+
+        // Mission collaborator: if a mission that links this map exists and the
+        // user has (at minimum) viewer access to that mission, grant map access.
+        return $this->hasMissionAccess($user, $map);
     }
 
     /**
@@ -44,19 +51,24 @@ class MapPolicy
 
     /**
      * Determine if the user can update the map.
+     * Editor/admin mission collaborators also get write access.
      */
     public function update(User $user, Map $map)
     {
-        // Owner can update
         if ($this->isOwner($user, $map)) {
             return true;
         }
 
-        // Check if user is an accepted collaborator
-        return $map->collaborators()
+        // Direct map collaborator
+        if ($map->collaborators()
             ->where('user_id', $user->id)
             ->where('status', 'accepted')
-            ->exists();
+            ->exists()) {
+            return true;
+        }
+
+        // Mission collaborator with edit role
+        return $this->hasMissionAccess($user, $map, requireEdit: true);
     }
 
     /**
@@ -103,5 +115,59 @@ class MapPolicy
     protected function isOwner(User $user, Map $map): bool
     {
         return (string) $map->owner_id === (string) $user->id;
+    }
+
+    /**
+     * Resolve the user's effective role on this map.
+     * Returns 'owner' | 'editor' | 'viewer' | null (no access).
+     * 'editor' covers both direct map collaborators and mission editor/admin/owner.
+     * 'viewer' covers mission viewer collaborators.
+     */
+    public function roleFor(User $user, Map $map): ?string
+    {
+        if ($this->isOwner($user, $map)) return 'owner';
+
+        if ($map->collaborators()
+            ->where('user_id', $user->id)
+            ->where('status', 'accepted')
+            ->exists()) {
+            return 'editor';
+        }
+
+        // Check mission-based access
+        $missionRole = $this->missionRoleFor($user, $map);
+        if ($missionRole === null) return null;
+        return in_array($missionRole, ['owner', 'editor', 'admin'], true) ? 'editor' : 'viewer';
+    }
+
+    /**
+     * Check whether the user has access to this map via a linked mission.
+     * When requireEdit is true, only editor/admin/owner mission roles count.
+     */
+    protected function hasMissionAccess(User $user, Map $map, bool $requireEdit = false): bool
+    {
+        $role = $this->missionRoleFor($user, $map);
+        if ($role === null) return false;
+        if ($requireEdit) return in_array($role, ['owner', 'editor', 'admin'], true);
+        return true;
+    }
+
+    /**
+     * Return the user's role on any mission that links to this map, or null.
+     * Uses JSON path query on the missions.map column (stored as {"id": "...", ...}).
+     */
+    protected function missionRoleFor(User $user, Map $map): ?string
+    {
+        $mission = Mission::where('map->id', (string) $map->id)
+            ->where(function ($q) use ($user) {
+                $q->where('owner_id', $user->id)
+                  ->orWhereHas('collaborators', fn ($c) =>
+                      $c->where('user_id', $user->id)->where('status', 'accepted')
+                  );
+            })
+            ->first();
+
+        if (!$mission) return null;
+        return $mission->roleFor($user->id);
     }
 }

@@ -97,6 +97,9 @@ class AdminController extends Controller
                     'plan'              => $user->plan(),
                     'subscribed'        => $user->subscribed(),
                     'trial_ends_at'     => $user->trial_ends_at,
+                    'on_trial'          => $user->onAppTrial(),
+                    'trial_days_left'   => $user->trialDaysLeft(),
+                    'has_premium'       => $user->hasPremiumAccess(),
                     'stripe_id'         => $user->stripe_id,
                     'pm_type'           => $user->pm_type,
                     'pm_last_four'      => $user->pm_last_four,
@@ -206,6 +209,71 @@ class AdminController extends Controller
                 'message' => 'Fout bij verzending',
                 'error' => $e->getMessage()
             ], 500);
+        }
+    }
+
+    /**
+     * POST /api/v1/admin/users/{userId}/grant-access
+     * Ken een gebruiker (extra) gratis premium-toegang toe door de app-proef te
+     * verlengen. Zet `trial_ends_at` op N dagen vanaf nu — of vanaf de huidige
+     * proefeinddatum als die verder in de toekomst ligt — zodat een lopende proef
+     * nooit wordt ingekort. Dit geeft direct volledige toegang
+     * (User::hasPremiumAccess()) zonder Stripe, ideaal om een klant/eenheid te
+     * onboarden of een verlopen proef te verlengen.
+     */
+    public function grantAccess(Request $request, $userId)
+    {
+        $data = $request->validate([
+            'days' => 'required|integer|min:1|max:3650',
+        ]);
+
+        try {
+            $user = User::findOrFail($userId);
+
+            $base = ($user->trial_ends_at && $user->trial_ends_at->isFuture())
+                ? $user->trial_ends_at->copy()
+                : now();
+            $newEnd = $base->addDays((int) $data['days']);
+
+            $user->forceFill(['trial_ends_at' => $newEnd])->save();
+
+            // Gratis toegang telt als echtheidsbewijs → e-mail meteen verifiëren
+            // zodat de verificatie-wall deze klant niet alsnog blokkeert.
+            $user->markEmailVerified();
+
+            return response()->json([
+                'message'       => "Gratis toegang verleend tot {$newEnd->format('d-m-Y')}.",
+                'trial_ends_at' => $newEnd->toIso8601String(),
+                'premium'       => $user->fresh()->premiumState(),
+            ], 200);
+        } catch (\Illuminate\Database\Eloquent\ModelNotFoundException $e) {
+            return response()->json(['message' => 'Gebruiker niet gevonden', 'error' => 'not_found'], 404);
+        } catch (\Exception $e) {
+            return response()->json(['message' => 'Fout bij toekennen toegang', 'error' => $e->getMessage()], 500);
+        }
+    }
+
+    /**
+     * POST /api/v1/admin/users/{userId}/verify-email
+     * Markeer het e-mailadres van een gebruiker handmatig als geverifieerd (bv.
+     * na telefonisch/persoonlijk contact), zodat de verificatie-wall verdwijnt.
+     */
+    public function verifyUserEmail($userId)
+    {
+        try {
+            $user = User::findOrFail($userId);
+            $changed = $user->markEmailVerified();
+
+            return response()->json([
+                'message'           => $changed
+                    ? 'E-mailadres gemarkeerd als geverifieerd.'
+                    : 'E-mailadres was al geverifieerd.',
+                'email_verified_at' => $user->fresh()->email_verified_at,
+            ], 200);
+        } catch (\Illuminate\Database\Eloquent\ModelNotFoundException $e) {
+            return response()->json(['message' => 'Gebruiker niet gevonden', 'error' => 'not_found'], 404);
+        } catch (\Exception $e) {
+            return response()->json(['message' => 'Fout bij verifiëren', 'error' => $e->getMessage()], 500);
         }
     }
 

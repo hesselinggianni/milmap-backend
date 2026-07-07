@@ -271,6 +271,104 @@ class User extends Authenticatable
         return (bool) $this->view_only && ! $this->subscribed();
     }
 
+    // ── Gratis proefperiode + premium-toegang ───────────────────────
+    //
+    // Elk nieuw account krijgt 7 dagen volledige (premium) toegang. Dit is een
+    // *app-side* proef (géén automatische Stripe-afschrijving): `trial_ends_at`
+    // op de user staat op registratie op nu+7 dagen. Zolang die datum in de
+    // toekomst ligt heeft de gebruiker alle premiumfuncties. Daarna valt hij
+    // terug op het gratis Starter-niveau (max 5 kaarten, basisroutes, MGRS,
+    // online lagen, GPX-import) tot hij een abonnement neemt.
+
+    /** Lengte van de gratis proefperiode na registratie, in dagen. */
+    public const APP_TRIAL_DAYS = 7;
+
+    /** Max aantal kaarten voor een gratis account (buiten proef/abonnement). */
+    public const FREE_MAP_LIMIT = 5;
+
+    /**
+     * De premiumfuncties die na de proefperiode een abonnement vereisen. De
+     * frontend leest deze lijst uit premiumState() om de UI op slot te zetten;
+     * de backend dwingt ze af via de RequiresPremium-middleware (mutaties) en
+     * de map-limiet in MapController.
+     */
+    public const PREMIUM_FEATURES = [
+        'missions',          // missies aanmaken & beheren
+        'chat',              // chatten (1-op-1 + missiekanaal)
+        'nine_liner',        // MEDEVAC 9-liner
+        'unlimited_maps',    // meer dan 5 kaarten
+        'weather',           // weersintegratie
+        'offline_maps',      // offline kaarten
+        'area_markers',      // gebieden markeren
+        'route_export',      // routekaart/PDF exporteren
+        'teams',             // team aanmaken & beheren
+        'team_shared_maps',  // gedeelde teamkaarten
+        'live_location',     // live locatie delen
+    ];
+
+    /** Loopt de gratis proefperiode nu nog? */
+    public function onAppTrial(): bool
+    {
+        return $this->trial_ends_at !== null && $this->trial_ends_at->isFuture();
+    }
+
+    /**
+     * Volledige (premium) toegang: waar tijdens de proefperiode OF met een
+     * actief betaald abonnement. Dit is de enige poort achter alle
+     * PREMIUM_FEATURES.
+     */
+    public function hasPremiumAccess(): bool
+    {
+        return $this->onAppTrial() || $this->subscribed();
+    }
+
+    /** Heeft de gebruiker toegang tot een specifieke feature? */
+    public function hasFeature(string $feature): bool
+    {
+        if (in_array($feature, self::PREMIUM_FEATURES, true)) {
+            return $this->hasPremiumAccess();
+        }
+
+        return true; // basisfuncties zijn altijd beschikbaar
+    }
+
+    /** Resterende proefdagen (naar boven afgerond), of null als er geen proef loopt. */
+    public function trialDaysLeft(): ?int
+    {
+        if (! $this->onAppTrial()) {
+            return null;
+        }
+
+        return max(0, (int) ceil(now()->diffInHours($this->trial_ends_at, false) / 24));
+    }
+
+    /** Per-feature entitlement-map (true/false) voor de frontend. */
+    public function entitlements(): array
+    {
+        $has = $this->hasPremiumAccess();
+
+        return array_fill_keys(self::PREMIUM_FEATURES, $has);
+    }
+
+    /**
+     * Compacte abonnements-/proefstatus voor de frontend (login + /users/me +
+     * register). Stuurt de app precies genoeg om de trial-badge te tonen en de
+     * premium-UI op slot te zetten zonder losse call.
+     */
+    public function premiumState(): array
+    {
+        return [
+            'plan'            => $this->plan(),          // starter | pro | team
+            'has_premium'     => $this->hasPremiumAccess(),
+            'on_trial'        => $this->onAppTrial(),
+            'trial_ends_at'   => $this->trial_ends_at?->toIso8601String(),
+            'trial_days_left' => $this->trialDaysLeft(),
+            'subscribed'      => $this->subscribed(),
+            'map_limit'       => $this->hasPremiumAccess() ? null : self::FREE_MAP_LIMIT,
+            'features'        => $this->entitlements(),
+        ];
+    }
+
     // ── E-mailverificatie ───────────────────────────────────────────
     //
     // Gratis (niet-betalende) accounts moeten hun e-mail bevestigen via een

@@ -11,6 +11,17 @@ use Illuminate\Support\Str;
 
 class RouteMapController extends Controller
 {
+    /**
+     * Assert the current user can access (view or edit) this map.
+     * Throws 403 if the policy denies it; returns the loaded Map on success.
+     */
+    private function authorizeMap(string $mapId, bool $requireEdit = false): Map
+    {
+        $map = Map::findOrFail($mapId);
+        $this->authorize($requireEdit ? 'update' : 'view', $map);
+        return $map;
+    }
+
     /*
     |--------------------------------------------------------------------------
     | INDEX
@@ -54,17 +65,7 @@ class RouteMapController extends Controller
         $routeMap = RouteMap::with(['owner', 'map'])
             ->findOrFail($id);
 
-        // Check if user has access to the map
-        $map = $routeMap->map;
-        if (((int) $map->owner_id) !== auth()->id()) {
-            // Check if user is an accepted collaborator
-            if (!$map->collaborators()
-                ->where('user_id', auth()->id())
-                ->where('status', 'accepted')
-                ->exists()) {
-                abort(403, 'Unauthorized access to this route map');
-            }
-        }
+        $this->authorize('view', $routeMap->map);
 
         return response()->json($this->presentRouteMap($routeMap));
     }
@@ -96,7 +97,7 @@ class RouteMapController extends Controller
     {
         $map = Map::findOrFail($mapId);
 
-        // Check for share token (unauthenticated public access)
+        // Share-token path: unauthenticated public read
         $shareToken = $request->query('share_token');
         if ($shareToken) {
             $share = MapShare::active()
@@ -107,17 +108,8 @@ class RouteMapController extends Controller
             if (!$share) {
                 abort(403, 'Invalid or expired share token');
             }
-            // Valid share token - allow access
         } else {
-            // Check if user has access to the map
-            if (!auth()->check() || ((int) $map->owner_id) !== auth()->id()) {
-                if (!$map->collaborators()
-                    ->where('user_id', auth()->id())
-                    ->where('status', 'accepted')
-                    ->exists()) {
-                    abort(403, 'Unauthorized access to this map');
-                }
-            }
+            $this->authorize('view', $map);
         }
 
         $routeMaps = RouteMap::with(['owner', 'map'])
@@ -175,16 +167,7 @@ class RouteMapController extends Controller
             'vtv_vta' => ['nullable', 'string'],
         ]);
 
-        // Check if user has access to the map
-        $map = Map::findOrFail($validated['map_id']);
-        if (((int) $map->owner_id) !== auth()->id()) {
-            if (!$map->collaborators()
-                ->where('user_id', auth()->id())
-                ->where('status', 'accepted')
-                ->exists()) {
-                abort(403, 'Unauthorized access to this map');
-            }
-        }
+        $this->authorizeMap($validated['map_id'], requireEdit: true);
 
         $routeMap = RouteMap::create([
             'id' => Str::uuid(),
@@ -210,16 +193,7 @@ class RouteMapController extends Controller
     {
         $routeMap = RouteMap::findOrFail($id);
 
-        // Check if user has access to the map
-        $map = $routeMap->map;
-        if (((int) $map->owner_id) !== auth()->id()) {
-            if (!$map->collaborators()
-                ->where('user_id', auth()->id())
-                ->where('status', 'accepted')
-                ->exists()) {
-                abort(403, 'Unauthorized access to this route map');
-            }
-        }
+        $this->authorize('update', $routeMap->map);
 
         $validated = $request->validate([
             'title' => ['nullable', 'string'],
@@ -296,13 +270,7 @@ class RouteMapController extends Controller
     {
         $routeMap = RouteMap::findOrFail($id);
 
-        // Access check
-        $map = $routeMap->map ?? \App\Models\Map::find($routeMap->map_id);
-        if ($map && (int) $map->owner_id !== auth()->id()) {
-            if (!$map->collaborators()->where('user_id', auth()->id())->where('status', 'accepted')->exists()) {
-                abort(403, 'Unauthorized');
-            }
-        }
+        $this->authorize('update', $routeMap->map);
 
         $validated = $request->validate([
             'mission_id' => ['nullable', 'uuid', 'exists:missions,id'],
@@ -332,16 +300,7 @@ class RouteMapController extends Controller
     {
         $routeMap = RouteMap::findOrFail($id);
 
-        // Check if user has access to the map
-        $map = $routeMap->map;
-        if (((int) $map->owner_id) !== auth()->id()) {
-            if (!$map->collaborators()
-                ->where('user_id', auth()->id())
-                ->where('status', 'accepted')
-                ->exists()) {
-                abort(403, 'Unauthorized access to this route map');
-            }
-        }
+        $this->authorize('update', $routeMap->map);
 
         $routeMap->delete();
 
@@ -388,16 +347,7 @@ class RouteMapController extends Controller
 
         $routeMap = RouteMap::findOrFail($id);
 
-        // Check access
-        $map = $routeMap->map;
-        if (((int) $map->owner_id) !== auth()->id()) {
-            if (!$map->collaborators()
-                ->where('user_id', auth()->id())
-                ->where('status', 'accepted')
-                ->exists()) {
-                abort(403, 'Unauthorized access to this route map');
-            }
-        }
+        $this->authorize('update', $routeMap->map);
 
         try {
             // Get locations array
@@ -464,16 +414,7 @@ class RouteMapController extends Controller
     {
         $routeMap = RouteMap::findOrFail($id);
 
-        // Check access
-        $map = $routeMap->map;
-        if (((int) $map->owner_id) !== auth()->id()) {
-            if (!$map->collaborators()
-                ->where('user_id', auth()->id())
-                ->where('status', 'accepted')
-                ->exists()) {
-                abort(403, 'Unauthorized access to this route map');
-            }
-        }
+        $this->authorize('update', $routeMap->map);
 
         try {
             $locations = $routeMap->locations ?? [];

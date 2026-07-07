@@ -2,6 +2,7 @@
 
 namespace App\Http\Controllers;
 
+use App\Models\ChatInvite;
 use App\Models\Conversation;
 use App\Models\Message;
 use App\Models\Mission;
@@ -113,16 +114,23 @@ class ConversationController extends Controller
             ]);
         }
 
-        // Connected-gate: a direct conversation may only be *opened* with someone
-        // you're already connected to — a mission/map teammate, an existing
-        // contact, or someone whose chat request was accepted. Strangers must go
-        // through the request flow (POST /chat/requests) first; otherwise this
-        // endpoint would let anyone DM anyone by guessing a user_id, bypassing the
-        // accept/decline gate entirely.
-        if (! $this->alreadyConnected($me, $other)) {
+        // Privacy-gate: respect the recipient's "who can message me" preference.
+        // 'everyone'    → anyone may DM directly (default)
+        // 'contacts'    → only mission teammates or already-connected users
+        // 'invite_only' → only users the recipient has explicitly invited by email
+        $recipient   = User::find($other);
+        $privacyMode = data_get($recipient?->settings, 'chat_privacy_mode', 'everyone');
+
+        $canConnect = match ($privacyMode) {
+            'contacts'    => $this->alreadyConnected($me, $other) || $this->sharesMission($me, $other),
+            'invite_only' => $this->alreadyConnected($me, $other) || $this->hasInvited($other, Auth::user()->email),
+            default       => true,   // 'everyone'
+        };
+
+        if (! $canConnect) {
             return response()->json([
-                'message'       => 'Stuur eerst een chatverzoek voordat je een gesprek kunt starten.',
-                'needs_request' => true,
+                'message'         => 'Deze gebruiker ontvangt geen berichten van onbekende personen.',
+                'privacy_blocked' => true,
             ], 403);
         }
 
@@ -164,6 +172,40 @@ class ConversationController extends Controller
                 $q->where(fn ($w) => $w->where('requester_id', $a)->where('recipient_id', $b))
                     ->orWhere(fn ($w) => $w->where('requester_id', $b)->where('recipient_id', $a));
             })
+            ->exists();
+    }
+
+    /**
+     * Do these two users share at least one mission (both owner/collaborator)?
+     * Used for the 'contacts' privacy mode.
+     */
+    protected function sharesMission(int $a, int $b): bool
+    {
+        // Collect all mission IDs where A is owner or accepted collaborator.
+        $missionIds = DB::table('missions')->where('owner_id', $a)->pluck('id')
+            ->merge(
+                DB::table('mission_collaborators')
+                    ->where('user_id', $a)->where('status', 'accepted')
+                    ->pluck('mission_id')
+            )->unique();
+
+        if ($missionIds->isEmpty()) return false;
+
+        // Check if B is owner or accepted collaborator on any of those missions.
+        return DB::table('missions')->where('owner_id', $b)->whereIn('id', $missionIds)->exists()
+            || DB::table('mission_collaborators')
+                ->where('user_id', $b)->where('status', 'accepted')
+                ->whereIn('mission_id', $missionIds)->exists();
+    }
+
+    /**
+     * Has the given inviter sent a chat invite to this email address?
+     * Used for the 'invite_only' privacy mode.
+     */
+    protected function hasInvited(int $inviterId, string $email): bool
+    {
+        return ChatInvite::where('inviter_id', $inviterId)
+            ->where('email', mb_strtolower(trim($email)))
             ->exists();
     }
 

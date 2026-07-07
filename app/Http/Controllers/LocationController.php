@@ -11,13 +11,25 @@ use Illuminate\Support\Facades\Auth;
 class LocationController extends Controller
 {
     /**
+     * Assert the current user can access (view or edit) this map.
+     * Returns the loaded Map so callers don't have to fetch it again.
+     * Throws 403 if access is denied.
+     */
+    private function authorizeMap(string $mapId, bool $requireEdit = false): Map
+    {
+        $map = Map::findOrFail($mapId);
+        $this->authorize($requireEdit ? 'update' : 'view', $map);
+        return $map;
+    }
+
+    /**
      * Get all locations for a specific map
      */
     public function index(Request $request, $mapId)
     {
         $map = Map::findOrFail($mapId);
 
-        // Check for share token (unauthenticated public access)
+        // Share-token path: unauthenticated public read
         $shareToken = $request->query('share_token');
         if ($shareToken) {
             $share = MapShare::active()
@@ -28,16 +40,8 @@ class LocationController extends Controller
             if (!$share) {
                 abort(403, 'Invalid or expired share token');
             }
-            // Valid share token - allow access
         } else {
-            // Check if user has access to this map
-            if (!Auth::check() || ((int) $map->owner_id !== Auth::id() &&
-                !$map->collaborators()
-                    ->where('user_id', Auth::id())
-                    ->where('status', 'accepted')
-                    ->exists())) {
-                abort(403, 'Unauthorized access to this map');
-            }
+            $this->authorize('view', $map);
         }
 
         return response()->json(
@@ -52,38 +56,28 @@ class LocationController extends Controller
      */
     public function store(Request $request, $mapId)
     {
-        // Validate that map exists and user has access
-        $map = Map::findOrFail($mapId);
-
-        if ((int) $map->owner_id !== Auth::id()) {
-            if (!$map->collaborators()
-                ->where('user_id', Auth::id())
-                ->where('status', 'accepted')
-                ->exists()) {
-                abort(403, 'Unauthorized access to this map');
-            }
-        }
+        $this->authorizeMap($mapId, requireEdit: true);
 
         $validated = $request->validate([
-            'name' => 'nullable|string|max:255',
+            'name'        => 'nullable|string|max:255',
             'description' => 'nullable|string',
-            'latitude' => 'required|numeric|between:-90,90',
-            'longitude' => 'required|numeric|between:-180,180',
-            'color' => 'nullable|string|regex:/^#[0-9A-Fa-f]{6}$/',
-            'icon' => 'nullable|string|max:50',
-            'metadata' => 'nullable|array',
+            'latitude'    => 'required|numeric|between:-90,90',
+            'longitude'   => 'required|numeric|between:-180,180',
+            'color'       => 'nullable|string|regex:/^#[0-9A-Fa-f]{6}$/',
+            'icon'        => 'nullable|string|max:50',
+            'metadata'    => 'nullable|array',
         ]);
 
         $location = Location::create([
-            'map_id' => $mapId,
-            'user_id' => Auth::id(),
-            'name' => $validated['name'] ?? null,
+            'map_id'      => $mapId,
+            'user_id'     => Auth::id(),
+            'name'        => $validated['name'] ?? null,
             'description' => $validated['description'] ?? null,
-            'latitude' => $validated['latitude'],
-            'longitude' => $validated['longitude'],
-            'color' => $validated['color'] ?? '#FF0000',
-            'icon' => $validated['icon'] ?? 'marker',
-            'metadata' => $validated['metadata'] ?? null,
+            'latitude'    => $validated['latitude'],
+            'longitude'   => $validated['longitude'],
+            'color'       => $validated['color'] ?? '#FF0000',
+            'icon'        => $validated['icon'] ?? 'marker',
+            'metadata'    => $validated['metadata'] ?? null,
         ]);
 
         return response()->json($location, 201);
@@ -94,17 +88,7 @@ class LocationController extends Controller
      */
     public function show($mapId, $locationId)
     {
-        // Verify user has access to the map
-        $map = Map::findOrFail($mapId);
-
-        if ((int) $map->owner_id !== Auth::id()) {
-            if (!$map->collaborators()
-                ->where('user_id', Auth::id())
-                ->where('status', 'accepted')
-                ->exists()) {
-                abort(403, 'Unauthorized access to this map');
-            }
-        }
+        $this->authorizeMap($mapId);
 
         $location = Location::where('id', $locationId)
             ->where('map_id', $mapId)
@@ -118,30 +102,20 @@ class LocationController extends Controller
      */
     public function update(Request $request, $mapId, $locationId)
     {
-        // Verify user has access to the map
-        $map = Map::findOrFail($mapId);
-
-        if ((int) $map->owner_id !== Auth::id()) {
-            if (!$map->collaborators()
-                ->where('user_id', Auth::id())
-                ->where('status', 'accepted')
-                ->exists()) {
-                abort(403, 'Unauthorized access to this map');
-            }
-        }
+        $this->authorizeMap($mapId, requireEdit: true);
 
         $location = Location::where('id', $locationId)
             ->where('map_id', $mapId)
             ->firstOrFail();
 
         $validated = $request->validate([
-            'name' => 'nullable|string|max:255',
+            'name'        => 'nullable|string|max:255',
             'description' => 'nullable|string',
-            'latitude' => 'required|numeric|between:-90,90',
-            'longitude' => 'required|numeric|between:-180,180',
-            'color' => 'nullable|string|regex:/^#[0-9A-Fa-f]{6}$/',
-            'icon' => 'nullable|string|max:50',
-            'metadata' => 'nullable|array',
+            'latitude'    => 'required|numeric|between:-90,90',
+            'longitude'   => 'required|numeric|between:-180,180',
+            'color'       => 'nullable|string|regex:/^#[0-9A-Fa-f]{6}$/',
+            'icon'        => 'nullable|string|max:50',
+            'metadata'    => 'nullable|array',
         ]);
 
         $location->update($validated);
@@ -154,17 +128,7 @@ class LocationController extends Controller
      */
     public function destroy($mapId, $locationId)
     {
-        // Verify user has access to the map
-        $map = Map::findOrFail($mapId);
-
-        if ((int) $map->owner_id !== Auth::id()) {
-            if (!$map->collaborators()
-                ->where('user_id', Auth::id())
-                ->where('status', 'accepted')
-                ->exists()) {
-                abort(403, 'Unauthorized access to this map');
-            }
-        }
+        $this->authorizeMap($mapId, requireEdit: true);
 
         $location = Location::where('id', $locationId)
             ->where('map_id', $mapId)
@@ -180,17 +144,7 @@ class LocationController extends Controller
      */
     public function clear($mapId)
     {
-        // Verify user has access to the map
-        $map = Map::findOrFail($mapId);
-
-        if ((int) $map->owner_id !== Auth::id()) {
-            if (!$map->collaborators()
-                ->where('user_id', Auth::id())
-                ->where('status', 'accepted')
-                ->exists()) {
-                abort(403, 'Unauthorized access to this map');
-            }
-        }
+        $this->authorizeMap($mapId, requireEdit: true);
 
         Location::where('map_id', $mapId)->delete();
 

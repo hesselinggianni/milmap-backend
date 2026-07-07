@@ -61,12 +61,25 @@ class RegisterController extends Controller
             if ($referrer) $referredById = $referrer->id;
         }
 
-        // Create the user
+        // Create the user. Elk nieuw (gratis) account start met 7 dagen volledige
+        // toegang: `trial_ends_at` op nu+7 dagen. Daarna valt het terug op het
+        // gratis Starter-niveau tot er een abonnement wordt genomen (zie
+        // User::hasPremiumAccess() + RequiresPremium-middleware).
         $user = User::create([
             'email' => $request->email,
             'password' => Hash::make($request->password),
             'referred_by_id' => $referredById,
+            'first_name' => $request->input('first_name'),
+            'last_name'  => $request->input('last_name'),
+            'trial_ends_at' => now()->addDays(User::APP_TRIAL_DAYS),
         ]);
+
+        // Maak direct een Stripe-customer aan zodat de gebruiker al in Stripe
+        // staat voor toekomstige facturatie (het "€0-abonnement" dat de klant
+        // bij aanmelden aangaat). Best-effort: een Stripe-storing mag de gratis
+        // registratie nooit blokkeren — de customer wordt anders alsnog lui
+        // aangemaakt bij de eerste checkout.
+        $this->ensureStripeCustomer($user);
 
         // If this e-mail was invited to any mission/map, accept those invitations
         // now. Such accounts become free / view-only until they upgrade.
@@ -91,6 +104,15 @@ class RegisterController extends Controller
         // geverifieerd, dus daar is dit niet nodig. Faalt nooit hard.
         \App\Services\EmailVerificationService::send($user);
 
+        // Onboarding-funnel: plaats de nieuwe gebruiker automatisch in elke
+        // campagne die als auto-enroll is gemarkeerd (dag-0-mail nu, vervolgmails
+        // via de follow-up-engine). Best-effort — mag de registratie nooit breken.
+        try {
+            app(\App\Services\CampaignEnrollmentService::class)->enrollNewUser($user);
+        } catch (\Throwable $e) {
+            Log::warning('[register] funnel-enrollment mislukt: ' . $e->getMessage());
+        }
+
         // Generate a Sanctum token scoped to the regular-app 'user' ability so
         // it can never satisfy tokenCan('admin') (admin routes require a token
         // minted through the admin login flow).
@@ -98,10 +120,38 @@ class RegisterController extends Controller
 
         return response()->json([
             'message' => 'User registered successfully.',
-            'user' => array_merge($user->toArray(), ['verification' => $user->verificationState()]),
+            'user' => array_merge($user->toArray(), [
+                'verification' => $user->verificationState(),
+                'premium'      => $user->premiumState(),
+            ]),
             'token' => $token,
             'invites_accepted' => $invitesAccepted,
         ], 201);
+    }
+
+    /**
+     * Zorg dat de gebruiker een Stripe-customer heeft (voor toekomstige
+     * facturatie). Best-effort: faalt nooit hard — een ontbrekende/onbereikbare
+     * Stripe-config mag de gratis registratie niet breken; de customer wordt dan
+     * later alsnog lui aangemaakt bij de eerste betaalde checkout.
+     */
+    protected function ensureStripeCustomer(User $user): void
+    {
+        if ($user->stripe_id || ! config('billing.stripe_secret')) {
+            return;
+        }
+
+        try {
+            $stripe = new \Stripe\StripeClient(config('billing.stripe_secret'));
+            $customer = $stripe->customers->create([
+                'email'    => $user->email,
+                'name'     => trim("{$user->first_name} {$user->last_name}"),
+                'metadata' => ['user_id' => $user->id, 'signup' => 'free'],
+            ]);
+            $user->forceFill(['stripe_id' => $customer->id])->save();
+        } catch (\Throwable $e) {
+            Log::warning('[register] kon Stripe-customer niet aanmaken: ' . $e->getMessage());
+        }
     }
 
     /**

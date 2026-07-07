@@ -134,9 +134,13 @@ class UserController extends Controller
             return response()->json(['message' => 'Unauthorized'], 401);
         }
 
-        // Verificatiestatus meesturen zodat de frontend de wall kan tonen.
+        // Verificatie- én premium-/proefstatus meesturen zodat de frontend de
+        // wall kan tonen en de premium-UI op slot kan zetten zonder losse call.
         return response()->json(
-            array_merge($user->toArray(), ['verification' => $user->verificationState()]),
+            array_merge($user->toArray(), [
+                'verification' => $user->verificationState(),
+                'premium'      => $user->premiumState(),
+            ]),
             200
         );
     }

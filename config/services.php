@@ -41,4 +41,12 @@ return [
         'todo_token' => env('DEPLOY_TODO_TOKEN'),
     ],
 
+    // Anthropic (Claude) — gebruikt door de SEO-CMS "Genereer met Claude"-knop.
+    // Zonder ANTHROPIC_API_KEY faalt de generate-endpoint netjes (422); de rest
+    // van het CMS werkt gewoon. SDK-alternatief: composer require anthropic-ai/sdk.
+    'anthropic' => [
+        'key'   => env('ANTHROPIC_API_KEY'),
+        'model' => env('ANTHROPIC_MODEL', 'claude-opus-4-8'),
+    ],
+
 ];

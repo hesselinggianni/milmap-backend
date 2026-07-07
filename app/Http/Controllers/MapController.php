@@ -2,6 +2,7 @@
 namespace App\Http\Controllers;
 
 use App\Models\Map;
+use App\Policies\MapPolicy;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Auth;
 
@@ -32,16 +33,25 @@ class MapController extends Controller
     }
 
     /**
-     * Single map (owner OR collaborator)
+     * Single map (owner OR collaborator OR mission collaborator)
+     * Returns the map plus the caller's effective role so the frontend
+     * can gate edit actions without a second request.
      */
     public function show($id)
     {
         $map = Map::findOrFail($id);
 
-        // Check if user has access (via policy)
         $this->authorize('view', $map);
 
-        return response()->json($map);
+        $user   = Auth::user();
+        $policy = new MapPolicy();
+        $role   = $policy->roleFor($user, $map); // 'owner' | 'editor' | 'viewer'
+
+        return response()->json(array_merge($map->toArray(), [
+            'my_role'  => $role,
+            'is_owner' => $role === 'owner',
+            'can_edit' => in_array($role, ['owner', 'editor'], true),
+        ]));
     }
 
     /**
@@ -49,6 +59,21 @@ class MapController extends Controller
      */
     public function store(Request $request)
     {
+        // Gratis (uitgeproefde) accounts mogen maximaal FREE_MAP_LIMIT kaarten
+        // opslaan. Tijdens de proefperiode of met een abonnement is dit onbeperkt.
+        $user = $request->user();
+        if ($user && ! ($user->is_admin ?? false) && ! $user->hasPremiumAccess()) {
+            $ownedMaps = Map::where('owner_id', $user->id)->count();
+            if ($ownedMaps >= \App\Models\User::FREE_MAP_LIMIT) {
+                return response()->json([
+                    'message' => 'Je gratis account kan maximaal ' . \App\Models\User::FREE_MAP_LIMIT
+                        . ' kaarten opslaan. Neem een abonnement voor onbeperkte kaarten.',
+                    'code'    => 'subscription_required',
+                    'feature' => 'unlimited_maps',
+                ], 402);
+            }
+        }
+
         $map = Map::create([
             'title' => $request->title,
             'settings' => $request->settings ?? [

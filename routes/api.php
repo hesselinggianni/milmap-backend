@@ -58,11 +58,14 @@ use App\Http\Controllers\MeCampaignMailController;
 use App\Http\Controllers\MediaController;
 use App\Http\Controllers\StatusPageController;
 use App\Http\Controllers\TodoController;
+use App\Http\Controllers\SeoController;
+use App\Http\Controllers\AdminSeoController;
 use App\Http\Controllers\MailCampaignController;
 use App\Http\Controllers\MailPreferenceController;
 use App\Http\Controllers\MailUnsubscribeController;
 use App\Http\Controllers\MailTrackingController;
 use App\Http\Controllers\ClothingOrderController;
+use App\Http\Middleware\RequiresPremium;
 
 /* Auth group */
 
@@ -140,6 +143,11 @@ Route::prefix('v1')->middleware(['api'])->group(function () {
     Route::post('/leads', [LeadController::class, 'store'])
         ->middleware('throttle:6,1');
 
+    // SEO-overrides per pagina×taal — publiek uitgelezen door milmap.nl (Nuxt)
+    // om de page-meta te overschrijven. Beheer onder /admin/seo.
+    Route::get('/seo', [SeoController::class, 'index'])
+        ->middleware('throttle:120,1');
+
     // ── Campagne-mail: publieke afmeld- + tracking-routes ───────────────
     // Bewust hier (api.php) i.p.v. web.php: de SPA-catch-all (/{any}) in web.php
     // zou anders elke GET opslokken. Token komt uit mail_sends.token.
@@ -152,6 +160,31 @@ Route::prefix('v1')->middleware(['api'])->group(function () {
     Route::post  ('/clothing/request-edit',         [ClothingOrderController::class, 'requestEdit'])->middleware('throttle:6,1');
     Route::get   ('/clothing/orders/by-token/{token}', [ClothingOrderController::class, 'showByToken']);
     Route::put   ('/clothing/orders/by-token/{token}', [ClothingOrderController::class, 'updateByToken'])->middleware('throttle:30,1');
+
+    // ── Marcandi bestel-tool (marcandi.milmap.nl) ──────────────────────
+    // Publiek: shops bekijken + bestellen. Beheer/overzicht/export achter
+    // milmap-admin-auth (in de controller afgedwongen via Auth::guard('sanctum')).
+    Route::get ('/marcandi/shops',                 [\App\Http\Controllers\MarcandiController::class, 'shops']);
+    Route::get ('/marcandi/shops/{slug}',          [\App\Http\Controllers\MarcandiController::class, 'show']);
+    Route::post('/marcandi/shops/{slug}/orders',   [\App\Http\Controllers\MarcandiController::class, 'storeOrder'])->middleware('throttle:30,1');
+    // Bijzonderheden (HR) — aparte module op oc.milmap.nl
+    Route::post  ('/oc/hr-requests',            [\App\Http\Controllers\OcHrController::class, 'store'])->middleware('throttle:20,1');
+    Route::get   ('/oc/admin/hr-requests',      [\App\Http\Controllers\OcHrController::class, 'adminIndex']);
+    Route::delete('/oc/admin/hr-requests/{id}', [\App\Http\Controllers\OcHrController::class, 'adminDestroy']);
+    // Klant: eigen bestellingen via e-mail-magic-link
+    Route::post('/marcandi/request-access',            [\App\Http\Controllers\MarcandiController::class, 'requestAccess'])->middleware('throttle:6,1');
+    Route::get ('/marcandi/my/{token}',                [\App\Http\Controllers\MarcandiController::class, 'myOrders']);
+    Route::get ('/marcandi/my/{token}/orders/{id}',    [\App\Http\Controllers\MarcandiController::class, 'myOrder']);
+    Route::put ('/marcandi/my/{token}/orders/{id}',    [\App\Http\Controllers\MarcandiController::class, 'updateMyOrder'])->middleware('throttle:30,1');
+    // Admin (token vereist; controller checkt is_admin):
+    Route::get   ('/marcandi/admin/shops',              [\App\Http\Controllers\MarcandiController::class, 'adminShops']);
+    Route::post  ('/marcandi/admin/shops',              [\App\Http\Controllers\MarcandiController::class, 'storeShop']);
+    Route::put   ('/marcandi/admin/shops/{id}',         [\App\Http\Controllers\MarcandiController::class, 'updateShop']);
+    Route::delete('/marcandi/admin/shops/{id}',         [\App\Http\Controllers\MarcandiController::class, 'destroyShop']);
+    Route::get   ('/marcandi/admin/shops/{slug}/orders',[\App\Http\Controllers\MarcandiController::class, 'adminOrders']);
+    Route::post  ('/marcandi/admin/shops/{id}/products',[\App\Http\Controllers\MarcandiController::class, 'storeProduct']);
+    Route::put   ('/marcandi/admin/products/{id}',      [\App\Http\Controllers\MarcandiController::class, 'updateProduct']);
+    Route::delete('/marcandi/admin/products/{id}',      [\App\Http\Controllers\MarcandiController::class, 'destroyProduct']);
 
     Route::get ('/m/u/{token}', [MailUnsubscribeController::class, 'show'])->middleware('throttle:30,1');
     Route::post('/m/u/{token}', [MailUnsubscribeController::class, 'update'])->middleware('throttle:30,1');
@@ -205,14 +238,20 @@ Route::prefix('v1')->middleware(['api'])->group(function () {
         Route::get('/activity/timeline', [InvitationController::class, 'timeline']);
 
         // ── Teams (curated rosters → invite a whole group at once) ─────
-        Route::get('/teams', [TeamController::class, 'index']);
-        Route::post('/teams', [TeamController::class, 'store']);
-        Route::post('/teams/{team}/members', [TeamController::class, 'addMember']);
-        Route::delete('/teams/{team}/members/{member}', [TeamController::class, 'removeMember']);
-        Route::post('/teams/{team}/invite', [TeamController::class, 'invite']);
-        Route::get('/teams/{team}', [TeamController::class, 'show']);
-        Route::put('/teams/{team}', [TeamController::class, 'update']);
-        Route::delete('/teams/{team}', [TeamController::class, 'destroy']);
+        // Team aanmaken/beheren + gedeelde teamkaarten = premiumfunctie. Lezen
+        // (GET) blijft vrij zodat een uitgenodigd lid het team nog ziet; de
+        // schrijf-endpoints vragen proef of abonnement (RequiresPremium laat GET
+        // door en blokkeert mutaties met 402).
+        Route::middleware(RequiresPremium::class . ':teams')->group(function () {
+            Route::get('/teams', [TeamController::class, 'index']);
+            Route::post('/teams', [TeamController::class, 'store']);
+            Route::post('/teams/{team}/members', [TeamController::class, 'addMember']);
+            Route::delete('/teams/{team}/members/{member}', [TeamController::class, 'removeMember']);
+            Route::post('/teams/{team}/invite', [TeamController::class, 'invite']);
+            Route::get('/teams/{team}', [TeamController::class, 'show']);
+            Route::put('/teams/{team}', [TeamController::class, 'update']);
+            Route::delete('/teams/{team}', [TeamController::class, 'destroy']);
+        });
 
 
 
@@ -264,8 +303,9 @@ Route::prefix('v1')->middleware(['api'])->group(function () {
         Route::delete('/maps/{mapId}/locations/{locationId}', [LocationController::class, 'destroy']);
         Route::delete('/maps/{mapId}/locations', [LocationController::class, 'clear']);
 
-        // Live user location sharing routes
-        Route::post('/maps/{mapId}/user-locations/update', [UserLocationController::class, 'update']);
+        // Live user location sharing routes — live locatie delen = premiumfunctie.
+        Route::post('/maps/{mapId}/user-locations/update', [UserLocationController::class, 'update'])
+            ->middleware(RequiresPremium::class . ':live_location');
         Route::get('/maps/{mapId}/user-locations', [UserLocationController::class, 'getLocations']);
         Route::delete('/maps/{mapId}/user-locations/stop-sharing', [UserLocationController::class, 'stopSharing']);
 
@@ -302,7 +342,10 @@ Route::prefix('v1')->middleware(['api'])->group(function () {
         Route::delete('/missions/invitations/{id}', [MissionCollaboratorController::class, 'decline']);
 
         Route::get('/missions', [MissionController::class, 'index']);
-        Route::post('/missions', [MissionController::class, 'store']);
+        // Missie aanmaken = premiumfunctie (proef of abonnement). Bestaande
+        // missies bekijken/beheren blijft mogelijk voor uitgenodigde deelnemers.
+        Route::post('/missions', [MissionController::class, 'store'])
+            ->middleware(RequiresPremium::class . ':missions');
         Route::get('/missions/{id}', [MissionController::class, 'show']);
         Route::put('/missions/{id}', [MissionController::class, 'update']);
         Route::post('/missions/{id}/dispatch-warning-order', [MissionController::class, 'dispatchWarningOrder']);
@@ -385,7 +428,9 @@ Route::prefix('v1')->middleware(['api'])->group(function () {
 
         // Conversations
         Route::get('/chat/conversations', [ConversationController::class, 'index']);
-        Route::post('/chat/conversations', [ConversationController::class, 'store']);
+        // Een nieuwe chat starten = premiumfunctie (proef of abonnement).
+        Route::post('/chat/conversations', [ConversationController::class, 'store'])
+            ->middleware(RequiresPremium::class . ':chat');
         Route::get('/chat/conversations/{id}', [ConversationController::class, 'show']);
         Route::post('/chat/conversations/{id}/read', [ConversationController::class, 'markRead']);
         // "Delete" a chat from the user's own list (per-participant archive).
@@ -407,7 +452,9 @@ Route::prefix('v1')->middleware(['api'])->group(function () {
 
         // Messages
         Route::get('/chat/conversations/{id}/messages', [MessageController::class, 'index']);
-        Route::post('/chat/conversations/{id}/messages', [MessageController::class, 'store']);
+        // Bericht versturen = premiumfunctie. Lezen blijft mogelijk.
+        Route::post('/chat/conversations/{id}/messages', [MessageController::class, 'store'])
+            ->middleware(RequiresPremium::class . ':chat');
         // "Verzenden ongedaan maken" — sender unsends (deletes) their own message.
         Route::delete('/chat/conversations/{id}/messages/{messageId}', [MessageController::class, 'destroy']);
 
@@ -446,7 +493,8 @@ Route::prefix('v1')->middleware(['api'])->group(function () {
         // MEDEVAC 9-liners — persisted overview + edit + audit log + archive.
         // Scope/permissions enforced in the controller (participant-based).
         Route::get('/nine-lines', [NineLineController::class, 'index']);
-        Route::post('/nine-lines', [NineLineController::class, 'store']);
+        Route::post('/nine-lines', [NineLineController::class, 'store'])
+            ->middleware(RequiresPremium::class . ':nine_liner');
         Route::get('/nine-lines/{id}', [NineLineController::class, 'show']);
         Route::put('/nine-lines/{id}', [NineLineController::class, 'update']);
         Route::post('/nine-lines/{id}/archive', [NineLineController::class, 'archive']);
@@ -458,11 +506,11 @@ Route::prefix('v1')->middleware(['api'])->group(function () {
 
         // Chat invite link (for e-mails without an account yet)
         Route::post('/chat/invite', [ChatInviteController::class, 'store'])
-            ->middleware('throttle:10,1');
+            ->middleware(['throttle:10,1', RequiresPremium::class . ':chat']);
 
         // Chat connection requests (existing accounts must accept first)
         Route::post('/chat/requests', [ChatRequestController::class, 'store'])
-            ->middleware('throttle:20,1');
+            ->middleware(['throttle:20,1', RequiresPremium::class . ':chat']);
         Route::get('/chat/requests/incoming', [ChatRequestController::class, 'incoming']);
         // Outgoing pending connections (requests + e-mail invites) → "pending" chats
         Route::get('/chat/pending', [ChatRequestController::class, 'pending']);
@@ -488,6 +536,12 @@ Route::prefix('v1')->middleware(['api'])->group(function () {
         // Admin routes (protected by AdminAuth middleware)
         Route::middleware('admin.auth')->group(function () {
             Route::get('/admin/stats', [AdminController::class, 'getDashboardStats']);
+
+            // ── SEO-CMS (per milmap.nl-pagina × taal) ───────────────────
+            Route::get ('/admin/seo',              [AdminSeoController::class, 'index']);
+            Route::post('/admin/seo',              [AdminSeoController::class, 'upsert']);
+            Route::post('/admin/seo/generate',     [AdminSeoController::class, 'generate']);
+            Route::post('/admin/seo/upload-image', [AdminSeoController::class, 'uploadImage']);
 
             // In-app notificatie-feed voor de admin-app (nieuwe mail / support /
             // feature requests). Onder de admin-prefix zodat de frontend-
@@ -564,6 +618,9 @@ Route::prefix('v1')->middleware(['api'])->group(function () {
             Route::get('/admin/users/{userId}', [AdminController::class, 'getUser']);
             Route::delete('/admin/users/{userId}', [AdminController::class, 'deleteUser']);
             Route::post('/admin/users/{userId}/reset-password', [AdminController::class, 'resetUserPassword']);
+            // Gratis (premium-)toegang toekennen/verlengen + handmatig e-mail verifiëren.
+            Route::post('/admin/users/{userId}/grant-access', [AdminController::class, 'grantAccess']);
+            Route::post('/admin/users/{userId}/verify-email', [AdminController::class, 'verifyUserEmail']);
 
             // ── Admin mail client (IMAP/SMTP inboxes) ───────────────────
             // Inbox configuration (CRUD). Passwords are write-only.

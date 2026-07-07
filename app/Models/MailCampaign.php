@@ -12,14 +12,21 @@ class MailCampaign extends Model
 
     protected $fillable = [
         'name', 'description', 'category_id', 'template_key', 'status',
+        'auto_enroll_on_signup',
         'default_locale', 'created_by', 'recipients_built_at', 'scheduled_at', 'sent_at',
     ];
 
     protected $casts = [
-        'recipients_built_at' => 'datetime',
-        'scheduled_at'        => 'datetime',
-        'sent_at'             => 'datetime',
+        'auto_enroll_on_signup' => 'boolean',
+        'recipients_built_at'   => 'datetime',
+        'scheduled_at'          => 'datetime',
+        'sent_at'               => 'datetime',
     ];
+
+    public function followups(): HasMany
+    {
+        return $this->hasMany(MailFollowup::class, 'campaign_id');
+    }
 
     public function category(): BelongsTo
     {

@@ -11,7 +11,7 @@ class SendRoutePlanningMail extends Command
 {
     protected $signature = 'marketing:route-planning {email : Het e-mailadres van de ontvanger}';
 
-    protected $description = 'Verstuur de MilMap route-planning marketing-update naar een e-mailadres';
+    protected $description = 'Verstuur de Milmap route-planning marketing-update naar een e-mailadres';
 
     public function handle(): int
     {

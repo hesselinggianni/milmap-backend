@@ -1,18 +1,18 @@
 @extends('emails.layout')
 
-@section('title', 'Become a MilMap member')
+@section('title', 'Become a Milmap member')
 
 @section('body')
   <p style="margin:0 0 6px;font-size:12px;font-weight:600;letter-spacing:0.08em;text-transform:uppercase;color:#2b7fff;">
     Ready for the next step?
   </p>
   <h1 style="margin:0 0 16px;font-size:22px;line-height:1.25;font-weight:700;color:#ffffff;">
-    {{ $name ? $name . ', become' : 'Become' }} a MilMap member today
+    {{ $name ? $name . ', become' : 'Become' }} a Milmap member today
   </h1>
 
   <p style="margin:0 0 16px;">
     Plan routes, navigate offline in the field and collaborate with your team — all in
-    one place. A MilMap membership unlocks unlimited maps, PDF route books, terrain
+    one place. A Milmap membership unlocks unlimited maps, PDF route books, terrain
     analysis and encrypted team comms.
   </p>
 

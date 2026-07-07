@@ -44,6 +44,7 @@ class MailCampaignController extends Controller
             'category_id'    => ['nullable', 'integer', 'exists:mail_categories,id'],
             'template_key'   => ['required', 'string', 'max:64'],
             'default_locale' => ['nullable', 'string', 'max:5'],
+            'auto_enroll_on_signup' => ['sometimes', 'boolean'],
         ]);
 
         if (! MailTemplateRegistry::exists($data['template_key'])) {
@@ -56,6 +57,7 @@ class MailCampaignController extends Controller
             'category_id'    => $data['category_id'] ?? null,
             'template_key'   => $data['template_key'],
             'default_locale' => $data['default_locale'] ?? 'nl',
+            'auto_enroll_on_signup' => (bool) ($data['auto_enroll_on_signup'] ?? false),
             'status'         => 'draft',
             'created_by'     => $request->user()?->id,
         ]);
@@ -73,9 +75,6 @@ class MailCampaignController extends Controller
     public function update(Request $request, int $id)
     {
         $campaign = MailCampaign::findOrFail($id);
-        if (! in_array($campaign->status, ['draft', 'partial', 'failed'], true)) {
-            return response()->json(['message' => 'Een verzonden campagne kan niet meer gewijzigd worden.'], 422);
-        }
 
         $data = $request->validate([
             'name'           => ['sometimes', 'string', 'max:160'],
@@ -83,7 +82,16 @@ class MailCampaignController extends Controller
             'category_id'    => ['nullable', 'integer', 'exists:mail_categories,id'],
             'template_key'   => ['sometimes', 'string', 'max:64'],
             'default_locale' => ['nullable', 'string', 'max:5'],
+            'auto_enroll_on_signup' => ['sometimes', 'boolean'],
         ]);
+
+        // De auto-enroll-toggle mag ALTIJD gewijzigd worden (ook op een lopende
+        // funnel-campagne). Overige (inhoudelijke) velden alleen zolang de
+        // campagne nog niet als losse blast is verzonden.
+        $enrollOnly = array_keys($data) === ['auto_enroll_on_signup'];
+        if (! $enrollOnly && ! in_array($campaign->status, ['draft', 'partial', 'failed'], true)) {
+            return response()->json(['message' => 'Een verzonden campagne kan niet meer gewijzigd worden.'], 422);
+        }
 
         if (isset($data['template_key']) && ! MailTemplateRegistry::exists($data['template_key'])) {
             return response()->json(['message' => 'Onbekende mailtemplate.'], 422);
@@ -634,6 +642,7 @@ class MailCampaignController extends Controller
             'template_locales' => array_values($tpl['locales'] ?? ['nl']),
             'default_locale'  => $c->default_locale,
             'status'          => $c->status,
+            'auto_enroll_on_signup' => (bool) $c->auto_enroll_on_signup,
             'recipients_count' => $c->recipients_count ?? 0,
             'sends_count'     => $c->sends_count ?? 0,
             'sent_at'         => $c->sent_at,

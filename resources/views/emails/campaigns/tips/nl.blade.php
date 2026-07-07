@@ -26,7 +26,7 @@
       <td style="background-color:#10b981;border-radius:12px;">
         <a href="{{ ($appUrl ?? 'https://app.milmap.nl') }}" target="_blank"
            style="display:inline-block;padding:13px 30px;font-size:15px;font-weight:600;color:#ffffff;text-decoration:none;">
-          Open MilMap
+          Open Milmap
         </a>
       </td>
     </tr>
