@@ -577,6 +577,13 @@ Route::prefix('v1')->middleware(['api'])->group(function () {
             Route::get ('/admin/mail/templates',                 [MailCampaignController::class, 'templates']);
             Route::get ('/admin/mail/templates/{key}/preview',   [MailCampaignController::class, 'previewTemplate']);
             Route::post('/admin/mail/templates/{key}/test',      [MailCampaignController::class, 'testTemplate']);
+            // Zelf opgemaakte templates (blok-builder) — zelfde fundering/registry.
+            Route::post  ('/admin/mail/custom-templates/upload-image', [MailCampaignController::class, 'uploadImage']);
+            Route::post  ('/admin/mail/custom-templates/preview',      [MailCampaignController::class, 'customPreview']);
+            Route::get   ('/admin/mail/custom-templates/{id}',         [MailCampaignController::class, 'customShow']);
+            Route::post  ('/admin/mail/custom-templates',              [MailCampaignController::class, 'customStore']);
+            Route::put   ('/admin/mail/custom-templates/{id}',         [MailCampaignController::class, 'customUpdate']);
+            Route::delete('/admin/mail/custom-templates/{id}',         [MailCampaignController::class, 'customDestroy']);
             // Unified contact-zoek (gebruikers + leads) voor de ontvanger-picker.
             Route::get ('/admin/mail/contacts',                  [MailCampaignController::class, 'contacts']);
             // Categorieën (de "soort" mail waar contacten zich per stuk voor afmelden).

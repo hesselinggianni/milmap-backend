@@ -59,7 +59,10 @@ class SendCampaignMessage implements ShouldQueue
         $appUrl  = config('app.app_url', 'https://app.milmap.nl');
         $unsub   = $base . '/api/v1/m/u/' . $send->token;
         $pixel   = $base . '/api/v1/m/o/' . $send->token . '.gif';
-        $data    = ['name' => $send->name, 'appUrl' => $appUrl, 'siteUrl' => 'https://milmap.nl'];
+        $data    = array_merge(
+            ['name' => $send->name, 'appUrl' => $appUrl, 'siteUrl' => 'https://milmap.nl'],
+            $resolved['data'] ?? [] // custom-template blocks (leeg voor code-templates)
+        );
         $subject = $send->subject ?: $resolved['subject'];
         $mail    = new CampaignMail($resolved['view'], $subject, $data, $unsub, $pixel);
 

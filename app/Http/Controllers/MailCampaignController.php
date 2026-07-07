@@ -8,6 +8,7 @@ use App\Models\Lead;
 use App\Models\MailCampaign;
 use App\Models\MailCampaignRecipient;
 use App\Models\MailCategory;
+use App\Models\MailCustomTemplate;
 use App\Models\MailFollowup;
 use App\Models\MailSend;
 use App\Models\User;
@@ -15,6 +16,7 @@ use App\Services\MailTemplateRegistry;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Mail;
+use Illuminate\Support\Facades\Storage;
 use Illuminate\Support\Str;
 
 /**
@@ -126,6 +128,8 @@ class MailCampaignController extends Controller
             'category'    => $t['category'] ?? null,
             'locales'     => array_values($t['locales'] ?? ['nl']),
             'subjects'    => $t['subjects'] ?? [],
+            'custom'      => (bool) ($t['custom'] ?? false),
+            'id'          => $t['id'] ?? null,
         ])->values();
 
         return response()->json(['data' => $items]);
@@ -141,7 +145,10 @@ class MailCampaignController extends Controller
         $mail = new CampaignMail(
             $resolved['view'],
             $resolved['subject'],
-            ['name' => 'Voorbeeld', 'appUrl' => config('app.app_url', 'https://app.milmap.nl'), 'siteUrl' => 'https://milmap.nl'],
+            array_merge(
+                ['name' => 'Voorbeeld', 'appUrl' => config('app.app_url', 'https://app.milmap.nl'), 'siteUrl' => 'https://milmap.nl'],
+                $resolved['data'] ?? [] // custom-template blocks (leeg voor code-templates)
+            ),
             '#', // dummy afmeldlink in preview
             null, // geen tracking-pixel in preview
         );
@@ -168,7 +175,10 @@ class MailCampaignController extends Controller
         $mail = new CampaignMail(
             $resolved['view'],
             '[TEST] ' . $resolved['subject'],
-            ['name' => 'Test', 'appUrl' => config('app.app_url', 'https://app.milmap.nl'), 'siteUrl' => 'https://milmap.nl'],
+            array_merge(
+                ['name' => 'Test', 'appUrl' => config('app.app_url', 'https://app.milmap.nl'), 'siteUrl' => 'https://milmap.nl'],
+                $resolved['data'] ?? []
+            ),
             '#',
             null,
         );
@@ -176,6 +186,211 @@ class MailCampaignController extends Controller
         Mail::to($data['email'])->send($mail);
 
         return response()->json(['ok' => true, 'message' => 'Testmail verstuurd naar ' . $data['email']]);
+    }
+
+    // ── Zelf opgemaakte templates (blok-builder) ─────────────────────────
+    // Deze lopen door DEZELFDE fundering: MailTemplateRegistry mergt ze in en ze
+    // renderen via de gedeelde emails.custom-view (die emails.layout gebruikt),
+    // dus ze werken meteen in campagnes, follow-ups, preview en verzenden.
+
+    /** Ruwe custom-template voor de editor (per default-taal platgeslagen). */
+    public function customShow(int $id)
+    {
+        return response()->json(['data' => $this->customPayload(MailCustomTemplate::findOrFail($id))]);
+    }
+
+    public function customStore(Request $request)
+    {
+        $data = $request->validate([
+            'label'          => ['required', 'string', 'max:160'],
+            'description'    => ['nullable', 'string', 'max:500'],
+            'locale'         => ['nullable', 'string', 'max:5'],
+            'subject'        => ['required', 'string', 'max:200'],
+            'blocks'         => ['required', 'array', 'min:1'],
+            'blocks.*.type'  => ['required', 'string'],
+        ]);
+
+        $locale = in_array($data['locale'] ?? 'nl', ['nl', 'en', 'de', 'fr', 'es'], true) ? $data['locale'] : 'nl';
+
+        // Uniek registry-sleutel afleiden uit het label (botst nooit met een
+        // code-template of andere custom-template).
+        $key = Str::slug($data['label'], '_') ?: 'template';
+        $base = $key; $n = 2;
+        while (MailTemplateRegistry::exists($key)) { $key = $base . '_' . $n; $n++; }
+
+        $tpl = MailCustomTemplate::create([
+            'label'       => $data['label'],
+            'key'         => $key,
+            'description' => $data['description'] ?? null,
+            'locales'     => [$locale],
+            'subjects'    => [$locale => $data['subject']],
+            'blocks'      => [$locale => $this->sanitizeBlocks($request->input('blocks', []))],
+            'created_by'  => $request->user()?->id,
+        ]);
+        MailTemplateRegistry::flush();
+
+        return response()->json(['ok' => true, 'data' => $this->customPayload($tpl)], 201);
+    }
+
+    public function customUpdate(Request $request, int $id)
+    {
+        $tpl = MailCustomTemplate::findOrFail($id);
+
+        $data = $request->validate([
+            'label'         => ['required', 'string', 'max:160'],
+            'description'   => ['nullable', 'string', 'max:500'],
+            'locale'        => ['nullable', 'string', 'max:5'],
+            'subject'       => ['required', 'string', 'max:200'],
+            'blocks'        => ['required', 'array', 'min:1'],
+            'blocks.*.type' => ['required', 'string'],
+        ]);
+
+        $locale = in_array($data['locale'] ?? 'nl', ['nl', 'en', 'de', 'fr', 'es'], true) ? $data['locale'] : 'nl';
+
+        // De sleutel blijft ongewijzigd (campagnes/follow-ups verwijzen ernaar).
+        $tpl->update([
+            'label'       => $data['label'],
+            'description' => $data['description'] ?? null,
+            'locales'     => [$locale],
+            'subjects'    => [$locale => $data['subject']],
+            'blocks'      => [$locale => $this->sanitizeBlocks($request->input('blocks', []))],
+        ]);
+        MailTemplateRegistry::flush();
+
+        return response()->json(['ok' => true, 'data' => $this->customPayload($tpl->fresh())]);
+    }
+
+    public function customDestroy(int $id)
+    {
+        $tpl = MailCustomTemplate::findOrFail($id);
+
+        $inUse = MailCampaign::where('template_key', $tpl->key)->exists()
+            || MailFollowup::where('template_key', $tpl->key)->exists();
+        if ($inUse) {
+            return response()->json([
+                'message' => 'Deze template is in gebruik door een campagne of follow-up en kan niet verwijderd worden.',
+            ], 422);
+        }
+
+        $tpl->delete();
+        MailTemplateRegistry::flush();
+
+        return response()->json(['ok' => true]);
+    }
+
+    /** Afbeelding-upload voor de builder → gehoste absolute URL (nodig voor e-mail). */
+    public function uploadImage(Request $request)
+    {
+        $request->validate([
+            'image' => ['required', 'image', 'mimes:jpeg,jpg,png,webp,gif', 'max:5120'],
+        ]);
+
+        $path = $request->file('image')->store('mail', 'public');
+
+        return response()->json([
+            'ok'   => true,
+            'url'  => Storage::disk('public')->url($path),
+            'path' => $path,
+        ]);
+    }
+
+    /** Live preview van (nog niet opgeslagen) blocks. */
+    public function customPreview(Request $request)
+    {
+        $request->validate([
+            'blocks'  => ['required', 'array'],
+            'subject' => ['nullable', 'string', 'max:200'],
+        ]);
+
+        $mail = new CampaignMail(
+            'emails.custom',
+            $request->input('subject', 'Voorbeeld'),
+            [
+                'name'   => 'Voorbeeld',
+                'appUrl' => config('app.app_url', 'https://app.milmap.nl'),
+                'siteUrl' => 'https://milmap.nl',
+                'blocks' => $this->sanitizeBlocks($request->input('blocks', [])),
+                'title'  => $request->input('subject', 'MilMap'),
+            ],
+            '#',
+            null,
+        );
+
+        return response()->json(['html' => $mail->render()]);
+    }
+
+    /** Editor-vorm van een custom template (per default-taal platgeslagen). */
+    private function customPayload(MailCustomTemplate $t): array
+    {
+        $loc = $t->locales[0] ?? 'nl';
+
+        return [
+            'id'          => $t->id,
+            'key'         => $t->key,
+            'label'       => $t->label,
+            'description' => $t->description,
+            'locale'      => $loc,
+            'subject'     => $t->subjects[$loc] ?? '',
+            'blocks'      => $t->blocks[$loc] ?? [],
+        ];
+    }
+
+    /** Whitelist + normaliseer de blokken (voorkomt onveilige URL's/HTML). */
+    private function sanitizeBlocks(array $blocks): array
+    {
+        $allowed = ['eyebrow', 'heading', 'paragraph', 'image', 'button', 'list', 'divider', 'spacer'];
+        $safeUrl = fn ($u) => preg_match('#^https?://#i', trim((string) $u)) ? trim((string) $u) : '';
+        $out = [];
+
+        foreach ($blocks as $b) {
+            if (! is_array($b)) continue;
+            $type = $b['type'] ?? '';
+            if (! in_array($type, $allowed, true)) continue;
+
+            switch ($type) {
+                case 'eyebrow':
+                    $out[] = ['type' => 'eyebrow', 'text' => (string) ($b['text'] ?? ''), 'color' => $this->safeColor($b['color'] ?? null, '#2b7fff')];
+                    break;
+                case 'heading':
+                    $out[] = ['type' => 'heading', 'text' => (string) ($b['text'] ?? '')];
+                    break;
+                case 'paragraph':
+                    $out[] = ['type' => 'paragraph', 'text' => (string) ($b['text'] ?? '')];
+                    break;
+                case 'image':
+                    $out[] = ['type' => 'image', 'url' => $safeUrl($b['url'] ?? ''), 'alt' => (string) ($b['alt'] ?? ''), 'href' => $safeUrl($b['href'] ?? '')];
+                    break;
+                case 'button':
+                    $out[] = [
+                        'type'  => 'button',
+                        'label' => (string) ($b['label'] ?? 'Meer info'),
+                        'url'   => $safeUrl($b['url'] ?? '') ?: '#',
+                        'color' => $this->safeColor($b['color'] ?? null, '#2b7fff'),
+                        'align' => in_array(($b['align'] ?? 'center'), ['left', 'center', 'right'], true) ? $b['align'] : 'center',
+                    ];
+                    break;
+                case 'list':
+                    $items = is_array($b['items'] ?? null) ? $b['items'] : [];
+                    $items = array_values(array_filter(array_map(fn ($i) => (string) $i, $items), fn ($i) => $i !== ''));
+                    $out[] = ['type' => 'list', 'items' => $items];
+                    break;
+                case 'divider':
+                    $out[] = ['type' => 'divider'];
+                    break;
+                case 'spacer':
+                    $out[] = ['type' => 'spacer', 'size' => max(4, min(80, (int) ($b['size'] ?? 16)))];
+                    break;
+            }
+        }
+
+        return $out;
+    }
+
+    private function safeColor($c, string $default): string
+    {
+        $c = (string) $c;
+
+        return preg_match('/^#[0-9a-fA-F]{3,8}$/', $c) ? $c : $default;
     }
 
     // ── Categorieën ──────────────────────────────────────────────────────
