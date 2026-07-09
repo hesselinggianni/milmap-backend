@@ -113,6 +113,7 @@ class MissionTaskController extends Controller
         $task = MissionTask::create([
             'mission_id'  => $mission->id,
             'parent_id'   => $parentId,
+            'phase_key'   => $data['phase_key'] ?? null,
             'title'       => $data['title'],
             'description' => $data['description'] ?? null,
             'due_at'      => $data['due_at'] ?? null,
@@ -139,7 +140,7 @@ class MissionTaskController extends Controller
 
         // Alleen de echte kolommen via fill — assignment regelen we apart.
         $task->fill(array_intersect_key($data, array_flip([
-            'title', 'description', 'due_at', 'status', 'priority',
+            'title', 'description', 'due_at', 'status', 'priority', 'phase_key',
         ])))->save();
 
         $this->applyAssignment($task, $request, $data);
@@ -382,6 +383,7 @@ class MissionTaskController extends Controller
             'assignee_user_id'    => 'nullable|integer|exists:users,id', // legacy single
             'assigned_team_id'    => 'nullable|uuid|exists:teams,id',
             'parent_id'           => 'nullable|uuid|exists:mission_tasks,id',
+            'phase_key'           => 'nullable|string|max:96',
             'due_at'              => 'nullable|date',
             'status'              => ($isUpdate ? 'sometimes' : 'nullable') . '|in:todo,doing,done',
             'priority'            => ($isUpdate ? 'sometimes' : 'nullable') . '|in:urgent,high,normal,low',
@@ -443,6 +445,7 @@ class MissionTaskController extends Controller
             'id'           => $t->id,
             'mission_id'   => $t->mission_id,
             'parent_id'    => $t->parent_id,
+            'phase_key'    => $t->phase_key,
             'title'        => $t->title,
             'description'  => $t->description,
             'status'       => $t->status,

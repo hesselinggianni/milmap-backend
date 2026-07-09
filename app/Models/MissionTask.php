@@ -14,6 +14,7 @@ class MissionTask extends Model
     protected $fillable = [
         'mission_id',
         'parent_id',
+        'phase_key',
         'assignee_user_id',
         'assigned_team_id',
         'title',

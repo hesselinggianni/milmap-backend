@@ -37,6 +37,7 @@ use App\Http\Controllers\MessageController;
 use App\Http\Controllers\MissionController;
 use App\Http\Controllers\MissionTaskController;
 use App\Http\Controllers\MissionTaskTemplateController;
+use App\Http\Controllers\OgroupTemplateController;
 use App\Http\Controllers\MissionCollaboratorController;
 use App\Http\Controllers\ClientErrorController;
 use App\Http\Controllers\InvitationController;
@@ -390,6 +391,13 @@ Route::prefix('v1')->middleware(['api'])->group(function () {
         Route::get   ('/task-templates/{id}',    [MissionTaskTemplateController::class, 'show']);
         Route::put   ('/task-templates/{id}',    [MissionTaskTemplateController::class, 'update']);
         Route::delete('/task-templates/{id}',    [MissionTaskTemplateController::class, 'destroy']);
+
+        // ── O-group templates (fase-builder; per-account, optioneel gedeeld) ──
+        Route::get   ('/ogroup-templates',       [OgroupTemplateController::class, 'index']);
+        Route::post  ('/ogroup-templates',       [OgroupTemplateController::class, 'store']);
+        Route::get   ('/ogroup-templates/{id}',  [OgroupTemplateController::class, 'show']);
+        Route::put   ('/ogroup-templates/{id}',  [OgroupTemplateController::class, 'update']);
+        Route::delete('/ogroup-templates/{id}',  [OgroupTemplateController::class, 'destroy']);
 
         // Mission collaborators (invite with roles, manage rights)
         Route::get('/missions/{missionId}/collaborators', [MissionCollaboratorController::class, 'index']);
