@@ -158,6 +158,14 @@ class MailboxService
                 $items[] = $this->summarise($message);
             }
 
+            // De IMAP-server levert de FETCH-antwoorden altijd OPLOPEND (op UID,
+            // dus oudste eerst) terug — ongeacht de gevraagde fetch-order. Daardoor
+            // stond de nieuwste mail onderaan de pagina. setFetchOrder('desc')
+            // selecteert wél de juiste pagina (de nieuwste), maar de volgorde
+            // binnen de pagina moeten we hier zelf herstellen: UID aflopend =
+            // nieuwste bovenaan.
+            usort($items, static fn (array $a, array $b): int => ($b['uid'] ?? 0) <=> ($a['uid'] ?? 0));
+
             return [
                 'messages' => $items,
                 'page'     => $page,
@@ -459,7 +467,19 @@ class MailboxService
             return $this->parseAddressStrings($attribute);
         }
 
-        $items = is_iterable($attribute) ? $attribute : [$attribute];
+        // webklex's Attribute (bv. $message->getFrom()) implementeert ALLEEN
+        // ArrayAccess, niet Traversable — dus is_iterable() geeft false en we
+        // zouden de héle Attribute als één "adres" behandelen. extractAddress()
+        // pakt dan de getName() van de Attribute op (= de headernaam "from"),
+        // waardoor de afzender letterlijk als "from" in de lijst verscheen. Pak
+        // daarom eerst de onderliggende Address-waarden uit de Attribute.
+        if ($attribute instanceof \Webklex\PHPIMAP\Attribute) {
+            $items = $attribute->all();
+        } elseif (is_iterable($attribute)) {
+            $items = $attribute;
+        } else {
+            $items = [$attribute];
+        }
 
         $out = [];
         foreach ($items as $addr) {
