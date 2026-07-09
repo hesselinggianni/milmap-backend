@@ -21,6 +21,7 @@ use App\Http\Controllers\FeatureRequestController;
 use App\Http\Controllers\ContactTicketController;
 use App\Http\Controllers\AdminAuthController;
 use App\Http\Controllers\AdminController;
+use App\Http\Controllers\AdminAgendaController;
 use App\Http\Controllers\AdminMailAccountController;
 use App\Http\Controllers\AdminMailboxController;
 use App\Http\Controllers\AdminBillingController;
@@ -571,6 +572,12 @@ Route::prefix('v1')->middleware(['api'])->group(function () {
             Route::post  ('/admin/leads/{id}/mark-notified', [LeadController::class, 'adminMarkNotified']);
             Route::post  ('/admin/leads/{id}/send-download-mail', [LeadController::class, 'adminSendDownloadMail']);
             Route::delete('/admin/leads/{id}',              [LeadController::class, 'adminDestroy']);
+
+            // ── Agenda (geplande mails/campagnes, verzonden, leads + eigen afspraken) ─
+            Route::get   ('/admin/agenda/events',            [AdminAgendaController::class, 'events']);
+            Route::post  ('/admin/agenda/appointments',      [AdminAgendaController::class, 'store']);
+            Route::put   ('/admin/agenda/appointments/{id}', [AdminAgendaController::class, 'update']);
+            Route::delete('/admin/agenda/appointments/{id}', [AdminAgendaController::class, 'destroy']);
 
             // ── E-mailcampagnes ─────────────────────────────────────────
             // Template-registry (door Claude geschreven backend-templates).
