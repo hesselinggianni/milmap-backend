@@ -27,6 +27,7 @@ class User extends Authenticatable
         'key_escrow_ops',
         'key_escrow_mem',
         'key_escrow_alg',
+        'key_escrow_unlock',
         'key_escrow_updated_at',
         'stripe_id',
         'pm_type',
@@ -75,6 +76,7 @@ class User extends Authenticatable
         'key_escrow_ops',
         'key_escrow_mem',
         'key_escrow_alg',
+        'key_escrow_unlock',
     ];
 
     /**
@@ -96,6 +98,9 @@ class User extends Authenticatable
             'view_only'         => 'boolean',
             'last_seen_at'      => 'datetime',
             'key_escrow_updated_at' => 'datetime',
+            // At-rest encryption (APP_KEY) for the account unlock key: a DB
+            // dump alone must not be enough to unwrap anyone's private key.
+            'key_escrow_unlock'     => 'encrypted',
         ];
     }
 
