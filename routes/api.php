@@ -77,6 +77,9 @@ Route::prefix('v1')->middleware(['api'])->group(function () {
     // ── Client-side error reporting (no auth required) ───────────
     Route::post('/client-errors', [ClientErrorController::class, 'store'])
         ->middleware('throttle:30,1');
+    // ── First-party site-analytics vanaf milmap.nl (no auth) ─────
+    Route::post('/site-events', [\App\Http\Controllers\SiteEventController::class, 'store'])
+        ->middleware('throttle:120,1');
     Route::post('/login', [LoginController::class, 'store']);
     Route::post('/logout', [LogoutController::class, 'destroy'])->middleware('auth:sanctum');
     Route::post('/logout-all', [LogoutController::class, 'logoutFromAllDevices'])->middleware('auth:sanctum');
