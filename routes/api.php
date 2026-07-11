@@ -62,6 +62,8 @@ use App\Http\Controllers\StatusPageController;
 use App\Http\Controllers\TodoController;
 use App\Http\Controllers\SeoController;
 use App\Http\Controllers\AdminSeoController;
+use App\Http\Controllers\LegalController;
+use App\Http\Controllers\AdminLegalController;
 use App\Http\Controllers\MailCampaignController;
 use App\Http\Controllers\MailPreferenceController;
 use App\Http\Controllers\MailUnsubscribeController;
@@ -151,6 +153,13 @@ Route::prefix('v1')->middleware(['api'])->group(function () {
     // SEO-overrides per pagina×taal — publiek uitgelezen door milmap.nl (Nuxt)
     // om de page-meta te overschrijven. Beheer onder /admin/seo.
     Route::get('/seo', [SeoController::class, 'index'])
+        ->middleware('throttle:120,1');
+
+    // Juridische documenten — publiek uitgelezen door legal.milmap.nl (Nuxt).
+    // Alleen gepubliceerde documenten. Beheer onder /admin/legal.
+    Route::get('/legal', [LegalController::class, 'index'])
+        ->middleware('throttle:120,1');
+    Route::get('/legal/{slug}', [LegalController::class, 'show'])
         ->middleware('throttle:120,1');
 
     // ── Campagne-mail: publieke afmeld- + tracking-routes ───────────────
@@ -554,6 +563,13 @@ Route::prefix('v1')->middleware(['api'])->group(function () {
             Route::post('/admin/seo',              [AdminSeoController::class, 'upsert']);
             Route::post('/admin/seo/generate',     [AdminSeoController::class, 'generate']);
             Route::post('/admin/seo/upload-image', [AdminSeoController::class, 'uploadImage']);
+
+            // ── Legal-CMS (juridische documenten voor legal.milmap.nl) ──
+            Route::get   ('/admin/legal',          [AdminLegalController::class, 'index']);
+            Route::post  ('/admin/legal',          [AdminLegalController::class, 'upsert']);
+            Route::post  ('/admin/legal/reorder',  [AdminLegalController::class, 'reorder']);
+            Route::get   ('/admin/legal/{slug}',   [AdminLegalController::class, 'show']);
+            Route::delete('/admin/legal/{slug}',   [AdminLegalController::class, 'destroy']);
 
             // In-app notificatie-feed voor de admin-app (nieuwe mail / support /
             // feature requests). Onder de admin-prefix zodat de frontend-
