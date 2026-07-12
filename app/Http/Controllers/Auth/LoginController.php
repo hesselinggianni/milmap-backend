@@ -93,12 +93,41 @@ class LoginController extends Controller
         ], 200);
     }
 
+    /**
+     * E-mail-eerst auth-flow: geeft terug of een e-mailadres al een (niet-
+     * gearchiveerd) account heeft. De client kiest op basis hiervan tussen het
+     * inlog- of registratiescherm. Bewust minimaal (alleen een boolean) en
+     * zwaar gethrottled (zie route) om account-enumeratie te ontmoedigen.
+     */
+    public function checkEmail(Request $request)
+    {
+        $data = $request->validate([
+            'email' => 'required|email|max:255',
+        ]);
+
+        $user = User::where('email', $data['email'])->first();
+        // Een gearchiveerd account moet opnieuw registreren, dus behandelen we
+        // het als "bestaat niet" → de client toont het registratiescherm.
+        $exists = $user && !$user->isArchived();
+
+        return response()->json(['exists' => (bool) $exists]);
+    }
+
     private function sendLoginNotification(Request $request, User $user): void
     {
         $ip = $request->ip();
         $location = $this->resolveLocation($ip);
         $device = $this->parseDevice($request->userAgent() ?? 'Onbekend');
         $loginTime = now()->setTimezone('Europe/Amsterdam')->format('d-m-Y \o\m H:i:s');
+
+        // Geen zin om te versturen naar een leeg/ongeldig adres: de mailserver
+        // weigert dat met "550 No such recipient here" en het vult onze logs met
+        // warnings. Stil overslaan (zelfde guard als EmailVerificationService).
+        if (! filter_var((string) $user->email, FILTER_VALIDATE_EMAIL)) {
+            Log::warning('[login] login-notificatie overgeslagen: ongeldig e-mailadres voor user ' . $user->id);
+
+            return;
+        }
 
         // Een mislukte notificatiemail (SMTP down/misconfig) mag het inloggen
         // NOOIT blokkeren — stil loggen en doorgaan.

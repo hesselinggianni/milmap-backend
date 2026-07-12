@@ -42,6 +42,11 @@ use App\Http\Controllers\MissionCollaboratorController;
 use App\Http\Controllers\ClientErrorController;
 use App\Http\Controllers\InvitationController;
 use App\Http\Controllers\TeamController;
+use App\Http\Controllers\ExerciseSiteController;
+use App\Http\Controllers\ExerciseController;
+use App\Http\Controllers\ExerciseObjectiveController;
+use App\Http\Controllers\ExerciseSubmissionController;
+use App\Http\Controllers\ExerciseScoreController;
 use App\Http\Controllers\ChatAttachmentController;
 use App\Http\Controllers\ChatInviteController;
 use App\Http\Controllers\ChatRequestController;
@@ -83,6 +88,11 @@ Route::prefix('v1')->middleware(['api'])->group(function () {
     Route::post('/site-events', [\App\Http\Controllers\SiteEventController::class, 'store'])
         ->middleware('throttle:120,1');
     Route::post('/login', [LoginController::class, 'store']);
+    // E-mail-eerst auth-flow: bepaalt of een e-mail al een account heeft, zodat
+    // de client kan kiezen tussen inloggen of registreren. Zwaar gethrottled om
+    // account-enumeratie af te remmen.
+    Route::post('/check-email', [LoginController::class, 'checkEmail'])
+        ->middleware('throttle:20,1');
     Route::post('/logout', [LogoutController::class, 'destroy'])->middleware('auth:sanctum');
     Route::post('/logout-all', [LogoutController::class, 'logoutFromAllDevices'])->middleware('auth:sanctum');
 
@@ -266,6 +276,60 @@ Route::prefix('v1')->middleware(['api'])->group(function () {
             Route::put('/teams/{team}', [TeamController::class, 'update']);
             Route::delete('/teams/{team}', [TeamController::class, 'destroy']);
         });
+
+        // ── Oefening-modus: Terrein (Site) beheer ───────────────────────
+        // Terrein aanmaken/beheren + rollen (commander/controller/player) =
+        // premiumfunctie met eigen feature-key 'exercise'. GET blijft vrij zodat
+        // deelnemers het terrein + de huisregels kunnen inzien; mutaties vragen
+        // proef of abonnement (RequiresPremium → 402). Zie docs/oefening-modus.md.
+        Route::middleware(RequiresPremium::class . ':exercise')->group(function () {
+            Route::get   ('/exercise-sites',                       [ExerciseSiteController::class, 'index']);
+            Route::post  ('/exercise-sites',                       [ExerciseSiteController::class, 'store']);
+            Route::get   ('/exercise-sites/{id}',                  [ExerciseSiteController::class, 'show']);
+            Route::put   ('/exercise-sites/{id}',                  [ExerciseSiteController::class, 'update']);
+            Route::put   ('/exercise-sites/{id}/rules',            [ExerciseSiteController::class, 'updateRules']);
+            Route::delete('/exercise-sites/{id}',                  [ExerciseSiteController::class, 'destroy']);
+            Route::post  ('/exercise-sites/{id}/members',          [ExerciseSiteController::class, 'addMember']);
+            Route::put   ('/exercise-sites/{id}/members/{userId}', [ExerciseSiteController::class, 'updateMemberRole']);
+            Route::delete('/exercise-sites/{id}/members/{userId}', [ExerciseSiteController::class, 'removeMember']);
+        });
+
+        // ── Oefening-modus: mission-scoped spel-API ─────────────────────
+        // Setup + partijen + rol-overrides = commandant-mutaties (premium).
+        // Deelname (join/accept-rules/active) + state/roster mag elke ingelogde
+        // deelnemer; RequiresPremium laat GET vrij en zou POST's van gratis
+        // deelnemers blokkeren, dus de deelname-POST's staan bewust BUITEN de
+        // premium-gate zodat uitgenodigde/gratis spelers gewoon kunnen meedoen.
+        Route::get ('/missions/{id}/exercise/state',   [ExerciseController::class, 'state']);
+        Route::get ('/missions/{id}/exercise/roster',  [ExerciseController::class, 'roster']);
+        Route::get ('/missions/{id}/exercise/factions',[ExerciseController::class, 'listFactions']);
+        Route::post('/missions/{id}/exercise/join',         [ExerciseController::class, 'join']);
+        Route::post('/missions/{id}/exercise/accept-rules', [ExerciseController::class, 'acceptRules']);
+        Route::post('/missions/{id}/exercise/active',       [ExerciseController::class, 'setActive']);
+
+        Route::middleware(RequiresPremium::class . ':exercise')->group(function () {
+            Route::post  ('/missions/{id}/exercise/setup',                     [ExerciseController::class, 'setup']);
+            Route::post  ('/missions/{id}/exercise/factions',                  [ExerciseController::class, 'storeFaction']);
+            Route::put   ('/missions/{id}/exercise/factions/{factionId}',      [ExerciseController::class, 'updateFaction']);
+            Route::delete('/missions/{id}/exercise/factions/{factionId}',      [ExerciseController::class, 'destroyFaction']);
+            Route::post  ('/missions/{id}/exercise/participants/{userId}/role',[ExerciseController::class, 'setParticipantRole']);
+        });
+
+        // ── Oefening-modus: doelen, acties & scores ─────────────────────
+        // Inzien (doelen/scores/eigen acties) + acties indienen mag elke deelnemer.
+        // Doelen beheren en acties beoordelen zit achter een rol-check in de
+        // controllers (commander resp. controller/commander).
+        Route::get   ('/missions/{id}/exercise/objectives',                 [ExerciseObjectiveController::class, 'index']);
+        Route::post  ('/missions/{id}/exercise/objectives',                 [ExerciseObjectiveController::class, 'store']);
+        Route::put   ('/missions/{id}/exercise/objectives/{objId}',         [ExerciseObjectiveController::class, 'update']);
+        Route::delete('/missions/{id}/exercise/objectives/{objId}',         [ExerciseObjectiveController::class, 'destroy']);
+
+        Route::post  ('/missions/{id}/exercise/objectives/{objId}/submit',  [ExerciseSubmissionController::class, 'submit']);
+        Route::get   ('/missions/{id}/exercise/submissions/mine',           [ExerciseSubmissionController::class, 'mine']);
+        Route::get   ('/missions/{id}/exercise/submissions',                [ExerciseSubmissionController::class, 'index']);
+        Route::post  ('/missions/{id}/exercise/submissions/{subId}/review', [ExerciseSubmissionController::class, 'review']);
+
+        Route::get   ('/missions/{id}/exercise/scores',                     [ExerciseScoreController::class, 'index']);
 
 
 
@@ -557,6 +621,13 @@ Route::prefix('v1')->middleware(['api'])->group(function () {
         // Admin routes (protected by AdminAuth middleware)
         Route::middleware('admin.auth')->group(function () {
             Route::get('/admin/stats', [AdminController::class, 'getDashboardStats']);
+
+            // ── Sociale posts (één keer opstellen → meerdere platformen) ─
+            Route::get   ('/admin/social',                       [\App\Http\Controllers\AdminSocialController::class, 'index']);
+            Route::post  ('/admin/social',                       [\App\Http\Controllers\AdminSocialController::class, 'store']);
+            Route::post  ('/admin/social/{id}/publish',          [\App\Http\Controllers\AdminSocialController::class, 'publish']);
+            Route::delete('/admin/social/{id}',                  [\App\Http\Controllers\AdminSocialController::class, 'destroy']);
+            Route::put   ('/admin/social/accounts/{platform}',   [\App\Http\Controllers\AdminSocialController::class, 'saveAccount']);
 
             // ── SEO-CMS (per milmap.nl-pagina × taal) ───────────────────
             Route::get ('/admin/seo',              [AdminSeoController::class, 'index']);

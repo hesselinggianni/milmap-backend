@@ -40,7 +40,11 @@ class AppServiceProvider extends ServiceProvider
         Gate::policy(Map::class, MapPolicy::class);
 
         RateLimiter::for('api', function (Request $request) {
-            return Limit::perMinute(60); // Adjust limit as required
+            // Lokaal ruimer: de app-boot doet ~10 calls, waardoor een paar
+            // pagina-navigaties binnen een minuut anders al 429 geven.
+            return app()->environment('local', 'development')
+                ? Limit::perMinute(600)
+                : Limit::perMinute(60);
         });
     }
 }

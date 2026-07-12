@@ -309,6 +309,16 @@ class MissionTaskController extends Controller
             }
         });
 
+        // Registreer welke template is toegepast zodat de missie-UI die kan
+        // tonen en (via template-beheer) openen.
+        $mission->update([
+            'template_info' => [
+                'id'         => $template->id,
+                'name'       => $template->name,
+                'applied_at' => now()->toIso8601String(),
+            ],
+        ]);
+
         $tasks = MissionTask::with(self::WITH)
             ->whereIn('id', $created)
             ->orderBy('order_index')

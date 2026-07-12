@@ -24,15 +24,19 @@ class Mission extends Model
         'date',
         'time',
         'ogroup',
+        'template_info',
         'map',
         'logo',
         'approved_by',
         'approved_at',
         'locked',
+        'game_mode',
+        'exercise_site_id',
     ];
 
     protected $casts = [
-        'ogroup'      => 'array',
+        'ogroup'        => 'array',
+        'template_info' => 'array',
         'map'         => 'array',
         'date'        => 'date',
         'approved_at' => 'datetime',
@@ -91,6 +95,106 @@ class Mission extends Model
     public function auditLog()
     {
         return $this->hasMany(MissionAuditLog::class, 'mission_id')->latest('created_at');
+    }
+
+    // ── Oefening-modus (exercise) ──────────────────────────────────────────
+
+    /**
+     * Is this mission an exercise (airsoft / force-on-force training)?
+     */
+    public function isExercise(): bool
+    {
+        return $this->game_mode === 'exercise';
+    }
+
+    /**
+     * The terrein (site) this exercise is bound to.
+     */
+    public function exerciseSite()
+    {
+        return $this->belongsTo(ExerciseSite::class, 'exercise_site_id');
+    }
+
+    /**
+     * The partijen (factions) players choose between in this exercise.
+     */
+    public function factions()
+    {
+        return $this->hasMany(ExerciseFaction::class, 'mission_id');
+    }
+
+    /**
+     * The exercise participants (players/controllers/commanders in this game).
+     */
+    public function participants()
+    {
+        return $this->hasMany(ExerciseParticipant::class, 'mission_id');
+    }
+
+    /**
+     * The doelen (objectives) of this exercise.
+     */
+    public function objectives()
+    {
+        return $this->hasMany(ExerciseObjective::class, 'mission_id');
+    }
+
+    /**
+     * The ingediende acties (submissions) on this exercise's objectives.
+     */
+    public function submissions()
+    {
+        return $this->hasMany(ExerciseSubmission::class, 'mission_id');
+    }
+
+    /**
+     * The effective exercise role of a user within this exercise:
+     *   1. per-exercise override (exercise_participants.role_override), else
+     *   2. the terrein-rol on the linked site (site owner = commander), else
+     *   3. 'player' when the user participates at all, else
+     *   4. null (no access).
+     *
+     * commander → beheert alles · controller → keurt acties goed/af · player → deelnemer.
+     */
+    public function exerciseRoleFor(int $userId): ?string
+    {
+        // Mission owner runs the show.
+        if ($this->isOwnedBy($userId)) {
+            return 'commander';
+        }
+
+        $participant = $this->relationLoaded('participants')
+            ? $this->participants->firstWhere('user_id', $userId)
+            : $this->participants()->where('user_id', $userId)->first();
+
+        if ($participant && $participant->role_override) {
+            return $participant->role_override;
+        }
+
+        // Inherit the terrein-rol (commander/controller) from the linked site.
+        if ($this->exercise_site_id) {
+            $site = $this->relationLoaded('exerciseSite')
+                ? $this->exerciseSite
+                : $this->exerciseSite()->first();
+
+            $siteRole = $site?->roleFor($userId);
+            if ($siteRole) {
+                return $siteRole;
+            }
+        }
+
+        // A joined participant with no elevated role is a plain player.
+        return $participant ? 'player' : null;
+    }
+
+    public function isExerciseController(int $userId): bool
+    {
+        return in_array($this->exerciseRoleFor($userId), ['commander', 'controller'], true);
+    }
+
+    public function isExerciseCommander(int $userId): bool
+    {
+        return $this->exerciseRoleFor($userId) === 'commander';
     }
 
     /**

@@ -75,6 +75,8 @@ class MissionController extends Controller
             'ogroup' => 'nullable|array',
             'map' => 'nullable|array',
             'logo' => 'nullable|string|max:5000000',
+            'game_mode' => 'nullable|in:standard,exercise',
+            'exercise_site_id' => 'nullable|uuid|exists:exercise_sites,id',
         ]);
 
         $mission = Mission::create([
@@ -87,6 +89,8 @@ class MissionController extends Controller
             'ogroup' => $data['ogroup'] ?? null,
             'map' => $data['map'] ?? null,
             'logo' => $data['logo'] ?? null,
+            'game_mode' => $data['game_mode'] ?? 'standard',
+            'exercise_site_id' => $data['exercise_site_id'] ?? null,
         ]);
 
         return response()->json(['data' => $this->present($mission, Auth::id())], 201);
@@ -115,6 +119,8 @@ class MissionController extends Controller
             'map' => 'nullable|array',
             'logo' => 'nullable|string|max:5000000',
             'linked_team_id' => 'nullable|uuid|exists:teams,id',
+            'game_mode' => 'nullable|in:standard,exercise',
+            'exercise_site_id' => 'nullable|uuid|exists:exercise_sites,id',
         ]);
 
         // Linking / unlinking a team is a management action (owner or admin only)
@@ -316,7 +322,11 @@ class MissionController extends Controller
             'date' => $mission->date?->toDateString(),
             'time' => $mission->time,
             'ogroup' => $mission->ogroup,
+            'template_info' => $mission->template_info,
             'map' => $mission->map,
+            // Oefening-modus: laat de client het eigen ExercisePanel tonen.
+            'game_mode' => $mission->game_mode,
+            'exercise_site_id' => $mission->exercise_site_id,
             'created_at' => $mission->created_at,
             'updated_at' => $mission->updated_at,
             // Access info for UI gating
@@ -333,13 +343,39 @@ class MissionController extends Controller
         // it on demand. Kept to a minimal, non-sensitive shape — the full
         // management view with e-mails lives behind the owner/admin-only
         // GET /missions/{id}/collaborators endpoint.
-        $mission->loadMissing('collaborators');
+        $mission->loadMissing(['collaborators.user:id,first_name,last_name,avatar_path', 'owner:id,first_name,last_name,avatar_path']);
         $out['collaborators'] = $mission->collaborators->map(fn ($c) => [
             'id'      => $c->id,
             'user_id' => $c->user_id,
             'role'    => $c->role,
             'status'  => $c->status,
         ])->values();
+
+        // Lichte deelnemers-roster (eigenaar + geaccepteerde medewerkers) met
+        // naam + avatar voor de missie-header. Zichtbaar voor iedereen die de
+        // missie mag inzien; e-mails blijven achter het owner/admin-only
+        // collaborators-endpoint. Ontdubbeld op user-id.
+        $members = [];
+        if ($mission->owner) {
+            $members[] = [
+                'id'         => $mission->owner->id,
+                'name'       => $mission->owner->full_name,
+                'avatar_url' => $mission->owner->avatar_url,
+                'role'       => 'owner',
+            ];
+        }
+        foreach ($mission->collaborators as $c) {
+            if ($c->status !== 'accepted' || !$c->user) {
+                continue;
+            }
+            $members[] = [
+                'id'         => $c->user->id,
+                'name'       => $c->user->full_name,
+                'avatar_url' => $c->user->avatar_url,
+                'role'       => $c->role,
+            ];
+        }
+        $out['members'] = collect($members)->unique('id')->values();
 
         if ($includeLogo) {
             $out['logo'] = $mission->logo;

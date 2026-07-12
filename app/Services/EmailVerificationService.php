@@ -34,6 +34,15 @@ class EmailVerificationService
             return;
         }
 
+        // Geen zin om te versturen naar een leeg/ongeldig adres: de mailserver
+        // weigert dat met "550 No such recipient here" en het vult onze logs met
+        // warnings. Stil overslaan (net als bij een al-geverifieerd account).
+        if (! filter_var((string) $user->email, FILTER_VALIDATE_EMAIL)) {
+            Log::warning('[verify] verificatiemail overgeslagen: ongeldig e-mailadres voor user ' . $user->id);
+
+            return;
+        }
+
         try {
             Mail::to($user->email)->send(
                 new VerifyEmail($user, self::verificationUrl($user))

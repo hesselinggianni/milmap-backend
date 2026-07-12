@@ -291,9 +291,66 @@ class MissionBriefingController extends Controller
         return null;
     }
 
+    /** Eén sub-veld uit een O-group-paragraaf (nieuw object-formaat). Null als leeg. */
+    private function ogroupField($para, string $key): ?string
+    {
+        if (is_array($para) && isset($para[$key]) && is_string($para[$key])) {
+            $v = trim($para[$key]);
+            return $v !== '' ? $v : null;
+        }
+        return null;
+    }
+
+    /**
+     * Bouw een gelabelde tekst uit geselecteerde sub-velden. Lege velden slaan
+     * we over; niet-lege krijgen hun label op een eigen regel. $map = [[key,label], …].
+     */
+    private function ogroupLabeled($para, array $map): ?string
+    {
+        if (! is_array($para)) {
+            return null;
+        }
+        $parts = [];
+        foreach ($map as [$key, $label]) {
+            $v = $this->ogroupField($para, $key);
+            if ($v !== null) {
+                $parts[] = $label !== '' ? ($label . ":\n" . $v) : $v;
+            }
+        }
+        return count($parts) ? implode("\n\n", $parts) : null;
+    }
+
+    /** Heeft deze paragraaf het nieuwe sub-velden-formaat (bekende keys aanwezig)? */
+    private function isStructuredPara($para, array $keys): bool
+    {
+        if (! is_array($para)) {
+            return false;
+        }
+        foreach ($keys as $k) {
+            if (array_key_exists($k, $para)) {
+                return true;
+            }
+        }
+        return false;
+    }
+
     private function buildPresentation(Mission $m): array
     {
         $ogroup = $m->ogroup ?? [];
+
+        // O-group-paragrafen (nieuw sub-velden-formaat). De briefing-tabel blijft
+        // leidend waar aanwezig; anders vullen we de slide-velden uit de ogroup.
+        $sit = $ogroup['situation'] ?? null;
+        $mis = $ogroup['mission'] ?? null;
+        $exe = $ogroup['execution'] ?? null;
+        $log = $ogroup['logistics'] ?? null;
+        $cs  = $ogroup['command_signals'] ?? null;
+
+        $sitStructured = $this->isStructuredPara($sit, ['general', 'enemy', 'friendly', 'attachments', 'civil']);
+        $misStructured = $this->isStructuredPara($mis, ['statement', 'purpose']);
+        $exeStructured = $this->isStructuredPara($exe, ['intent', 'concept', 'main_effort', 'phases', 'tasks', 'coordinating']);
+        $logStructured = $this->isStructuredPara($log, ['supply', 'medical', 'transport', 'equipment', 'personnel']);
+        $csStructured  = $this->isStructuredPara($cs, ['command', 'signal', 'pace', 'recognition', 'emergency']);
 
         return [
             // Mission meta
@@ -309,41 +366,67 @@ class MissionBriefingController extends Controller
             'logo'            => $m->logo,
             'description'     => $m->description,
 
-            // Paragraph 1: Situation (briefing table + ogroup fallback)
+            // Paragraph 1: Situation. Bij het nieuwe sub-velden-formaat mappen we
+            // vijand/eigen/civiel naar hun eigen slide-vak i.p.v. alles in overview.
             'situation' => [
-                'overview'                => $this->ogroupText($ogroup['situation'] ?? null),
-                'enemy_forces'            => $m->briefing?->enemy_forces,
-                'friendly_forces'         => $m->briefing?->friendly_forces,
-                'civilian_considerations' => $m->briefing?->civilian_considerations,
+                'overview' => $sitStructured
+                    ? $this->ogroupLabeled($sit, [['general', ''], ['attachments', 'Bijgevoegd / onttrokken']])
+                    : $this->ogroupText($sit),
+                'enemy_forces'            => $m->briefing?->enemy_forces            ?? ($sitStructured ? $this->ogroupField($sit, 'enemy') : null),
+                'friendly_forces'         => $m->briefing?->friendly_forces         ?? ($sitStructured ? $this->ogroupField($sit, 'friendly') : null),
+                'civilian_considerations' => $m->briefing?->civilian_considerations ?? ($sitStructured ? $this->ogroupField($sit, 'civil') : null),
                 'ground_conditions'       => $m->briefing?->ground_conditions,
                 'weather'                 => $m->briefing?->weather,
                 'light_conditions'        => $m->briefing?->light_conditions,
             ],
 
-            // Paragraph 2: Mission
+            // Paragraph 2: Mission — statement + oogmerk (purpose) apart.
             'mission' => [
-                'statement'        => $this->ogroupText($ogroup['mission'] ?? null),
-                'commander_intent' => $m->briefing?->commander_intent,
+                'statement'        => $misStructured ? $this->ogroupField($mis, 'statement') : $this->ogroupText($mis),
+                'commander_intent' => $m->briefing?->commander_intent ?? ($misStructured ? $this->ogroupField($mis, 'purpose') : null),
             ],
 
-            // Paragraph 3: Execution
+            // Paragraph 3: Execution — gelabelde deelplannen; coördinatie → action-on.
             'execution' => [
-                'plan'                 => $this->ogroupText($ogroup['execution'] ?? null),
-                'action_on_procedures' => $m->briefing?->action_on_procedures,
+                'plan' => $exeStructured
+                    ? $this->ogroupLabeled($exe, [
+                        ['intent', 'Oogmerk commandant'],
+                        ['concept', 'Concept van de operatie'],
+                        ['main_effort', 'Zwaartepunt'],
+                        ['phases', 'Fasering'],
+                        ['tasks', 'Taken per eenheid'],
+                    ])
+                    : $this->ogroupText($exe),
+                'action_on_procedures' => $m->briefing?->action_on_procedures ?? ($exeStructured ? $this->ogroupField($exe, 'coordinating') : null),
                 'timeline'             => $m->briefing?->timeline ?? [],
             ],
 
-            // Paragraph 4: CSS (Combat Service Support)
+            // Paragraph 4: CSS — logistiek gelabeld; medisch → MEDEVAC-kaart.
             'css' => [
-                'logistics' => $this->ogroupText($ogroup['logistics'] ?? null),
+                'logistics' => $logStructured
+                    ? $this->ogroupLabeled($log, [
+                        ['supply', 'Bevoorrading'],
+                        ['transport', 'Transport & verplaatsing'],
+                        ['equipment', 'Materieel & uitrusting'],
+                        ['personnel', 'Personeel'],
+                    ])
+                    : $this->ogroupText($log),
                 'casevac'   => $m->briefing?->casevac,
-                'medevac'   => $m->briefing?->medevac,
+                'medevac'   => $m->briefing?->medevac ?? ($logStructured ? $this->ogroupField($log, 'medical') : null),
                 'pace_plan' => $m->briefing?->pace_plan ?? [],
             ],
 
-            // Paragraph 5: Command & Signals
+            // Paragraph 5: Command & Signals — gelabelde deelvelden in overview.
             'command_signals' => [
-                'overview'       => $this->ogroupText($ogroup['command_signals'] ?? null),
+                'overview' => $csStructured
+                    ? $this->ogroupLabeled($cs, [
+                        ['command', 'Commandovoering'],
+                        ['signal', 'Verbindingen'],
+                        ['pace', 'PACE-plan'],
+                        ['recognition', 'Herkenning & wachtwoorden'],
+                        ['emergency', 'Noodprocedures'],
+                    ])
+                    : $this->ogroupText($cs),
                 'radio_channels' => $m->radioChannels->toArray(),
             ],
 
