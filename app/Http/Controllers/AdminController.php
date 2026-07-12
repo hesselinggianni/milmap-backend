@@ -84,9 +84,16 @@ class AdminController extends Controller
      */
     public function getRevenue()
     {
+        // Lokale abonnement-cijfers (geen Stripe nodig) — altijd meesturen,
+        // ook als de Stripe-omzet even onbeschikbaar is.
+        $base = [
+            'active_by_plan' => $this->activeSubscriptionsByPlan(),
+            'cancellations'  => $this->cancellationsPerMonth(12),
+        ];
+
         $secret = config('billing.stripe_secret');
         if (! $secret) {
-            return response()->json(['available' => false, 'reason' => 'no_stripe'], 200);
+            return response()->json(array_merge($base, ['available' => false, 'reason' => 'no_stripe']), 200);
         }
 
         // Lopende kalenderperiodes, telkens vanaf de start tot nu (epoch-seconden).
@@ -178,7 +185,7 @@ class AdminController extends Controller
 
             $mrr = (int) round($mrrCents);
 
-            return response()->json([
+            return response()->json(array_merge($base, [
                 'available'            => true,
                 'currency'             => $currency,
                 'income'               => $income,   // centen, per periode
@@ -192,16 +199,114 @@ class AdminController extends Controller
                     'year'      => $mrr * 12,
                 ],
                 'generated_at'         => $now->toIso8601String(),
-            ], 200);
+            ]), 200);
 
         } catch (\Throwable $e) {
             Log::warning('[admin] revenue ophalen mislukt: ' . $e->getMessage());
-            return response()->json([
+            return response()->json(array_merge($base, [
                 'available' => false,
                 'reason'    => 'stripe_error',
                 'message'   => $e->getMessage(),
-            ], 200);
+            ]), 200);
         }
+    }
+
+    /**
+     * Actieve abonnementen gegroepeerd per plan-type (pro/team × maand/jaar).
+     * Vertaalt de opgeslagen Stripe-Price-ID's naar plan-sleutels via de
+     * effectieve prijs-map; onbekende prijzen belanden onder "Overig".
+     */
+    private function activeSubscriptionsByPlan(): array
+    {
+        $labels = [
+            'pro_monthly'  => 'Pro — maandelijks',
+            'pro_yearly'   => 'Pro — jaarlijks',
+            'team_monthly' => 'Team — maandelijks',
+            'team_yearly'  => 'Team — jaarlijks',
+        ];
+
+        // Price-ID → plan-sleutel (omgekeerde van effectiveMap()).
+        $priceToKey = [];
+        foreach (\App\Http\Controllers\AdminBillingController::effectiveMap() as $key => $priceId) {
+            if ($priceId) {
+                $priceToKey[$priceId] = $key;
+            }
+        }
+
+        $rows = Subscription::where('stripe_status', 'active')
+            ->where(fn ($q) => $q->whereNull('ends_at')->orWhere('ends_at', '>', now()))
+            ->selectRaw('stripe_price, COUNT(*) as c')
+            ->groupBy('stripe_price')
+            ->get();
+
+        $out = [];
+        foreach ($labels as $key => $label) {
+            $out[$key] = ['key' => $key, 'label' => $label, 'count' => 0];
+        }
+        $other = ['key' => 'other', 'label' => 'Overig', 'count' => 0];
+
+        foreach ($rows as $row) {
+            $key = $priceToKey[$row->stripe_price] ?? null;
+            $count = (int) $row->c;
+            if ($key && isset($out[$key])) {
+                $out[$key]['count'] += $count;
+            } else {
+                $other['count'] += $count;
+            }
+        }
+
+        $result = array_values($out);
+        if ($other['count'] > 0) {
+            $result[] = $other;
+        }
+
+        return $result;
+    }
+
+    /**
+     * Opzeggingen per maand over de laatste $months maanden. Telt abonnementen
+     * met status 'canceled', gebucket op de maand van de einddatum (of, bij
+     * ontbreken, de laatste wijziging). Retourneert altijd een volledige reeks
+     * (ook maanden met 0) zodat de grafiek een nette tijdlijn toont.
+     */
+    private function cancellationsPerMonth(int $months = 12): array
+    {
+        $start = now()->copy()->startOfMonth()->subMonths($months - 1);
+
+        $rows = Subscription::where('stripe_status', 'canceled')
+            ->where(function ($q) use ($start) {
+                $q->where('ends_at', '>=', $start)
+                  ->orWhere(function ($q2) use ($start) {
+                      $q2->whereNull('ends_at')->where('updated_at', '>=', $start);
+                  });
+            })
+            ->get(['ends_at', 'updated_at']);
+
+        // Lege maandbuckets 'Y-m' → 0.
+        $buckets = [];
+        $cursor  = $start->copy();
+        for ($i = 0; $i < $months; $i++) {
+            $buckets[$cursor->format('Y-m')] = 0;
+            $cursor->addMonth();
+        }
+
+        foreach ($rows as $row) {
+            $date = $row->ends_at ?: $row->updated_at;
+            if (! $date) {
+                continue;
+            }
+            $key = \Illuminate\Support\Carbon::parse($date)->format('Y-m');
+            if (array_key_exists($key, $buckets)) {
+                $buckets[$key]++;
+            }
+        }
+
+        $out = [];
+        foreach ($buckets as $ym => $count) {
+            $out[] = ['month' => $ym, 'count' => $count];
+        }
+
+        return $out;
     }
 
     /**
