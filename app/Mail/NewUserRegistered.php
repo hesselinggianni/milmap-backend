@@ -11,10 +11,14 @@ class NewUserRegistered extends Mailable
     use Queueable, SerializesModels;
 
     public $user;
+    public $sourceUrl;
+    public $referrer;
 
-    public function __construct($user)
+    public function __construct($user, $sourceUrl = null, $referrer = null)
     {
-        $this->user = $user;
+        $this->user      = $user;
+        $this->sourceUrl = $sourceUrl;
+        $this->referrer  = $referrer;
     }
 
     public function build()

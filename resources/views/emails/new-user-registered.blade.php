@@ -43,9 +43,19 @@
       <td style="padding:11px 16px;font-size:13px;color:#f8fafc;border-bottom:1px solid #1a2433;font-family:monospace;">{{ $user->id }}</td>
     </tr>
     <tr>
-      <td style="padding:11px 16px;font-size:12.5px;color:#94a3b8;font-weight:500;">Datum</td>
-      <td style="padding:11px 16px;font-size:13px;color:#f8fafc;">{{ now() }}</td>
+      <td style="padding:11px 16px;font-size:12.5px;color:#94a3b8;border-bottom:1px solid #1a2433;font-weight:500;">Datum</td>
+      <td style="padding:11px 16px;font-size:13px;color:#f8fafc;border-bottom:1px solid #1a2433;">{{ now() }}</td>
     </tr>
+    <tr>
+      <td style="padding:11px 16px;font-size:12.5px;color:#94a3b8;{{ !empty($referrer) ? 'border-bottom:1px solid #1a2433;' : '' }}font-weight:500;">Geregistreerd via</td>
+      <td style="padding:11px 16px;font-size:13px;color:#f8fafc;{{ !empty($referrer) ? 'border-bottom:1px solid #1a2433;' : '' }}word-break:break-all;">{{ !empty($sourceUrl) ? $sourceUrl : 'Onbekend' }}</td>
+    </tr>
+    @if(!empty($referrer))
+    <tr>
+      <td style="padding:11px 16px;font-size:12.5px;color:#94a3b8;font-weight:500;">Herkomst</td>
+      <td style="padding:11px 16px;font-size:13px;color:#f8fafc;word-break:break-all;">{{ $referrer }}</td>
+    </tr>
+    @endif
   </table>
 
 @endsection

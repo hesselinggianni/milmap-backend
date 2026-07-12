@@ -91,10 +91,17 @@ class RegisterController extends Controller
         // event on their Hub timeline (and can jump straight into the chat).
         $this->acceptChatInvites($user);
 
+        // Registratie-herkomst voor de admin-notificatie: de frontend stuurt de
+        // pagina-URL (`source_url`) + externe verwijzer (`referrer`) mee. Valt
+        // terug op de HTTP Referer-header als de client 't niet meestuurt
+        // (oudere app-versies). Puur informatief; wordt niet opgeslagen.
+        $sourceUrl = $request->input('source_url') ?: $request->header('Referer');
+        $referrer  = $request->input('referrer');
+
         // Admin-notificatie "nieuwe gebruiker" — mag de registratie nooit
         // breken als de mailserver hapert. Stil loggen en doorgaan.
         try {
-            Mail::to('hesselinggianni@gmail.com')->send(new NewUserRegistered($user));
+            Mail::to('hesselinggianni@gmail.com')->send(new NewUserRegistered($user, $sourceUrl, $referrer));
         } catch (\Throwable $e) {
             Log::warning('[register] kon admin-notificatie niet versturen: ' . $e->getMessage());
         }
