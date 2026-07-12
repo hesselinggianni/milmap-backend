@@ -678,6 +678,12 @@ Route::prefix('v1')->middleware(['api'])->group(function () {
             Route::put   ('/admin/agenda/appointments/{id}', [AdminAgendaController::class, 'update']);
             Route::delete('/admin/agenda/appointments/{id}', [AdminAgendaController::class, 'destroy']);
 
+            // ── Kosten/inkomsten-grootboek ──────────────────────────────
+            Route::get   ('/admin/costs',      [\App\Http\Controllers\AdminCostController::class, 'index']);
+            Route::post  ('/admin/costs',      [\App\Http\Controllers\AdminCostController::class, 'store']);
+            Route::put   ('/admin/costs/{id}', [\App\Http\Controllers\AdminCostController::class, 'update']);
+            Route::delete('/admin/costs/{id}', [\App\Http\Controllers\AdminCostController::class, 'destroy']);
+
             // ── E-mailcampagnes ─────────────────────────────────────────
             // Template-registry (door Claude geschreven backend-templates).
             Route::get ('/admin/mail/templates',                 [MailCampaignController::class, 'templates']);
