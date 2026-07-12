@@ -28,6 +28,7 @@ class Todo extends Model
         'mode',
         'status',
         'source',
+        'dedupe_key',
         'last_exit',
         'followups',
         'created_by',

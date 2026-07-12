@@ -734,6 +734,10 @@ Route::prefix('v1')->middleware(['api'])->group(function () {
             Route::put   ('/admin/todos/{id}', [TodoController::class, 'adminUpdate']);
             Route::delete('/admin/todos/{id}', [TodoController::class, 'adminDestroy']);
 
+            // ── Sales-taken generator (signalen → todo's) ───────────────
+            Route::get ('/admin/sales-todos/preview',  [\App\Http\Controllers\SalesTodoController::class, 'preview']);
+            Route::post('/admin/sales-todos/generate', [\App\Http\Controllers\SalesTodoController::class, 'generate']);
+
             Route::get('/admin/users/{userId}', [AdminController::class, 'getUser']);
             Route::delete('/admin/users/{userId}', [AdminController::class, 'deleteUser']);
             Route::post('/admin/users/{userId}/reset-password', [AdminController::class, 'resetUserPassword']);

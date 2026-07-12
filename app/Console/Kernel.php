@@ -9,6 +9,7 @@ use App\Console\Commands\SendStatusNotification;
 use App\Console\Commands\NotifyNewMail;
 use App\Console\Commands\ArchiveUnverifiedUsers;
 use App\Console\Commands\ProcessMailFollowups;
+use App\Console\Commands\GenerateSalesTodos;
 
 class Kernel extends ConsoleKernel
 {
@@ -23,6 +24,7 @@ class Kernel extends ConsoleKernel
         NotifyNewMail::class,
         ArchiveUnverifiedUsers::class,
         ProcessMailFollowups::class,
+        GenerateSalesTodos::class,
     ];
 
     /**
@@ -64,6 +66,15 @@ class Kernel extends ConsoleKernel
             ->withoutOverlapping()
             ->runInBackground()
             ->appendOutputTo(storage_path('logs/archive-unverified.log'));
+
+        // Genereer elke ochtend automatisch sales-taken uit de actieve signalen
+        // (aflopende trials, churn-risico, niet-benaderde leads, enz.), zodat de
+        // takenlijst dagelijks up-to-date staat met concrete verkoop-acties.
+        $schedule->command('sales:generate-todos')
+            ->dailyAt('07:00')
+            ->withoutOverlapping()
+            ->runInBackground()
+            ->appendOutputTo(storage_path('logs/sales-todos.log'));
     }
 
 
