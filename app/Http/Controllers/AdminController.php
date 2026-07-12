@@ -22,9 +22,12 @@ class AdminController extends Controller
     {
         try {
             // Alleen tellingen — bewust geen kaarttitels/datums inladen.
-            $baseUsers = User::select('id', 'first_name', 'last_name', 'email', 'is_admin', 'created_at')
+            $baseUsers = User::select('id', 'first_name', 'last_name', 'email', 'is_admin', 'created_at', 'email_verified_at', 'last_seen_at')
                 ->withCount('maps')
                 ->get();
+
+            // "Online" = laatst gezien in de afgelopen 5 minuten.
+            $onlineThreshold = now()->subMinutes(5);
 
             // Per-gebruiker tellingen van routekaarten en missies in twee
             // groeps-queries (geen N+1, en zonder de rijen/titels te laden).
@@ -35,7 +38,11 @@ class AdminController extends Controller
                 ->groupBy('owner_id')
                 ->pluck('c', 'owner_id');
 
-            $users = $baseUsers->map(function ($user) use ($routeMapCounts, $missionCounts) {
+            $users = $baseUsers->map(function ($user) use ($routeMapCounts, $missionCounts, $onlineThreshold) {
+                $lastSeen = $user->last_seen_at
+                    ? \Illuminate\Support\Carbon::parse($user->last_seen_at)
+                    : null;
+
                 return [
                     'id'               => $user->id,
                     'name'             => trim(($user->first_name ?? '') . ' ' . ($user->last_name ?? '')) ?: $user->email,
@@ -45,6 +52,9 @@ class AdminController extends Controller
                     'route_maps_count' => (int) ($routeMapCounts[$user->id] ?? 0),
                     'missions_count'   => (int) ($missionCounts[$user->id] ?? 0),
                     'created_at'       => $user->created_at,
+                    'email_verified'   => (bool) $user->email_verified_at,
+                    'last_seen_at'     => $lastSeen,
+                    'is_online'        => $lastSeen ? $lastSeen->gt($onlineThreshold) : false,
                 ];
             })->values();
 
