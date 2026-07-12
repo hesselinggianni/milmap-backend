@@ -6,10 +6,12 @@ use App\Models\User;
 use App\Models\Map;
 use App\Models\RouteMap;
 use App\Models\Mission;
+use App\Models\Subscription;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Auth;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Password;
+use Illuminate\Support\Facades\Log;
 
 class AdminController extends Controller
 {
@@ -61,6 +63,144 @@ class AdminController extends Controller
                 'message' => 'Fout bij ophalen statistieken',
                 'error' => $e->getMessage()
             ], 500);
+        }
+    }
+
+    /**
+     * Omzet-overzicht voor het admin-dashboard.
+     *
+     * Twee blokken:
+     *  1. `income` — WERKELIJK geïnde omzet uit Stripe per lopende kalender-
+     *     periode (vandaag, deze week/maand/kwartaal/half jaar/jaar, telkens
+     *     tot-nu-toe). We halen de charges sinds 1 januari één keer op en
+     *     bucketten ze zelf — netto (min terugbetalingen), in centen.
+     *  2. `projected` — VERWACHTE terugkerende omzet op basis van de huidige
+     *     actieve abonnementen (MRR-run-rate: maandbedrag genormaliseerd, dan
+     *     ×1/×3/×6/×12 voor de komende maand/kwartaal/half jaar/jaar). Dit is
+     *     een projectie zonder groei/verloop, puur "wat loopt er nu".
+     *
+     * Vereist Stripe; zonder secret of bij een Stripe-storing geeft het net
+     * `available:false` terug zodat het dashboard niet breekt.
+     */
+    public function getRevenue()
+    {
+        $secret = config('billing.stripe_secret');
+        if (! $secret) {
+            return response()->json(['available' => false, 'reason' => 'no_stripe'], 200);
+        }
+
+        // Lopende kalenderperiodes, telkens vanaf de start tot nu (epoch-seconden).
+        $now       = now();
+        $month     = (int) $now->month;
+        $halfStart = $month <= 6
+            ? $now->copy()->startOfYear()
+            : $now->copy()->startOfYear()->addMonths(6);   // H2 begint 1 juli
+
+        $starts = [
+            'today'     => $now->copy()->startOfDay()->timestamp,
+            'week'      => $now->copy()->startOfWeek()->timestamp,
+            'month'     => $now->copy()->startOfMonth()->timestamp,
+            'quarter'   => $now->copy()->startOfQuarter()->timestamp,
+            'half_year' => $halfStart->timestamp,
+            'year'      => $now->copy()->startOfYear()->timestamp,
+        ];
+
+        $income   = array_fill_keys(array_keys($starts), 0);
+        $currency = 'EUR';
+
+        try {
+            $stripe = new \Stripe\StripeClient($secret);
+
+            // Alle geslaagde charges sinds jaarbegin — één keer ophalen, dan
+            // per periode optellen. autoPagingIterator regelt de paginatie.
+            foreach (
+                $stripe->charges->all([
+                    'created' => ['gte' => $starts['year']],
+                    'limit'   => 100,
+                ])->autoPagingIterator() as $ch
+            ) {
+                if (($ch->status ?? null) !== 'succeeded' || ! ($ch->paid ?? false)) {
+                    continue;
+                }
+                $net = (int) ($ch->amount ?? 0) - (int) ($ch->amount_refunded ?? 0);
+                if ($net <= 0) {
+                    continue;
+                }
+                $ts = (int) $ch->created;
+                foreach ($starts as $key => $start) {
+                    if ($ts >= $start) {
+                        $income[$key] += $net;
+                    }
+                }
+                if (! empty($ch->currency)) {
+                    $currency = strtoupper($ch->currency);
+                }
+            }
+
+            // ── Verwachte MRR uit actieve abonnementen ──────────────────────
+            $active = Subscription::where('stripe_status', 'active')
+                ->where(fn ($q) => $q->whereNull('ends_at')->orWhere('ends_at', '>', now()))
+                ->get(['stripe_price', 'quantity']);
+
+            $priceCache = [];
+            $mrrCents   = 0.0;
+            foreach ($active as $sub) {
+                $pid = $sub->stripe_price;
+                if (! $pid) {
+                    continue;
+                }
+                if (! array_key_exists($pid, $priceCache)) {
+                    try {
+                        $priceCache[$pid] = $stripe->prices->retrieve($pid, []);
+                    } catch (\Throwable $e) {
+                        $priceCache[$pid] = null;
+                    }
+                }
+                $price = $priceCache[$pid];
+                if (! $price || empty($price->unit_amount)) {
+                    continue;
+                }
+                $amount        = (float) $price->unit_amount * max(1, (int) $sub->quantity);
+                $interval      = $price->recurring->interval ?? 'month';
+                $intervalCount = max(1, (int) ($price->recurring->interval_count ?? 1));
+                // Normaliseer naar maandbedrag.
+                $monthly = match ($interval) {
+                    'year'  => $amount / (12 * $intervalCount),
+                    'week'  => $amount * 52 / (12 * $intervalCount),
+                    'day'   => $amount * 365 / (12 * $intervalCount),
+                    default => $amount / $intervalCount,   // 'month'
+                };
+                $mrrCents += $monthly;
+                if (! empty($price->currency)) {
+                    $currency = strtoupper($price->currency);
+                }
+            }
+
+            $mrr = (int) round($mrrCents);
+
+            return response()->json([
+                'available'            => true,
+                'currency'             => $currency,
+                'income'               => $income,   // centen, per periode
+                'mrr'                  => $mrr,      // centen/maand
+                'arr'                  => $mrr * 12,
+                'active_subscriptions' => $active->count(),
+                'projected'            => [
+                    'month'     => $mrr,
+                    'quarter'   => $mrr * 3,
+                    'half_year' => $mrr * 6,
+                    'year'      => $mrr * 12,
+                ],
+                'generated_at'         => $now->toIso8601String(),
+            ], 200);
+
+        } catch (\Throwable $e) {
+            Log::warning('[admin] revenue ophalen mislukt: ' . $e->getMessage());
+            return response()->json([
+                'available' => false,
+                'reason'    => 'stripe_error',
+                'message'   => $e->getMessage(),
+            ], 200);
         }
     }
 
