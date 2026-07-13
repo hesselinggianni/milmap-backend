@@ -649,6 +649,19 @@ Route::prefix('v1')->middleware(['api'])->group(function () {
             Route::get('/admin/stats', [AdminController::class, 'getDashboardStats']);
             Route::get('/admin/revenue', [AdminController::class, 'getRevenue']);
 
+            // ── Sales / CRM-pijplijn ────────────────────────────────────
+            Route::get   ('/admin/crm/deals',                 [\App\Http\Controllers\CrmController::class, 'index']);
+            Route::post  ('/admin/crm/deals',                 [\App\Http\Controllers\CrmController::class, 'store']);
+            Route::post  ('/admin/crm/deals/reorder',         [\App\Http\Controllers\CrmController::class, 'reorder']);
+            Route::get   ('/admin/crm/deals/{id}',            [\App\Http\Controllers\CrmController::class, 'show']);
+            Route::put   ('/admin/crm/deals/{id}',            [\App\Http\Controllers\CrmController::class, 'update']);
+            Route::delete('/admin/crm/deals/{id}',            [\App\Http\Controllers\CrmController::class, 'destroy']);
+            Route::post  ('/admin/crm/deals/{id}/activity',   [\App\Http\Controllers\CrmController::class, 'addActivity']);
+            Route::post  ('/admin/crm/deals/{id}/demo',       [\App\Http\Controllers\CrmController::class, 'createDemo']);
+            Route::post  ('/admin/crm/deals/{id}/email',      [\App\Http\Controllers\CrmController::class, 'sendEmail']);
+            Route::post  ('/admin/crm/deals/{id}/partner',    [\App\Http\Controllers\CrmController::class, 'convertPartner']);
+            Route::post  ('/admin/crm/deals/{id}/task',       [\App\Http\Controllers\CrmController::class, 'scheduleTask']);
+
             // ── Sociale posts (één keer opstellen → meerdere platformen) ─
             Route::get   ('/admin/social',                       [\App\Http\Controllers\AdminSocialController::class, 'index']);
             Route::post  ('/admin/social',                       [\App\Http\Controllers\AdminSocialController::class, 'store']);
