@@ -35,7 +35,9 @@
   @endif
 
   <p style="margin:0;font-size:13px;line-height:1.7;color:#94a3b8;">
-    Vragen? Beantwoord deze mail, dan denken we mee.
+    Vragen? Neem contact op via het
+    <a href="https://milmap.nl/#contact" style="color:#2b7fff;text-decoration:none;font-weight:600;">contactformulier op milmap.nl</a>
+    — op deze mail kun je niet reageren.
   </p>
 
 @endsection

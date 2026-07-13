@@ -38,8 +38,9 @@
   </table>
 
   <p style="margin:0;font-size:12px;line-height:1.7;color:#64748b;">
-    Heb jij dit niet gedaan? Neem dan direct contact met ons op — je link wordt pas
-    actief nadat de overeenkomst is bevestigd.
+    Heb jij dit niet gedaan? Meld het dan direct via het
+    <a href="https://milmap.nl/#contact" style="color:#2b7fff;text-decoration:none;">contactformulier op milmap.nl</a>
+    — je link wordt pas actief nadat de overeenkomst is bevestigd.
   </p>
 
 @endsection

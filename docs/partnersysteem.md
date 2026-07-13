@@ -31,10 +31,35 @@ abonnement, en partners ontvangen automatisch commissie via Stripe Connect.
 7. `partners:payout` betaalt per partner alle pending commissies in één
    Stripe-transfer uit (minimum €10, anders doorschuiven) + mail.
 
+## Partnerovereenkomst (verplicht vóór delen)
+
+- Migratie `2026_07_13_120000_add_agreement_to_partners_table.php`: kolommen
+  `agreement_accepted_at/confirmed_at/ip/code/code_expires_at` op `partners`.
+- Flow (`PartnerAgreementController`, routes `/partner/agreement*`):
+  1. Goedgekeurde partner accepteert de voorwaarden in het portaal
+     (`/overeenkomst`) → `agreement_accepted_at` + IP vastgelegd, 6-cijferige
+     code (24u geldig) per mail (`PartnerAgreementCodeMail`, met bevestigings-
+     link `?code=` die auto-bevestigt).
+  2. Code invullen/bevestigen → `agreement_confirmed_at`.
+- **Gating**: `validateReferral` + `attachReferral` vereisen een afgeronde
+  overeenkomst; het portaal verbergt de referral-link en de router stuurt een
+  goedgekeurde partner zonder afgeronde overeenkomst naar `/overeenkomst`.
+- Dashboard + overeenkomst-pagina tonen datum/tijd van akkoord én bevestiging;
+  de admin ziet beide momenten in het partnerdetail en op de gebruikerskaart.
+
 ## Rates
 
 - Default: 20% commissie, 10% korting (kolomdefaults op `partners`).
 - Aanpasbaar per partner in de admin; bestaande referrals houden hun snapshot.
+
+## Portaal-UX
+
+- Landing: milmap.nl-huisstijl; aanmelden = fullscreen multistep-flow
+  (`PartnerApplyDialog.vue`, patroon van het milmap.nl-contactformulier).
+- Login: e-mail-eerst flow zoals de app (`/check-email` → wachtwoordstap).
+- ⚠️ Vue-`<Transition>` in het portaal altijd met expliciete `:duration`
+  (timer i.p.v. transitionend) — voorkomt hangende transities in
+  gethrottelde tabs.
 
 ## Prod-checklist
 
