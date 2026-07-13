@@ -10,6 +10,7 @@ use App\Console\Commands\NotifyNewMail;
 use App\Console\Commands\ArchiveUnverifiedUsers;
 use App\Console\Commands\ProcessMailFollowups;
 use App\Console\Commands\GenerateSalesTodos;
+use App\Console\Commands\PayoutPartners;
 
 class Kernel extends ConsoleKernel
 {
@@ -25,6 +26,7 @@ class Kernel extends ConsoleKernel
         ArchiveUnverifiedUsers::class,
         ProcessMailFollowups::class,
         GenerateSalesTodos::class,
+        PayoutPartners::class,
     ];
 
     /**
@@ -75,6 +77,14 @@ class Kernel extends ConsoleKernel
             ->withoutOverlapping()
             ->runInBackground()
             ->appendOutputTo(storage_path('logs/sales-todos.log'));
+
+        // Maandelijkse partneruitbetaling: alle pending commissies per partner
+        // in één Stripe-Connect-transfer (minimum €10, zie PayoutPartners).
+        $schedule->command('partners:payout')
+            ->monthlyOn(1, '08:00')
+            ->withoutOverlapping()
+            ->runInBackground()
+            ->appendOutputTo(storage_path('logs/partner-payouts.log'));
     }
 
 

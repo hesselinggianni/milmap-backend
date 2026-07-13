@@ -81,6 +81,15 @@ class RegisterController extends Controller
         // aangemaakt bij de eerste checkout.
         $this->ensureStripeCustomer($user);
 
+        // Partner-attributie: kwam de registratie via een partner-referral-link
+        // binnen (frontend stuurt `referral_code`, bv. JANSEN25), koppel de
+        // gebruiker dan aan die partner. De partnerkorting gaat automatisch op
+        // de eerste checkout; onbekende codes worden stil genegeerd.
+        if ($request->filled('referral_code')) {
+            app(\App\Services\PartnerService::class)
+                ->attachReferral($user, $request->input('referral_code'));
+        }
+
         // If this e-mail was invited to any mission/map, accept those invitations
         // now. Such accounts become free / view-only until they upgrade.
         $invitesAccepted = app(InvitationService::class)->convertForNewUser($user);

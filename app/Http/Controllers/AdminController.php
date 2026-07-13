@@ -397,6 +397,19 @@ class AdminController extends Controller
                         'members_count' => $team->members_count,
                     ];
                 }),
+                // Partneraanmelding (partners.milmap.nl) — zo ziet de admin op
+                // de gebruikerskaart direct of iemand partner is/wil worden.
+                'partner' => $user->partner ? [
+                    'id'                     => $user->partner->id,
+                    'status'                 => $user->partner->status,
+                    'company_name'           => $user->partner->company_name,
+                    'referral_code'          => $user->partner->referral_code,
+                    'commission_rate'        => $user->partner->commission_rate,
+                    'discount_rate'          => $user->partner->discount_rate,
+                    'agreement_accepted_at'  => $user->partner->agreement_accepted_at?->toISOString(),
+                    'agreement_confirmed_at' => $user->partner->agreement_confirmed_at?->toISOString(),
+                    'created_at'             => $user->partner->created_at?->toISOString(),
+                ] : null,
                 'subscriptions' => $user->subscriptions->map(function ($sub) {
                     return [
                         'id'            => $sub->id,

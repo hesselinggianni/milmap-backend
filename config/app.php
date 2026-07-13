@@ -71,6 +71,18 @@ return [
 
     /*
     |--------------------------------------------------------------------------
+    | Partnerportaal URL
+    |--------------------------------------------------------------------------
+    |
+    | De publieke URL van het partnerportaal (partners.milmap.nl). Gebruikt
+    | voor de Stripe-Connect-onboarding-redirects en links in partnermails.
+    |
+    */
+
+    'partner_url' => env('PARTNER_URL', 'https://partners.milmap.nl'),
+
+    /*
+    |--------------------------------------------------------------------------
     | Application Timezone
     |--------------------------------------------------------------------------
     |

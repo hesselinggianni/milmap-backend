@@ -53,6 +53,12 @@ class User extends Authenticatable
         });
     }
 
+    /** Partnerprofiel (partners.milmap.nl) — los van de share-referral hieronder. */
+    public function partner()
+    {
+        return $this->hasOne(\App\Models\Partner::class);
+    }
+
     /** Wie heeft deze gebruiker geworven (via een ?utm_source=<share_uuid> link). */
     public function referrer()
     {

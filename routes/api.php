@@ -138,6 +138,32 @@ Route::prefix('v1')->middleware(['api'])->group(function () {
     // Stripe webhook — public, verified via signature
     Route::post('/billing/webhook', [BillingController::class, 'handleWebhook']);
 
+    // ── Partnersysteem (partners.milmap.nl) ──────────────────────
+    // Publiek: aanmelden als partner + referral-code valideren (de registratie-
+    // pagina toont hiermee de korting en partnernaam).
+    Route::post('/partners/apply', [\App\Http\Controllers\PartnerController::class, 'apply'])
+        ->middleware('throttle:6,1');
+    Route::get('/partners/referral/{code}', [\App\Http\Controllers\PartnerController::class, 'validateReferral'])
+        ->middleware('throttle:30,1');
+
+    // Partnerportaal — ingelogd als milmap-user mét partnerprofiel. Bewust
+    // buiten de EnsureEmailVerified/EnsureNotViewOnly-groep: een net
+    // aangemaakte partner moet zijn status kunnen zien.
+    Route::middleware(['auth:sanctum', 'partner'])->prefix('partner')->group(function () {
+        // Partnerovereenkomst: accepteren → code per mail → bevestigen.
+        Route::get ('/agreement',          [\App\Http\Controllers\PartnerAgreementController::class, 'status']);
+        Route::post('/agreement/accept',   [\App\Http\Controllers\PartnerAgreementController::class, 'accept'])->middleware('throttle:10,1');
+        Route::post('/agreement/confirm',  [\App\Http\Controllers\PartnerAgreementController::class, 'confirm'])->middleware('throttle:15,1');
+        Route::post('/agreement/resend',   [\App\Http\Controllers\PartnerAgreementController::class, 'resend'])->middleware('throttle:3,10');
+
+        Route::get('/dashboard',      [\App\Http\Controllers\PartnerDashboardController::class, 'index']);
+        Route::get('/stats',          [\App\Http\Controllers\PartnerDashboardController::class, 'stats']);
+        Route::get('/referrals',      [\App\Http\Controllers\PartnerDashboardController::class, 'referrals']);
+        Route::get('/commissions',    [\App\Http\Controllers\PartnerDashboardController::class, 'commissions']);
+        Route::post('/stripe/onboard', [\App\Http\Controllers\PartnerStripeController::class, 'createOnboardingLink']);
+        Route::get('/stripe/status',  [\App\Http\Controllers\PartnerStripeController::class, 'status']);
+    });
+
     // Live Stripe pricing per plan (amount/currency/interval/product_id) — public,
     // used by the checkout & landing pages so the shown price matches Stripe.
     Route::get('/billing/pricing', [BillingController::class, 'pricing']);
@@ -677,6 +703,13 @@ Route::prefix('v1')->middleware(['api'])->group(function () {
             Route::post  ('/admin/agenda/appointments',      [AdminAgendaController::class, 'store']);
             Route::put   ('/admin/agenda/appointments/{id}', [AdminAgendaController::class, 'update']);
             Route::delete('/admin/agenda/appointments/{id}', [AdminAgendaController::class, 'destroy']);
+
+            // ── Partnerbeheer (aanmeldingen, rates, uitbetalingen) ──────
+            Route::get ('/admin/partners',                    [\App\Http\Controllers\AdminPartnerController::class, 'index']);
+            Route::post('/admin/partners/{partner}/approve',  [\App\Http\Controllers\AdminPartnerController::class, 'approve']);
+            Route::post('/admin/partners/{partner}/suspend',  [\App\Http\Controllers\AdminPartnerController::class, 'suspend']);
+            Route::put ('/admin/partners/{partner}/rates',    [\App\Http\Controllers\AdminPartnerController::class, 'updateRates']);
+            Route::post('/admin/partners/payouts',            [\App\Http\Controllers\AdminPartnerController::class, 'triggerPayouts']);
 
             // ── Kosten/inkomsten-grootboek ──────────────────────────────
             Route::get   ('/admin/costs',      [\App\Http\Controllers\AdminCostController::class, 'index']);

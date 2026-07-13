@@ -276,6 +276,12 @@ class BillingController extends Controller
             // Korting uit de mail (bv. MILMAP-XXXX-XXXX) automatisch toepassen.
             $sessionParams = $this->applyPromotionCode($sessionParams, $request->input('coupon'));
 
+            // Partnerkorting voor een bestaand, via een partner doorverwezen
+            // account ($user is null bij een gloednieuwe gast — dan is er ook
+            // nog geen referral, dus valt dit stil weg).
+            $sessionParams = app(\App\Services\PartnerService::class)
+                ->applyReferralDiscount($sessionParams, $user);
+
             $session = $this->stripe->checkout->sessions->create($sessionParams);
         } catch (\Stripe\Exception\ExceptionInterface $e) {
             // Any Stripe failure. The most common cause here is a Price ID that
@@ -473,6 +479,12 @@ class BillingController extends Controller
 
         // Korting uit de mail (bv. MILMAP-XXXX-XXXX) automatisch toepassen.
         $sessionParams = $this->applyPromotionCode($sessionParams, $request->input('coupon'));
+
+        // Partnerkorting: kwam deze gebruiker via een partner-referral binnen,
+        // dan gaat het kortingspercentage van die partner automatisch op de
+        // checkout (tenzij er al een andere korting op de sessie staat).
+        $sessionParams = app(\App\Services\PartnerService::class)
+            ->applyReferralDiscount($sessionParams, $user);
 
         $session = $this->stripe->checkout->sessions->create($sessionParams);
 
@@ -795,10 +807,66 @@ class BillingController extends Controller
             'customer.subscription.updated'  => $this->onSubscriptionUpdated($event->data->object),
             'customer.subscription.deleted'  => $this->onSubscriptionDeleted($event->data->object),
             'invoice.payment_failed'         => $this->onPaymentFailed($event->data->object),
+            'invoice.paid'                   => $this->onInvoicePaid($event->data->object),
+            'charge.refunded'                => $this->onChargeRefunded($event->data->object),
+            'account.updated'                => $this->onConnectAccountUpdated($event->data->object),
             default                          => null,
         };
 
         return response()->json(['received' => true]);
+    }
+
+    // ── Partnersysteem-webhooks ────────────────────────────────────
+
+    /**
+     * Elke betaalde factuur van een via een partner doorverwezen gebruiker
+     * levert een pending commissie op (uitbetaald via partners:payout).
+     * Idempotent per factuur; niet-doorverwezen gebruikers vallen er stil uit.
+     */
+    private function onInvoicePaid(object $invoice): void
+    {
+        try {
+            app(\App\Services\PartnerService::class)->recordCommission($invoice);
+        } catch (\Throwable $e) {
+            Log::error('[partner] commissie registreren mislukt', [
+                'invoice' => $invoice->id ?? null, 'error' => $e->getMessage(),
+            ]);
+        }
+    }
+
+    /** Refund: draai de bijbehorende commissie terug zolang die niet is uitbetaald. */
+    private function onChargeRefunded(object $charge): void
+    {
+        $invoiceId = is_string($charge->invoice ?? null)
+            ? $charge->invoice
+            : ($charge->invoice->id ?? null);
+        if (! $invoiceId) return;
+
+        try {
+            app(\App\Services\PartnerService::class)->markRefunded($invoiceId);
+        } catch (\Throwable $e) {
+            Log::warning('[partner] refund verwerken mislukt', [
+                'invoice' => $invoiceId, 'error' => $e->getMessage(),
+            ]);
+        }
+    }
+
+    /**
+     * Stripe-Connect-account van een partner bijgewerkt: markeer de onboarding
+     * als afgerond zodra uitbetalingen mogelijk zijn (payouts_enabled).
+     */
+    private function onConnectAccountUpdated(object $account): void
+    {
+        $partner = \App\Models\Partner::where('stripe_account_id', $account->id ?? '')->first();
+        if (! $partner) return;
+
+        $enabled = (bool) ($account->payouts_enabled ?? false);
+        if ($enabled !== $partner->stripe_onboarding_complete) {
+            $partner->update(['stripe_onboarding_complete' => $enabled]);
+            Log::info('[partner] Connect-onboarding status bijgewerkt', [
+                'partner' => $partner->id, 'payouts_enabled' => $enabled,
+            ]);
+        }
     }
 
     // ── Webhook handlers ───────────────────────────────────────────
