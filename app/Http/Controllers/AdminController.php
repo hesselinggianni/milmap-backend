@@ -12,6 +12,8 @@ use Illuminate\Support\Facades\Auth;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Password;
 use Illuminate\Support\Facades\Log;
+use Illuminate\Support\Facades\Mail;
+use App\Mail\ResetPasswordMail;
 
 class AdminController extends Controller
 {
@@ -474,8 +476,17 @@ class AdminController extends Controller
         try {
             $user = User::findOrFail($userId);
 
-            // Send password reset notification
-            $user->sendPasswordResetNotification(Password::createToken($user));
+            // Zelfde flow als de publieke wachtwoord-reset
+            // (PasswordResetController::sendResetLink): een custom e-mail met een
+            // link naar het frontend-resetscherm. De standaard Laravel-notificatie
+            // (sendPasswordResetNotification) werkt hier NIET omdat deze API-app
+            // geen `password.reset`-webroute heeft → RouteNotFoundException.
+            $token = Password::createToken($user);
+            $resetUrl = config('auth.passwords.users.url')
+                . '?token=' . $token
+                . '&email=' . urlencode($user->email);
+
+            Mail::to($user->email)->send(new ResetPasswordMail($resetUrl));
 
             return response()->json([
                 'message' => 'Wachtwoord reset link verzonden naar ' . $user->email
@@ -486,7 +497,8 @@ class AdminController extends Controller
                 'message' => 'Gebruiker niet gevonden',
                 'error' => 'not_found'
             ], 404);
-        } catch (\Exception $e) {
+        } catch (\Throwable $e) {
+            Log::error('[admin-password-reset] kon reset-link niet versturen: ' . $e->getMessage());
             return response()->json([
                 'message' => 'Fout bij verzending',
                 'error' => $e->getMessage()
