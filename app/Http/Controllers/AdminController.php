@@ -22,12 +22,23 @@ class AdminController extends Controller
     {
         try {
             // Alleen tellingen — bewust geen kaarttitels/datums inladen.
-            $baseUsers = User::select('id', 'first_name', 'last_name', 'email', 'is_admin', 'created_at', 'email_verified_at', 'last_seen_at')
+            $baseUsers = User::select('id', 'first_name', 'last_name', 'email', 'is_admin', 'created_at', 'email_verified_at', 'last_seen_at', 'trial_ends_at')
                 ->withCount('maps')
                 ->get();
 
             // "Online" = laatst gezien in de afgelopen 5 minuten.
             $onlineThreshold = now()->subMinutes(5);
+
+            // Actieve abonnementen per user (voor de plan-kolom) — één query,
+            // geen N+1. Spiegelt User::activeSubscription() (active/trialing en
+            // niet-verlopen), gegroepeerd op user_id.
+            $activeSubs = \App\Models\Subscription::whereIn('stripe_status', ['active', 'trialing'])
+                ->where(function ($q) {
+                    $q->whereNull('ends_at')->orWhere('ends_at', '>', now());
+                })
+                ->orderByDesc('created_at')
+                ->get()
+                ->groupBy('user_id');
 
             // Per-gebruiker tellingen van routekaarten en missies in twee
             // groeps-queries (geen N+1, en zonder de rijen/titels te laden).
@@ -38,10 +49,24 @@ class AdminController extends Controller
                 ->groupBy('owner_id')
                 ->pluck('c', 'owner_id');
 
-            $users = $baseUsers->map(function ($user) use ($routeMapCounts, $missionCounts, $onlineThreshold) {
+            $users = $baseUsers->map(function ($user) use ($routeMapCounts, $missionCounts, $onlineThreshold, $activeSubs) {
                 $lastSeen = $user->last_seen_at
                     ? \Illuminate\Support\Carbon::parse($user->last_seen_at)
                     : null;
+
+                // Plan bepalen: betaald abonnement > app-proef > gratis starter.
+                $sub = optional($activeSubs->get($user->id))->first();
+                $planInterval = null;
+                if ($sub) {
+                    $tier = User::tierForPrice($sub->stripe_price);        // pro | team | starter
+                    $plan = $tier === 'starter' ? 'pro' : $tier;          // actieve sub = minstens betaald
+                    $key = User::planKeyForPrice($sub->stripe_price);      // *_monthly | *_yearly
+                    if ($key) $planInterval = str_ends_with($key, 'yearly') ? 'yearly' : 'monthly';
+                } elseif ($user->trial_ends_at && \Illuminate\Support\Carbon::parse($user->trial_ends_at)->isFuture()) {
+                    $plan = 'trial';
+                } else {
+                    $plan = 'starter';
+                }
 
                 return [
                     'id'               => $user->id,
@@ -53,6 +78,8 @@ class AdminController extends Controller
                     'missions_count'   => (int) ($missionCounts[$user->id] ?? 0),
                     'created_at'       => $user->created_at,
                     'email_verified'   => (bool) $user->email_verified_at,
+                    'plan'             => $plan,
+                    'plan_interval'    => $planInterval,
                     'last_seen_at'     => $lastSeen,
                     'is_online'        => $lastSeen ? $lastSeen->gt($onlineThreshold) : false,
                 ];
