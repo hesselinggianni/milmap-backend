@@ -55,7 +55,7 @@ class PartnerController extends Controller
         $partner = Partner::create([
             'user_id'       => $user->id,
             'company_name'  => $validated['company_name'] ?? null,
-            'referral_code' => Partner::generateReferralCode($validated['company_name'] ?: $validated['name']),
+            'referral_code' => Partner::generateReferralCode(($validated['company_name'] ?? null) ?: $validated['name']),
             'status'        => Partner::STATUS_PENDING,
             'website'       => $validated['website'] ?? null,
             'description'   => $validated['description'],

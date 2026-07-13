@@ -25,6 +25,12 @@ class Kernel extends HttpKernel
     /**
      * The application's route middleware.
      *
+     * ⚠️ LET OP: dit bestand is LEGACY en wordt door Laravel 11+ NIET meer
+     * geladen — de echte registratie staat in bootstrap/app.php
+     * (->withMiddleware). Een alias alléén hier toevoegen geeft op runtime
+     * "Target class [...] does not exist". Houd beide in sync of ruim dit
+     * bestand op.
+     *
      * @var array
      */
     protected $routeMiddleware = [
