@@ -705,6 +705,14 @@ Route::prefix('v1')->middleware(['api'])->group(function () {
             Route::put   ('/admin/status-domains/{id}',   [StatusPageController::class, 'update']);
             Route::delete('/admin/status-domains/{id}',   [StatusPageController::class, 'destroy']);
 
+            // ── Partnersite-snelkoppelingen (sidebar-widget, optioneel met
+            //    versleutelde inloggegevens) ───────────────────────────
+            Route::get   ('/admin/links',               [\App\Http\Controllers\AdminLinkController::class, 'index']);
+            Route::post  ('/admin/links',               [\App\Http\Controllers\AdminLinkController::class, 'store']);
+            Route::put   ('/admin/links/{id}',          [\App\Http\Controllers\AdminLinkController::class, 'update']);
+            Route::delete('/admin/links/{id}',          [\App\Http\Controllers\AdminLinkController::class, 'destroy']);
+            Route::get   ('/admin/links/{id}/password', [\App\Http\Controllers\AdminLinkController::class, 'revealPassword']);
+
             // ── Leads (marketing signups via milmap.nl/app) ─────────────
             Route::get   ('/admin/leads',                  [LeadController::class, 'adminIndex']);
             Route::post  ('/admin/leads/{id}/mark-notified', [LeadController::class, 'adminMarkNotified']);

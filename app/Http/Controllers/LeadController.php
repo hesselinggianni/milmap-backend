@@ -4,6 +4,7 @@ namespace App\Http\Controllers;
 
 use App\Mail\AppDownloadMail;
 use App\Models\Lead;
+use App\Services\CrmLeadPushService;
 use App\Services\LaunchCouponService;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Mail;
@@ -44,6 +45,12 @@ class LeadController extends Controller
                 'user_agent' => substr((string) $request->userAgent(), 0, 255),
             ],
         );
+
+        // Nieuwe leads ook in de Sales-pijplijn zetten (fase "Lead") zodat
+        // sales ze direct kan opvolgen vanuit admin → Sales / CRM.
+        if ($lead->wasRecentlyCreated) {
+            app(CrmLeadPushService::class)->push($lead);
+        }
 
         return response()->json([
             'ok'       => true,
