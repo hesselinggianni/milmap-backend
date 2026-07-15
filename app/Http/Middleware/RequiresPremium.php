@@ -28,15 +28,20 @@ class RequiresPremium
     {
         $user = $request->user();
 
-        // Geen user (auth-middleware vangt dit al), admins en premium-gebruikers
-        // passeren altijd. onAppTrial()/subscribed() raakt de DB alleen wanneer
-        // nodig.
-        if (! $user || ($user->is_admin ?? false) || $user->hasPremiumAccess()) {
+        // Geen user (auth-middleware vangt dit al) of admin: altijd door.
+        if (! $user || ($user->is_admin ?? false)) {
             return $next($request);
         }
 
-        // Lezen verandert geen staat → altijd toegestaan (deelnemers blijven zien).
-        if (in_array($request->method(), ['GET', 'HEAD', 'OPTIONS'], true)) {
+        $action = match ($request->method()) {
+            'GET', 'HEAD', 'OPTIONS' => 'view',
+            'POST' => 'create',
+            'DELETE' => 'delete',
+            default => 'update', // PUT/PATCH
+        };
+
+        // Geen feature-sleutel meegegeven aan de middleware → niet gated.
+        if (! $feature || $user->hasFeature($feature, $action)) {
             return $next($request);
         }
 

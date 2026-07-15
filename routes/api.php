@@ -738,6 +738,10 @@ Route::prefix('v1')->middleware(['api'])->group(function () {
             Route::put   ('/admin/costs/{id}', [\App\Http\Controllers\AdminCostController::class, 'update']);
             Route::delete('/admin/costs/{id}', [\App\Http\Controllers\AdminCostController::class, 'destroy']);
 
+            // ── Plannen & rechten (abonnement x module CRUD-matrix) ─────
+            Route::get('/admin/plan-permissions', [\App\Http\Controllers\AdminPlanPermissionController::class, 'index']);
+            Route::put('/admin/plan-permissions', [\App\Http\Controllers\AdminPlanPermissionController::class, 'update']);
+
             // ── E-mailcampagnes ─────────────────────────────────────────
             // Template-registry (door Claude geschreven backend-templates).
             Route::get ('/admin/mail/templates',                 [MailCampaignController::class, 'templates']);

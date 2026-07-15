@@ -315,6 +315,7 @@ class User extends Authenticatable
         'teams',             // team aanmaken & beheren
         'team_shared_maps',  // gedeelde teamkaarten
         'live_location',     // live locatie delen
+        'exercise',          // oefening-modus (force-on-force)
     ];
 
     /** Loopt de gratis proefperiode nu nog? */
@@ -333,14 +334,39 @@ class User extends Authenticatable
         return $this->onAppTrial() || $this->subscribed();
     }
 
-    /** Heeft de gebruiker toegang tot een specifieke feature? */
-    public function hasFeature(string $feature): bool
+    /**
+     * Heeft de gebruiker toegang tot een specifieke feature/actie?
+     *
+     * $action is 'view'|'create'|'update'|'delete'. Tijdens de proefperiode of
+     * voor admins is alles toegestaan (ongewijzigd gedrag). Daarna wordt de
+     * per-plan CRUD-matrix (PlanPermission, beheerd via het admin-scherm
+     * "Plannen & rechten") geraadpleegd; ontbreekt die rij, dan valt terug op
+     * de oude binaire hasPremiumAccess()-poort zodat niets breekt.
+     */
+    public function hasFeature(string $feature, string $action = 'update'): bool
     {
-        if (in_array($feature, self::PREMIUM_FEATURES, true)) {
+        if (! in_array($feature, self::PREMIUM_FEATURES, true)) {
+            return true; // basisfuncties zijn altijd beschikbaar
+        }
+
+        if (($this->is_admin ?? false) || $this->onAppTrial()) {
+            return true;
+        }
+
+        $row = \App\Models\PlanPermission::where('plan', $this->plan())
+            ->where('module', $feature)
+            ->first();
+
+        if (! $row) {
             return $this->hasPremiumAccess();
         }
 
-        return true; // basisfuncties zijn altijd beschikbaar
+        return match ($action) {
+            'view' => $row->can_view,
+            'create' => $row->can_create,
+            'delete' => $row->can_delete,
+            default => $row->can_update,
+        };
     }
 
     /** Resterende proefdagen (naar boven afgerond), of null als er geen proef loopt. */
@@ -356,9 +382,10 @@ class User extends Authenticatable
     /** Per-feature entitlement-map (true/false) voor de frontend. */
     public function entitlements(): array
     {
-        $has = $this->hasPremiumAccess();
-
-        return array_fill_keys(self::PREMIUM_FEATURES, $has);
+        return array_combine(
+            self::PREMIUM_FEATURES,
+            array_map(fn ($f) => $this->hasFeature($f, 'update'), self::PREMIUM_FEATURES)
+        );
     }
 
     /**
