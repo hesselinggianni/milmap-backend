@@ -805,6 +805,8 @@ Route::prefix('v1')->middleware(['api'])->group(function () {
             Route::post  ('/admin/todos',      [TodoController::class, 'adminStore']);
             Route::put   ('/admin/todos/{id}', [TodoController::class, 'adminUpdate']);
             Route::delete('/admin/todos/{id}', [TodoController::class, 'adminDestroy']);
+            Route::post  ('/admin/todos/{id}/attachments',          [TodoController::class, 'uploadAttachment']);
+            Route::delete('/admin/todos/{id}/attachments/{attId}',  [TodoController::class, 'destroyAttachment']);
 
             // ── Taak-labels (categorieën + platforms) ───────────────────
             Route::get   ('/admin/task-labels',      [\App\Http\Controllers\TaskLabelController::class, 'index']);

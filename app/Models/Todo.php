@@ -119,6 +119,12 @@ class Todo extends Model
         return $this->belongsToMany(TaskLabel::class, 'todo_task_label', 'todo_id', 'task_label_id');
     }
 
+    /** Bijlagen (afbeeldingen/bestanden). */
+    public function attachments()
+    {
+        return $this->hasMany(TodoAttachment::class, 'todo_id')->orderBy('created_at');
+    }
+
     /** Naam van de toegewezene ('Claude', een admin-naam, of null). */
     public function assigneeName(): ?string
     {
@@ -150,6 +156,9 @@ class Todo extends Model
             'position'        => $this->position,
             'labels'          => $this->relationLoaded('labels')
                 ? $this->labels->map->toApiArray()->values()
+                : [],
+            'attachments'     => $this->relationLoaded('attachments')
+                ? $this->attachments->map->toApiArray()->values()
                 : [],
             'source'          => $this->source,
             'lastExit'        => $this->last_exit,

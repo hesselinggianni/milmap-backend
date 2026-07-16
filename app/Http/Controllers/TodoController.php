@@ -3,8 +3,10 @@
 namespace App\Http\Controllers;
 
 use App\Models\Todo;
+use App\Models\TodoAttachment;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Auth;
+use Illuminate\Support\Facades\Storage;
 use Illuminate\Validation\Rule;
 
 /**
@@ -30,7 +32,7 @@ class TodoController extends Controller
             'status' => ['nullable', Rule::in(Todo::STATUSES)],
         ]);
 
-        $query = Todo::query()->with(['creator', 'labels']);
+        $query = Todo::query()->with(['creator', 'labels', 'attachments']);
 
         if ($qs = $request->query('q')) {
             $query->where(function ($w) use ($qs) {
@@ -74,7 +76,7 @@ class TodoController extends Controller
             $todo->labels()->sync($validated['labels'] ?? []);
         }
 
-        return response()->json(['todo' => $todo->fresh(['creator', 'labels'])->toApiArray()], 201);
+        return response()->json(['todo' => $todo->fresh(['creator', 'labels', 'attachments'])->toApiArray()], 201);
     }
 
     public function adminUpdate(Request $request, string $id)
@@ -104,7 +106,7 @@ class TodoController extends Controller
             $todo->labels()->sync($validated['labels'] ?? []);
         }
 
-        return response()->json(['todo' => $todo->fresh(['creator', 'labels'])->toApiArray()]);
+        return response()->json(['todo' => $todo->fresh(['creator', 'labels', 'attachments'])->toApiArray()]);
     }
 
     public function adminDestroy(string $id)
@@ -114,11 +116,47 @@ class TodoController extends Controller
         return response()->json(['ok' => true]);
     }
 
+    // ── Bijlagen ────────────────────────────────────────────────────────
+
+    /** POST /api/v1/admin/todos/{id}/attachments — één of meer bestanden. */
+    public function uploadAttachment(Request $request, string $id)
+    {
+        $todo = Todo::findOrFail($id);
+        $request->validate([
+            'files'   => 'required|array|max:10',
+            'files.*' => 'file|max:20480', // 20 MB per bestand
+        ]);
+
+        $created = [];
+        foreach ($request->file('files', []) as $file) {
+            $path = $file->store("todo-attachments/{$todo->id}", 'public');
+            $att = $todo->attachments()->create([
+                'path'          => $path,
+                'original_name' => $file->getClientOriginalName(),
+                'mime'          => $file->getMimeType(),
+                'size'          => $file->getSize(),
+            ]);
+            $created[] = $att->toApiArray();
+        }
+
+        return response()->json(['attachments' => $created], 201);
+    }
+
+    /** DELETE /api/v1/admin/todos/{id}/attachments/{attId} */
+    public function destroyAttachment(string $id, int $attId)
+    {
+        $att = TodoAttachment::where('todo_id', $id)->where('id', $attId)->firstOrFail();
+        Storage::disk('public')->delete($att->path);
+        $att->delete();
+
+        return response()->json(['ok' => true]);
+    }
+
     // ── Deploy-app (X-Deploy-Token) — legacy queue-status ──────────────
 
     public function deployIndex()
     {
-        $todos = Todo::query()->with('labels')->orderByDesc('created_at')->get();
+        $todos = Todo::query()->with(['labels', 'attachments'])->orderByDesc('created_at')->get();
 
         return response()->json([
             'todos' => $todos->map(fn ($t) => $t->toDeployArray())->values(),
