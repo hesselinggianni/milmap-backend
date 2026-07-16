@@ -820,6 +820,11 @@ Route::prefix('v1')->middleware(['api'])->group(function () {
             Route::get ('/admin/sales-todos/preview',  [\App\Http\Controllers\SalesTodoController::class, 'preview']);
             Route::post('/admin/sales-todos/generate', [\App\Http\Controllers\SalesTodoController::class, 'generate']);
 
+            // ── Google Search Console → SEO-inzichten + taakgeneratie ───
+            Route::get ('/admin/seo/gsc/summary',        [\App\Http\Controllers\AdminSeoInsightsController::class, 'summary']);
+            Route::post('/admin/seo/gsc/config',         [\App\Http\Controllers\AdminSeoInsightsController::class, 'saveConfig']);
+            Route::post('/admin/seo/gsc/generate-tasks', [\App\Http\Controllers\AdminSeoInsightsController::class, 'generateTasks']);
+
             Route::get('/admin/users/{userId}', [AdminController::class, 'getUser']);
             Route::delete('/admin/users/{userId}', [AdminController::class, 'deleteUser']);
             Route::post('/admin/users/{userId}/reset-password', [AdminController::class, 'resetUserPassword']);

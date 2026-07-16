@@ -184,7 +184,7 @@ class SalesTodoService
 
         foreach ($this->signals() as $sig) {
             $open = Todo::where('dedupe_key', $sig['key'])
-                ->whereIn('status', ['pending', 'queued', 'running'])
+                ->whereIn('status', ['backlog', 'voorbereiding', 'wachtrij', 'bezig', 'review', 'feedback'])
                 ->first();
 
             if ($open) {
@@ -200,7 +200,7 @@ class SalesTodoService
                     'description'       => $sig['description'],
                     'repo'              => self::REPO,
                     'mode'              => self::MODE,
-                    'status'            => 'pending',
+                    'status'            => 'backlog',
                     'source'            => 'admin',
                     'dedupe_key'        => $sig['key'],
                     'created_by'        => null,

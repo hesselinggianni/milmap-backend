@@ -81,6 +81,14 @@ class Kernel extends ConsoleKernel
             ->runInBackground()
             ->appendOutputTo(storage_path('logs/sales-todos.log'));
 
+        // Dagelijkse SEO-taken uit Google Search Console-signalen (no-op als
+        // GSC niet is geconfigureerd).
+        $schedule->command('seo:generate-tasks')
+            ->dailyAt('07:15')
+            ->withoutOverlapping()
+            ->runInBackground()
+            ->appendOutputTo(storage_path('logs/seo-tasks.log'));
+
         // Maandelijkse partneruitbetaling: alle pending commissies per partner
         // in één Stripe-Connect-transfer (minimum €10, zie PayoutPartners).
         $schedule->command('partners:payout')
