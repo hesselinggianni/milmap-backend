@@ -14,12 +14,13 @@ class AppEvent extends Model
     public $timestamps = false;
 
     protected $fillable = [
-        'type', 'name', 'label', 'platform', 'device',
+        'type', 'name', 'label', 'platform', 'device', 'country', 'is_authed',
         'locale', 'visitor_hash', 'meta', 'occurred_at',
     ];
 
     protected $casts = [
         'meta'        => 'array',
+        'is_authed'   => 'boolean',
         'occurred_at' => 'datetime',
     ];
 }

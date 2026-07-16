@@ -3,6 +3,8 @@
 namespace App\Http\Controllers;
 
 use App\Models\AppEvent;
+use App\Models\SiteEvent;
+use App\Support\GeoIp;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
 
@@ -31,13 +33,19 @@ class AppEventController extends Controller
             'events.*.name'       => 'required|string|max:200',
             'events.*.label'      => 'nullable|string|max:120',
             'events.*.platform'   => 'nullable|string|in:web,ios,android,desktop',
+            'events.*.authed'     => 'nullable|boolean',
             'events.*.locale'     => 'nullable|string|max:5',
             'events.*.meta'       => 'nullable|array',
+            'events.*.utm_source'   => 'nullable|string|max:120',
+            'events.*.utm_medium'   => 'nullable|string|max:120',
+            'events.*.utm_campaign' => 'nullable|string|max:120',
         ]);
 
         $ua     = (string) $request->userAgent();
         $device = preg_match('/Mobi|Android|iPhone/i', $ua) ? 'mobile' : 'desktop';
         $hash   = hash('sha256', now()->toDateString() . config('app.key') . $request->ip() . $ua);
+        // Land één keer per verzoek bepalen (ISO-2, zonder het IP op te slaan).
+        $country = GeoIp::country($request);
         $now    = now();
 
         $rows = [];
@@ -48,7 +56,12 @@ class AppEventController extends Controller
                 'label'        => isset($e['label']) ? mb_substr($e['label'], 0, 120) : null,
                 'platform'     => $e['platform'] ?? 'web',
                 'device'       => $device,
+                'country'      => $country,
+                'is_authed'    => array_key_exists('authed', $e) ? (bool) $e['authed'] : null,
                 'locale'       => $e['locale'] ?? null,
+                'utm_source'   => isset($e['utm_source']) ? mb_substr($e['utm_source'], 0, 120) : null,
+                'utm_medium'   => isset($e['utm_medium']) ? mb_substr($e['utm_medium'], 0, 120) : null,
+                'utm_campaign' => isset($e['utm_campaign']) ? mb_substr($e['utm_campaign'], 0, 120) : null,
                 'visitor_hash' => $hash,
                 'meta'         => isset($e['meta']) ? json_encode(array_slice($e['meta'], 0, 10)) : null,
                 'occurred_at'  => $now,
@@ -88,59 +101,164 @@ class AppEventController extends Controller
 
     // ── Admin: aggregaties voor het analytics-dashboard ──────────────────
 
+    /** Platform-sleutels van de MilMap-app (naast 'site' voor milmap.nl). */
+    private const APP_PLATFORMS = ['web', 'ios', 'android', 'desktop'];
+
     public function adminSummary(Request $request): \Illuminate\Http\JsonResponse
     {
         $days  = max(1, min(365, (int) $request->query('days', 30)));
         $since = now()->subDays($days)->startOfDay();
 
-        $base = AppEvent::where('occurred_at', '>=', $since);
+        // Platform-filter: all | site (milmap.nl) | web (app.milmap.nl) | ios | android | desktop
+        $platform = (string) $request->query('platform', 'all');
+        if ($platform !== 'all' && $platform !== 'site' && ! in_array($platform, self::APP_PLATFORMS, true)) {
+            $platform = 'all';
+        }
+        $appPlatformFilter = in_array($platform, self::APP_PLATFORMS, true) ? $platform : null;
+        $includeApp  = $platform === 'all' || $appPlatformFilter !== null;
+        $includeSite = $platform === 'all' || $platform === 'site';
 
-        // Top-routes (meest bezochte schermen)
-        $topRoutes = (clone $base)->where('type', 'route')
-            ->select('name', DB::raw('COUNT(*) as total'), DB::raw('COUNT(DISTINCT visitor_hash) as uniques'))
-            ->groupBy('name')
-            ->orderByDesc('total')
-            ->limit(50)
-            ->get();
+        // Verse query-builders (elke aanroep = nieuwe builder).
+        $appBase = function () use ($since, $appPlatformFilter) {
+            $q = AppEvent::where('occurred_at', '>=', $since);
+            if ($appPlatformFilter) $q->where('platform', $appPlatformFilter);
+            return $q;
+        };
+        $siteBase = fn () => SiteEvent::where('occurred_at', '>=', $since);
 
-        // Top-acties (meest aangeklikte knoppen)
-        $topActions = (clone $base)->where('type', 'action')
-            ->select('name', DB::raw('MAX(label) as label'), DB::raw('COUNT(*) as total'), DB::raw('COUNT(DISTINCT visitor_hash) as uniques'))
-            ->groupBy('name')
-            ->orderByDesc('total')
-            ->limit(50)
-            ->get();
+        // ── Top-routes (schermen) — app-routes + milmap.nl-pageviews ──
+        $routeLists = [];
+        if ($includeApp) {
+            $routeLists[] = $appBase()->where('type', 'route')
+                ->select('name', DB::raw('COUNT(*) as total'), DB::raw('COUNT(DISTINCT visitor_hash) as uniques'))
+                ->groupBy('name')->orderByDesc('total')->limit(80)->get();
+        }
+        if ($includeSite) {
+            $routeLists[] = $siteBase()->where('event', 'pageview')
+                ->select('path as name', DB::raw('COUNT(*) as total'), DB::raw('COUNT(DISTINCT visitor_hash) as uniques'))
+                ->groupBy('path')->orderByDesc('total')->limit(80)->get();
+        }
+        $topRoutes = $this->mergeCounts($routeLists, 50);
 
-        // Totalen
-        $routeViews  = (clone $base)->where('type', 'route')->count();
-        $actionClicks = (clone $base)->where('type', 'action')->count();
-        $activeUsers = (clone $base)->distinct('visitor_hash')->count('visitor_hash');
+        // ── Top-acties (knoppen / site-doelen) ──
+        $actionLists = [];
+        if ($includeApp) {
+            $actionLists[] = $appBase()->where('type', 'action')
+                ->select('name', DB::raw('MAX(label) as label'), DB::raw('COUNT(*) as total'), DB::raw('COUNT(DISTINCT visitor_hash) as uniques'))
+                ->groupBy('name')->orderByDesc('total')->limit(80)->get();
+        }
+        if ($includeSite) {
+            $actionLists[] = $siteBase()->where('event', '!=', 'pageview')
+                ->select('event as name', DB::raw('COUNT(*) as total'), DB::raw('COUNT(DISTINCT visitor_hash) as uniques'))
+                ->groupBy('event')->orderByDesc('total')->limit(80)->get();
+        }
+        $topActions = $this->mergeCounts($actionLists, 50);
 
-        // Per platform
-        $byPlatform = (clone $base)
-            ->select('platform', DB::raw('COUNT(*) as total'))
-            ->groupBy('platform')
-            ->orderByDesc('total')
-            ->get();
+        // ── Totalen ──
+        $routeViews = 0; $actionClicks = 0; $activeUsers = 0;
+        if ($includeApp) {
+            $routeViews   += $appBase()->where('type', 'route')->count();
+            $actionClicks += $appBase()->where('type', 'action')->count();
+            $activeUsers  += $appBase()->distinct('visitor_hash')->count('visitor_hash');
+        }
+        if ($includeSite) {
+            $routeViews   += $siteBase()->where('event', 'pageview')->count();
+            $actionClicks += $siteBase()->where('event', '!=', 'pageview')->count();
+            $activeUsers  += $siteBase()->distinct('visitor_hash')->count('visitor_hash');
+        }
 
-        // Dag-trend (route-views + acties per dag)
-        $daily = (clone $base)
-            ->select(
+        // ── Per platform (site + app-platforms) ──
+        $byPlatform = [];
+        if ($includeApp) {
+            foreach ($appBase()->select('platform', DB::raw('COUNT(*) as total'))->groupBy('platform')->get() as $r) {
+                $byPlatform[] = ['platform' => $r->platform ?: 'onbekend', 'total' => (int) $r->total];
+            }
+        }
+        if ($includeSite) {
+            $siteTotal = $siteBase()->count();
+            if ($siteTotal) $byPlatform[] = ['platform' => 'site', 'total' => $siteTotal];
+        }
+        usort($byPlatform, fn ($a, $b) => $b['total'] <=> $a['total']);
+
+        // ── Per land (ISO-2) ──
+        $countryMap = [];
+        $addCountry = function ($rows) use (&$countryMap) {
+            foreach ($rows as $r) {
+                $c = $r->country ?: '??';
+                $countryMap[$c] = ($countryMap[$c] ?? 0) + (int) $r->total;
+            }
+        };
+        if ($includeApp)  $addCountry($appBase()->select('country', DB::raw('COUNT(*) as total'))->groupBy('country')->get());
+        if ($includeSite) $addCountry($siteBase()->select('country', DB::raw('COUNT(*) as total'))->groupBy('country')->get());
+        arsort($countryMap);
+        $byCountry = [];
+        foreach (array_slice($countryMap, 0, 25, true) as $code => $total) {
+            $byCountry[] = ['country' => $code, 'total' => $total];
+        }
+
+        // ── Publiek: ingelogd vs gast ──
+        $audience = ['user' => 0, 'guest' => 0, 'unknown' => 0];
+        if ($includeApp) {
+            foreach ($appBase()->select('is_authed', DB::raw('COUNT(*) as total'))->groupBy('is_authed')->get() as $r) {
+                $key = is_null($r->is_authed) ? 'unknown' : ((int) $r->is_authed === 1 ? 'user' : 'guest');
+                $audience[$key] += (int) $r->total;
+            }
+        }
+        if ($includeSite) {
+            // milmap.nl is inherent anoniem → altijd gast.
+            $audience['guest'] += $siteBase()->count();
+        }
+
+        // ── Dag-trend ──
+        $dailyMap = [];
+        $addDaily = function ($rows) use (&$dailyMap) {
+            foreach ($rows as $r) {
+                $d = (string) $r->day;
+                if (! isset($dailyMap[$d])) $dailyMap[$d] = ['day' => $d, 'routes' => 0, 'actions' => 0, 'uniques' => 0];
+                $dailyMap[$d]['routes']  += (int) $r->routes;
+                $dailyMap[$d]['actions'] += (int) $r->actions;
+                $dailyMap[$d]['uniques'] += (int) $r->uniques;
+            }
+        };
+        if ($includeApp) {
+            $addDaily($appBase()->select(
                 DB::raw('DATE(occurred_at) as day'),
                 DB::raw("SUM(CASE WHEN type = 'route' THEN 1 ELSE 0 END) as routes"),
                 DB::raw("SUM(CASE WHEN type = 'action' THEN 1 ELSE 0 END) as actions"),
                 DB::raw('COUNT(DISTINCT visitor_hash) as uniques')
-            )
-            ->groupBy('day')
-            ->orderBy('day')
-            ->get();
+            )->groupBy('day')->get());
+        }
+        if ($includeSite) {
+            $addDaily($siteBase()->select(
+                DB::raw('DATE(occurred_at) as day'),
+                DB::raw("SUM(CASE WHEN event = 'pageview' THEN 1 ELSE 0 END) as routes"),
+                DB::raw("SUM(CASE WHEN event != 'pageview' THEN 1 ELSE 0 END) as actions"),
+                DB::raw('COUNT(DISTINCT visitor_hash) as uniques')
+            )->groupBy('day')->get());
+        }
+        ksort($dailyMap);
+        $daily = array_values($dailyMap);
+
+        // ── Navigatie-flow (opeenvolgende schermen) ──
+        $flow = $this->flowTransitions($since, $includeApp, $includeSite, $appPlatformFilter);
+
+        // ── Herkomst (UTM) — alleen app-events dragen UTM's ──
+        $utmAgg = function (string $col) use ($appBase) {
+            return $appBase()->whereNotNull($col)->where($col, '!=', '')
+                ->select($col . ' as k', DB::raw('COUNT(*) as total'), DB::raw('COUNT(DISTINCT visitor_hash) as uniques'))
+                ->groupBy($col)->orderByDesc('total')->limit(25)->get()
+                ->map(fn ($r) => ['name' => $r->k, 'total' => (int) $r->total, 'uniques' => (int) $r->uniques])->values();
+        };
+        $utm = $includeApp ? [
+            'sources'   => $utmAgg('utm_source'),
+            'mediums'   => $utmAgg('utm_medium'),
+            'campaigns' => $utmAgg('utm_campaign'),
+        ] : ['sources' => [], 'mediums' => [], 'campaigns' => []];
 
         return response()->json([
-            'range' => [
-                'days'  => $days,
-                'since' => $since->toIso8601String(),
-            ],
-            'totals' => [
+            'range'       => ['days' => $days, 'since' => $since->toIso8601String()],
+            'platform'    => $platform,
+            'totals'      => [
                 'route_views'   => $routeViews,
                 'action_clicks' => $actionClicks,
                 'active_users'  => $activeUsers,
@@ -148,7 +266,91 @@ class AppEventController extends Controller
             'top_routes'  => $topRoutes,
             'top_actions' => $topActions,
             'by_platform' => $byPlatform,
+            'by_country'  => $byCountry,
+            'audience'    => $audience,
             'daily'       => $daily,
+            'flow'        => $flow,
+            'utm'         => $utm,
         ]);
+    }
+
+    /**
+     * Voeg meerdere geaggregeerde tellijsten samen op `name` (som van total +
+     * uniques, eerste niet-lege label wint), gesorteerd aflopend, afgekapt op limit.
+     */
+    private function mergeCounts(array $lists, int $limit): array
+    {
+        $merged = [];
+        foreach ($lists as $list) {
+            foreach ($list as $r) {
+                $name = (string) $r->name;
+                if (! isset($merged[$name])) {
+                    $merged[$name] = ['name' => $name, 'label' => null, 'total' => 0, 'uniques' => 0];
+                }
+                $merged[$name]['total']   += (int) $r->total;
+                $merged[$name]['uniques'] += (int) $r->uniques;
+                if (empty($merged[$name]['label']) && ! empty($r->label)) {
+                    $merged[$name]['label'] = $r->label;
+                }
+            }
+        }
+        usort($merged, fn ($a, $b) => $b['total'] <=> $a['total']);
+
+        return array_slice(array_values($merged), 0, $limit);
+    }
+
+    /**
+     * Top navigatie-overgangen: hoe bezoekers van scherm A naar scherm B gaan.
+     * Groepeert route-bezoeken per (dag-gebonden) bezoeker-hash, sorteert
+     * chronologisch (occurred_at + id als tiebreaker binnen dezelfde batch) en
+     * telt opeenvolgende paren. Begrensd zodat de berekening licht blijft.
+     */
+    private function flowTransitions($since, bool $includeApp, bool $includeSite, ?string $appPlatformFilter): array
+    {
+        $rows = [];
+
+        if ($includeApp) {
+            $q = AppEvent::where('occurred_at', '>=', $since)->where('type', 'route');
+            if ($appPlatformFilter) $q->where('platform', $appPlatformFilter);
+            foreach ($q->orderByDesc('occurred_at')->limit(20000)->get(['id', 'visitor_hash', 'name', 'occurred_at']) as $e) {
+                $rows[] = ['h' => $e->visitor_hash, 'n' => $e->name, 'ts' => $e->occurred_at->timestamp, 'id' => (int) $e->id];
+            }
+        }
+        if ($includeSite) {
+            foreach (SiteEvent::where('occurred_at', '>=', $since)->where('event', 'pageview')
+                ->orderByDesc('occurred_at')->limit(20000)->get(['id', 'visitor_hash', 'path', 'occurred_at']) as $e) {
+                $rows[] = ['h' => $e->visitor_hash, 'n' => $e->path, 'ts' => $e->occurred_at->timestamp, 'id' => (int) $e->id];
+            }
+        }
+        if (! $rows) return [];
+
+        // Groepeer per bezoeker.
+        $byVisitor = [];
+        foreach ($rows as $r) {
+            $byVisitor[$r['h']][] = $r;
+        }
+
+        $pairs = [];
+        foreach ($byVisitor as $seq) {
+            // Chronologisch: op tijd, dan op id (batch-invoegvolgorde = klikvolgorde).
+            usort($seq, fn ($a, $b) => [$a['ts'], $a['id']] <=> [$b['ts'], $b['id']]);
+            $n = count($seq);
+            for ($i = 0; $i < $n - 1; $i++) {
+                $from = $seq[$i]['n'];
+                $to   = $seq[$i + 1]['n'];
+                if ($from === $to) continue; // zelfde scherm opnieuw → overslaan
+                $key = $from . "\x00" . $to;
+                $pairs[$key] = ($pairs[$key] ?? 0) + 1;
+            }
+        }
+        arsort($pairs);
+
+        $flow = [];
+        foreach (array_slice($pairs, 0, 30, true) as $key => $count) {
+            [$from, $to] = explode("\x00", $key);
+            $flow[] = ['from' => $from, 'to' => $to, 'total' => $count];
+        }
+
+        return $flow;
     }
 }

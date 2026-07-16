@@ -87,6 +87,16 @@ class AdminController extends Controller
                 ];
             })->values();
 
+            // Groei deze week / maand: aantal nieuw aangemaakte items sinds het
+            // begin van de huidige (ISO-)week en de huidige maand. Louter tellingen
+            // op created_at — geen extra rijen ingeladen.
+            $weekStart  = now()->startOfWeek();
+            $monthStart = now()->startOfMonth();
+            $delta = fn ($query) => [
+                'week'  => (clone $query)->where('created_at', '>=', $weekStart)->count(),
+                'month' => (clone $query)->where('created_at', '>=', $monthStart)->count(),
+            ];
+
             return response()->json([
                 'users' => $users,
                 'stats' => [
@@ -94,6 +104,13 @@ class AdminController extends Controller
                     'total_maps'      => Map::count(),
                     'total_routemaps' => RouteMap::count(),
                     'total_missions'  => Mission::count(),
+                    'deltas' => [
+                        'users'     => $delta(User::query()),
+                        'admins'    => $delta(User::where('is_admin', true)),
+                        'maps'      => $delta(Map::query()),
+                        'routemaps' => $delta(RouteMap::query()),
+                        'missions'  => $delta(Mission::query()),
+                    ],
                 ]
             ], 200);
 

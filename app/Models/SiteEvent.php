@@ -15,7 +15,7 @@ class SiteEvent extends Model
     protected $fillable = [
         'event', 'path', 'referrer', 'locale',
         'utm_source', 'utm_medium', 'utm_campaign',
-        'visitor_hash', 'device', 'meta', 'occurred_at',
+        'visitor_hash', 'device', 'country', 'meta', 'occurred_at',
     ];
 
     protected $casts = [

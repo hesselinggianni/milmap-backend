@@ -3,6 +3,7 @@
 namespace App\Http\Controllers;
 
 use App\Models\SiteEvent;
+use App\Support\GeoIp;
 use Illuminate\Http\Request;
 
 /**
@@ -57,6 +58,7 @@ class SiteEventController extends Controller
             'utm_campaign' => $data['utm_campaign'] ?? null,
             'visitor_hash' => hash('sha256', now()->toDateString().config('app.key').$request->ip().$ua),
             'device'       => preg_match('/Mobi|Android|iPhone/i', $ua) ? 'mobile' : 'desktop',
+            'country'      => GeoIp::country($request),
             'meta'         => isset($data['meta']) ? array_slice($data['meta'], 0, 10) : null,
             'occurred_at'  => now(),
         ]);
