@@ -173,6 +173,7 @@ Route::prefix('v1')->middleware(['api'])->group(function () {
         Route::get('/commissions',    [\App\Http\Controllers\PartnerDashboardController::class, 'commissions']);
         Route::post('/stripe/onboard', [\App\Http\Controllers\PartnerStripeController::class, 'createOnboardingLink']);
         Route::get('/stripe/status',  [\App\Http\Controllers\PartnerStripeController::class, 'status']);
+        Route::post('/stripe/dashboard', [\App\Http\Controllers\PartnerStripeController::class, 'createDashboardLink']);
     });
 
     // Live Stripe pricing per plan (amount/currency/interval/product_id) — public,
@@ -824,6 +825,13 @@ Route::prefix('v1')->middleware(['api'])->group(function () {
             Route::get ('/admin/seo/gsc/summary',        [\App\Http\Controllers\AdminSeoInsightsController::class, 'summary']);
             Route::post('/admin/seo/gsc/config',         [\App\Http\Controllers\AdminSeoInsightsController::class, 'saveConfig']);
             Route::post('/admin/seo/gsc/generate-tasks', [\App\Http\Controllers\AdminSeoInsightsController::class, 'generateTasks']);
+
+            // ── PageSpeed Insights (prestatie-monitoring) ───────────────
+            Route::get ('/admin/pagespeed/summary',        [\App\Http\Controllers\AdminPageSpeedController::class, 'summary']);
+            Route::get ('/admin/pagespeed/history',        [\App\Http\Controllers\AdminPageSpeedController::class, 'history']);
+            Route::post('/admin/pagespeed/config',         [\App\Http\Controllers\AdminPageSpeedController::class, 'saveConfig']);
+            Route::post('/admin/pagespeed/run',            [\App\Http\Controllers\AdminPageSpeedController::class, 'run']);
+            Route::post('/admin/pagespeed/generate-tasks', [\App\Http\Controllers\AdminPageSpeedController::class, 'generateTasks']);
 
             Route::get('/admin/users/{userId}', [AdminController::class, 'getUser']);
             Route::delete('/admin/users/{userId}', [AdminController::class, 'deleteUser']);

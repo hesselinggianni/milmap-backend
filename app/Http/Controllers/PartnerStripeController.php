@@ -115,6 +115,69 @@ class PartnerStripeController extends Controller
         return response()->json(['url' => $accountLink->url]);
     }
 
+    // ── POST /v1/partner/stripe/dashboard ──────────────────────────
+    // Opent het Stripe Express-dashboard van de partner (login-link), waar de
+    // partner o.a. zijn bankrekening/uitbetaalgegevens kan bekijken en wijzigen.
+    // Werkt alleen voor een afgerond account; is de onboarding nog niet klaar,
+    // dan geven we een onboarding-/update-link terug zodat de partner eerst
+    // afrondt.
+    public function createDashboardLink(Request $request): JsonResponse
+    {
+        $partner = $request->user()->partner;
+
+        if (! $partner->isApproved()) {
+            return response()->json(['message' => 'Je aanmelding is nog niet goedgekeurd.'], 403);
+        }
+        if (! config('billing.stripe_secret')) {
+            return response()->json(['message' => 'Stripe is niet geconfigureerd.'], 503);
+        }
+        if (! $partner->stripe_account_id) {
+            return response()->json(['message' => 'Er is nog geen Stripe-account gekoppeld.'], 409);
+        }
+
+        $partnerUrl = rtrim(config('app.partner_url', 'https://partners.milmap.nl'), '/');
+
+        try {
+            // Login-link naar het Express-dashboard (bankrekening beheren).
+            $link = $this->stripe->accounts->createLoginLink($partner->stripe_account_id);
+
+            return response()->json(['url' => $link->url]);
+        } catch (\Stripe\Exception\ApiErrorException $e) {
+            // Account bestaat maar onboarding is nog niet afgerond: dan kan er
+            // (nog) geen login-link, wél een update-/onboarding-link.
+            Log::info('[partner] Express-login-link niet mogelijk, val terug op onboarding', [
+                'partner' => $partner->id, 'error' => $e->getMessage(),
+            ]);
+
+            try {
+                $accountLink = $this->stripe->accountLinks->create([
+                    'account'     => $partner->stripe_account_id,
+                    'refresh_url' => "{$partnerUrl}/stripe?refresh=1",
+                    'return_url'  => "{$partnerUrl}/stripe?complete=1",
+                    'type'        => 'account_onboarding',
+                ]);
+
+                return response()->json(['url' => $accountLink->url]);
+            } catch (\Throwable $inner) {
+                Log::error('[partner] Stripe-dashboardlink mislukt', [
+                    'partner' => $partner->id, 'error' => $inner->getMessage(),
+                ]);
+
+                return response()->json([
+                    'message' => 'Stripe-dashboard is op dit moment niet beschikbaar. Probeer het later opnieuw.',
+                ], 502);
+            }
+        } catch (\Throwable $e) {
+            Log::error('[partner] Stripe-dashboardlink mislukt', [
+                'partner' => $partner->id, 'error' => $e->getMessage(),
+            ]);
+
+            return response()->json([
+                'message' => 'Stripe-dashboard is op dit moment niet beschikbaar. Probeer het later opnieuw.',
+            ], 502);
+        }
+    }
+
     // ── GET /v1/partner/stripe/status ──────────────────────────────
     // Haalt de actuele accountstatus live bij Stripe op en synct de
     // onboarding-vlag (naast de account.updated-webhook, zodat de partner na
