@@ -857,4 +857,5 @@ Route::prefix('v1')->middleware(['api', 'deploy.token'])->group(function () {
     Route::post  ('/deploy/todos',      [TodoController::class, 'deployStore']);
     Route::put   ('/deploy/todos/{id}', [TodoController::class, 'deployUpdate']);
     Route::delete('/deploy/todos/{id}', [TodoController::class, 'deployDestroy']);
+    Route::post  ('/deploy/todos/{id}/run-log', [TodoController::class, 'deployRunLog']);
 });

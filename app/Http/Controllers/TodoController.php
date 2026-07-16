@@ -298,6 +298,33 @@ class TodoController extends Controller
         return response()->json(['ok' => true]);
     }
 
+    /**
+     * POST /api/v1/deploy/todos/{id}/run-log — de deploy-app legt na een
+     * Claude-run de console-output + exitcode vast op de tijdlijn (kind 'run').
+     * De admin-UI toont dit ingeklapt met een succes/fout-chip.
+     */
+    public function deployRunLog(Request $request, string $id)
+    {
+        $todo = Todo::findOrFail($id);
+        $data = $request->validate([
+            'log'  => 'nullable|string',
+            'exit' => 'nullable|integer',
+        ]);
+
+        $log = (string) ($data['log'] ?? '');
+        if (strlen($log) > 45000) {
+            $log = "…(ingekort)\n" . substr($log, -45000);
+        }
+        $exit = array_key_exists('exit', $data) ? $data['exit'] : null;
+
+        $todo->logActivity('run', 'Claude', $log, [
+            'exit' => $exit,
+            'ok'   => $exit === 0,
+        ]);
+
+        return response()->json(['ok' => true], 201);
+    }
+
     // ── Helpers ─────────────────────────────────────────────────────────
 
     /** Gedeelde validatie voor admin store/update. $required = titel verplicht. */
