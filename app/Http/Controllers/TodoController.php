@@ -89,6 +89,8 @@ class TodoController extends Controller
             $todo->completed_at = $validated['status'] === 'productie' ? now() : null;
         }
 
+        $before = $todo->only(['status', 'priority', 'assignee', 'app_version', 'deadline_week', 'title']);
+
         foreach ([
             'title' => 'title', 'description' => 'description', 'repo' => 'repo',
             'mode' => 'mode', 'status' => 'status', 'priority' => 'priority',
@@ -102,11 +104,59 @@ class TodoController extends Controller
         }
         $todo->save();
 
+        $this->logChanges($todo, $before, Auth::user()?->full_name ?? 'Admin');
+
         if (array_key_exists('labels', $validated)) {
             $todo->labels()->sync($validated['labels'] ?? []);
         }
 
         return response()->json(['todo' => $todo->fresh(['creator', 'labels', 'attachments'])->toApiArray()]);
+    }
+
+    // ── Tijdlijn (comments + wijzigingen) ───────────────────────────────
+
+    /** GET /api/v1/admin/todos/{id}/activities */
+    public function activities(string $id)
+    {
+        $todo = Todo::findOrFail($id);
+
+        return response()->json([
+            'activities' => $todo->activities()->get()->map->toApiArray()->values(),
+        ]);
+    }
+
+    /** POST /api/v1/admin/todos/{id}/comments */
+    public function addComment(Request $request, string $id)
+    {
+        $todo = Todo::findOrFail($id);
+        $data = $request->validate(['body' => 'required|string|max:10000']);
+        $todo->logActivity('comment', Auth::user()?->full_name ?? 'Admin', $data['body']);
+
+        return response()->json([
+            'activities' => $todo->activities()->get()->map->toApiArray()->values(),
+        ], 201);
+    }
+
+    /** Log gewijzigde velden als tijdlijn-items. */
+    private function logChanges(Todo $todo, array $before, string $author): void
+    {
+        $labels = [
+            'status'        => 'Status',
+            'priority'      => 'Prioriteit',
+            'assignee'      => 'Toegewezen aan',
+            'app_version'   => 'App-versie',
+            'deadline_week' => 'Deadline (week)',
+            'title'         => 'Titel',
+        ];
+        foreach ($before as $field => $old) {
+            $new = $todo->{$field};
+            if ((string) $old === (string) $new) continue;
+            $todo->logActivity(
+                'change', $author,
+                sprintf('%s: %s → %s', $labels[$field] ?? $field, $old ?: '–', $new ?: '–'),
+                ['field' => $field, 'from' => $old, 'to' => $new]
+            );
+        }
     }
 
     public function adminDestroy(string $id)
@@ -206,6 +256,8 @@ class TodoController extends Controller
             'statusChangedAt'  => 'sometimes|nullable|date',
         ]);
 
+        $statusBefore = $todo->status;
+
         foreach (['title', 'description', 'repo', 'mode'] as $k) {
             if (array_key_exists($k, $validated)) $todo->{$k} = $validated[$k];
         }
@@ -227,6 +279,14 @@ class TodoController extends Controller
         }
 
         $todo->save();
+
+        if ($todo->status !== $statusBefore) {
+            $todo->logActivity(
+                'change', 'Claude',
+                sprintf('Status: %s → %s', $statusBefore ?: '–', $todo->status),
+                ['field' => 'status', 'from' => $statusBefore, 'to' => $todo->status]
+            );
+        }
 
         return response()->json(['todo' => $todo->toDeployArray()]);
     }

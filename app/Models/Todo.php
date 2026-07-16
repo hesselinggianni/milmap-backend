@@ -125,6 +125,24 @@ class Todo extends Model
         return $this->hasMany(TodoAttachment::class, 'todo_id')->orderBy('created_at');
     }
 
+    /** Tijdlijn: comments + automatische wijzigingen. */
+    public function activities()
+    {
+        return $this->hasMany(TodoActivity::class, 'todo_id')->orderBy('created_at');
+    }
+
+    /** Log een tijdlijn-item (comment of change). */
+    public function logActivity(string $kind, ?string $author, ?string $body, ?array $meta = null): void
+    {
+        $this->activities()->create([
+            'kind'       => $kind,
+            'author'     => $author,
+            'body'       => $body,
+            'meta'       => $meta,
+            'created_at' => now(),
+        ]);
+    }
+
     /** Naam van de toegewezene ('Claude', een admin-naam, of null). */
     public function assigneeName(): ?string
     {
