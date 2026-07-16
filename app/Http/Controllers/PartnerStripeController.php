@@ -36,13 +36,36 @@ class PartnerStripeController extends Controller
         $partnerUrl = rtrim(config('app.partner_url', 'https://partners.milmap.nl'), '/');
 
         try {
+            // Een eerder opgeslagen account kan ongeldig zijn (bv. aangemaakt in
+            // een andere Stripe-modus, of verwijderd). Controleer dat en maak
+            // het account zo nodig opnieuw aan, zodat een half-mislukte poging
+            // de partner niet permanent blokkeert.
+            if ($partner->stripe_account_id) {
+                try {
+                    $this->stripe->accounts->retrieve($partner->stripe_account_id);
+                } catch (\Stripe\Exception\InvalidRequestException $e) {
+                    Log::warning('[partner] opgeslagen Stripe-account ongeldig, opnieuw aanmaken', [
+                        'partner' => $partner->id,
+                        'account' => $partner->stripe_account_id,
+                        'error'   => $e->getMessage(),
+                    ]);
+                    $partner->update(['stripe_account_id' => null]);
+                    $partner->refresh();
+                }
+            }
+
             if (! $partner->stripe_account_id) {
                 $account = $this->stripe->accounts->create([
                     'type'         => 'express',
                     'country'      => 'NL',
                     'email'        => $request->user()->email,
+                    // Stripe staat een transfers-only platform niet standaard toe
+                    // ('transfers' zonder 'card_payments' vereist aparte goed-
+                    // keuring). We vragen daarom beide capabilities aan; de
+                    // partner ontvangt in de praktijk alleen uitbetalingen.
                     'capabilities' => [
-                        'transfers' => ['requested' => true],
+                        'transfers'     => ['requested' => true],
+                        'card_payments' => ['requested' => true],
                     ],
                     'metadata'     => ['partner_id' => (string) $partner->id],
                 ]);
@@ -55,9 +78,33 @@ class PartnerStripeController extends Controller
                 'return_url'  => "{$partnerUrl}/stripe?complete=1",
                 'type'        => 'account_onboarding',
             ]);
+        } catch (\Stripe\Exception\ApiErrorException $e) {
+            // Toon de werkelijke Stripe-fout: dat is de enige manier om te zien
+            // wat er misgaat (Connect niet aan, platformprofiel onvolledig,
+            // ontbrekende capability, live/test-mismatch, …). De partner-pagina
+            // is authenticated, dus de melding zichtbaar maken is veilig.
+            $stripeMsg = $e->getMessage();
+            Log::error('[partner] Stripe-onboarding mislukt (Stripe API)', [
+                'partner' => $partner->id,
+                'type'    => get_class($e),
+                'code'    => method_exists($e, 'getStripeCode') ? $e->getStripeCode() : null,
+                'error'   => $stripeMsg,
+            ]);
+
+            $isConnectOff = stripos($stripeMsg, 'connect') !== false
+                || stripos($stripeMsg, 'platform') !== false
+                || stripos($stripeMsg, 'sign up for') !== false;
+
+            return response()->json([
+                'message' => $isConnectOff
+                    ? 'Stripe Connect is nog niet (volledig) geactiveerd op het MilMap-account. Uitbetalingen kunnen pas gekoppeld worden zodra dat aanstaat.'
+                    : 'Stripe kon de koppeling niet starten: ' . $stripeMsg,
+            ], 502);
         } catch (\Throwable $e) {
             Log::error('[partner] Stripe-onboarding mislukt', [
-                'partner' => $partner->id, 'error' => $e->getMessage(),
+                'partner' => $partner->id,
+                'type'    => get_class($e),
+                'error'   => $e->getMessage(),
             ]);
 
             return response()->json([
