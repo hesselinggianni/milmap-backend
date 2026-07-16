@@ -25,6 +25,14 @@ use Stripe\StripeClient;
  */
 class PartnerService
 {
+    /**
+     * Commissie geldt alleen over het eerste abonnementsjaar van de
+     * doorverwezen gebruiker: betalingen binnen 12 maanden na diens eerste
+     * betaalde factuur. Bij een jaarabonnement is dat dus eenmalig de eerste
+     * jaarbetaling; bij een maandabonnement maximaal 12 maandtermijnen.
+     */
+    public const COMMISSION_WINDOW_MONTHS = 12;
+
     private StripeClient $stripe;
 
     public function __construct()
@@ -162,6 +170,18 @@ class PartnerService
 
         $referral = PartnerReferral::where('referred_user_id', $user->id)->first();
         if (! $referral) {
+            return null;
+        }
+
+        // Eerste-jaar-venster: de eerste commissie voor deze referral markeert
+        // de eerste betaling; alles ná 12 maanden daarna telt niet meer mee
+        // (ook niet als die eerste commissie inmiddels is terugbetaald).
+        $firstCommission = PartnerCommission::where('partner_referral_id', $referral->id)
+            ->orderBy('created_at')
+            ->first();
+        if ($firstCommission
+            && $firstCommission->created_at->addMonths(self::COMMISSION_WINDOW_MONTHS)->isPast()
+        ) {
             return null;
         }
 

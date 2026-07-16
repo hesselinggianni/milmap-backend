@@ -16,9 +16,14 @@ use Throwable;
  * Laravel is the single source of truth: the list is stored as JSON in the
  * settings table and exposed two ways:
  *
- *   • GET  /api/v1/status/domains            → public; the Nuxt status page
- *                                               fetches the *enabled* domains
- *                                               here and runs its own checks.
+ *   • GET  /api/v1/status/domains            → public; the *enabled* domains.
+ *   • GET  /api/v1/status/uptime|incidents   → public; per-domain uptime + auto
+ *                                               incidents, produced by the
+ *                                               backend monitor (status:monitor,
+ *                                               see App\Services\StatusPageMonitor).
+ *                                               milmap.nl/status reads these
+ *                                               directly, so it works on the
+ *                                               static (Nitro-less) deploy.
  *   • /api/v1/admin/status-domains (CRUD)    → admin-only; the panel uses this
  *                                               to add / edit / toggle / delete.
  *
@@ -44,6 +49,26 @@ class StatusPageController extends Controller
         ));
 
         return response()->json($enabled);
+    }
+
+    /**
+     * GET /api/v1/status/uptime
+     * Per enabled domein: huidige status + uptime-balken (90 dagen). Deze data
+     * wordt door de statische milmap.nl/status-pagina rechtstreeks opgehaald,
+     * omdat die geen eigen Node-server heeft om te monitoren.
+     */
+    public function publicUptime(\App\Services\StatusPageMonitor $monitor)
+    {
+        return response()->json($monitor->uptimeReport());
+    }
+
+    /**
+     * GET /api/v1/status/incidents
+     * Publieke incidentenlijst (nieuwste eerst), voor de status-pagina.
+     */
+    public function publicIncidents(\App\Services\StatusPageMonitor $monitor)
+    {
+        return response()->json($monitor->publicIncidents());
     }
 
     // ── Admin ────────────────────────────────────────────────────────────

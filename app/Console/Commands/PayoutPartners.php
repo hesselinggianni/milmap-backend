@@ -25,6 +25,14 @@ class PayoutPartners extends Command
 
     private const MINIMUM_PAYOUT = 10.00;
 
+    /**
+     * Terugbetaal-venster: een commissie wordt pas uitbetaalbaar wanneer de
+     * betaling 30 dagen oud is en niet is terugbetaald. Refunds binnen dat
+     * venster zetten de commissie op 'refunded' (zie PartnerService), dus
+     * alles wat hier door de filter komt heeft het venster overleefd.
+     */
+    private const REFUND_HOLD_DAYS = 30;
+
     public function handle(): int
     {
         if (! config('billing.stripe_secret')) {
@@ -35,19 +43,21 @@ class PayoutPartners extends Command
 
         $stripe = new StripeClient(['api_key' => config('billing.stripe_secret')]);
 
+        $payable = fn ($q) => $q
+            ->where('status', PartnerCommission::STATUS_PENDING)
+            ->where('created_at', '<=', now()->subDays(self::REFUND_HOLD_DAYS));
+
         $partners = Partner::where('status', Partner::STATUS_APPROVED)
             ->whereNotNull('stripe_account_id')
             ->where('stripe_onboarding_complete', true)
-            ->whereHas('commissions', fn ($q) => $q->where('status', PartnerCommission::STATUS_PENDING))
+            ->whereHas('commissions', $payable)
             ->get();
 
         $paidOut = 0;
         $skipped = 0;
 
         foreach ($partners as $partner) {
-            $pending = $partner->commissions()
-                ->where('status', PartnerCommission::STATUS_PENDING)
-                ->get();
+            $pending = $payable($partner->commissions())->get();
             $total = round((float) $pending->sum('commission_amount'), 2);
 
             if ($total < self::MINIMUM_PAYOUT) {

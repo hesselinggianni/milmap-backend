@@ -36,6 +36,18 @@ return [
 
     /*
     |--------------------------------------------------------------------------
+    | AppSumo Lifetime Deal
+    |--------------------------------------------------------------------------
+    | Stripe PRODUCT id waar een verzilverde AppSumo-code een 100%-korting-
+    | abonnement op aanmaakt. De bijbehorende Price wordt runtime uit het product
+    | opgehaald (default_price, anders de eerste actieve recurring price), of kan
+    | expliciet worden vastgezet via STRIPE_APPSUMO_PRICE.
+    */
+    'appsumo_product' => env('STRIPE_APPSUMO_PRODUCT', 'prod_UenLnnsGGFRZZI'),
+    'appsumo_price'   => env('STRIPE_APPSUMO_PRICE'),
+
+    /*
+    |--------------------------------------------------------------------------
     | Checkout Payment Method Types
     |--------------------------------------------------------------------------
     | Comma-separated list of payment methods that Checkout may offer, e.g.

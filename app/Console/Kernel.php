@@ -40,6 +40,9 @@ class Kernel extends ConsoleKernel
         // Voer de fetchEmails taak elke minuut uit
         $schedule->command('emails:fetch')->everyMinute();
         $schedule->command('check:status')->everyMinute();
+        // Status-page-domeinen (milmap.nl/status) monitoren + uptime/incidenten
+        // bijhouden. withoutOverlapping zodat trage checks niet opstapelen.
+        $schedule->command('status:monitor')->everyMinute()->withoutOverlapping();
 
         // Nieuwe-mail notificaties voor de admin-app. withoutOverlapping zodat
         // een trage IMAP-poll de volgende run niet laat opstapelen.

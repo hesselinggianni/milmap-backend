@@ -81,11 +81,22 @@ use App\Http\Middleware\RequiresPremium;
 Route::prefix('v1')->middleware(['api'])->group(function () {
     Route::post('/register', [RegisterController::class, 'store'])
         ->middleware('throttle:10,1');
+
+    // ── AppSumo lifetime-deal: code valideren + verzilveren (no auth) ──
+    Route::get('/appsumo/validate/{code}', [\App\Http\Controllers\AppsumoController::class, 'validateCode'])
+        ->middleware('throttle:30,1');
+    Route::post('/appsumo/redeem', [\App\Http\Controllers\AppsumoController::class, 'redeem'])
+        ->middleware('throttle:10,1');
     // ── Client-side error reporting (no auth required) ───────────
     Route::post('/client-errors', [ClientErrorController::class, 'store'])
         ->middleware('throttle:30,1');
     // ── First-party site-analytics vanaf milmap.nl (no auth) ─────
     Route::post('/site-events', [\App\Http\Controllers\SiteEventController::class, 'store'])
+        ->middleware('throttle:120,1');
+    // ── First-party gebruiksanalyse vanuit de MilMap-app (no auth) ─────
+    // Gebufferde batches (route-bezoeken + knop-clicks). Admin-zicht onder
+    // /admin/analytics. Ruimere throttle want de client stuurt batches.
+    Route::post('/app-events', [\App\Http\Controllers\AppEventController::class, 'store'])
         ->middleware('throttle:120,1');
     Route::post('/login', [LoginController::class, 'store']);
     // E-mail-eerst auth-flow: bepaalt of een e-mail al een account heeft, zodat
@@ -649,6 +660,9 @@ Route::prefix('v1')->middleware(['api'])->group(function () {
             Route::get('/admin/stats', [AdminController::class, 'getDashboardStats']);
             Route::get('/admin/revenue', [AdminController::class, 'getRevenue']);
 
+            // ── App-gebruiksanalyse (meest bezochte routes + knoppen) ───
+            Route::get('/admin/analytics', [\App\Http\Controllers\AppEventController::class, 'adminSummary']);
+
             // ── Sales / CRM-pijplijn ────────────────────────────────────
             Route::get   ('/admin/crm/deals',                 [\App\Http\Controllers\CrmController::class, 'index']);
             Route::post  ('/admin/crm/deals',                 [\App\Http\Controllers\CrmController::class, 'store']);
@@ -791,6 +805,12 @@ Route::prefix('v1')->middleware(['api'])->group(function () {
             Route::post  ('/admin/todos',      [TodoController::class, 'adminStore']);
             Route::put   ('/admin/todos/{id}', [TodoController::class, 'adminUpdate']);
             Route::delete('/admin/todos/{id}', [TodoController::class, 'adminDestroy']);
+
+            // ── Taak-labels (categorieën + platforms) ───────────────────
+            Route::get   ('/admin/task-labels',      [\App\Http\Controllers\TaskLabelController::class, 'index']);
+            Route::post  ('/admin/task-labels',      [\App\Http\Controllers\TaskLabelController::class, 'store']);
+            Route::put   ('/admin/task-labels/{id}', [\App\Http\Controllers\TaskLabelController::class, 'update']);
+            Route::delete('/admin/task-labels/{id}', [\App\Http\Controllers\TaskLabelController::class, 'destroy']);
 
             // ── Sales-taken generator (signalen → todo's) ───────────────
             Route::get ('/admin/sales-todos/preview',  [\App\Http\Controllers\SalesTodoController::class, 'preview']);

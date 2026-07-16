@@ -8,23 +8,21 @@ use Illuminate\Support\Facades\Auth;
 use Illuminate\Validation\Rule;
 
 /**
- * Deploy-todo's: de gedeelde takenlijst van de deploy-app, nu opgeslagen in
+ * Taken-omgeving: de gedeelde takenlijst (ClickUp-stijl kanban), opgeslagen in
  * Laravel. Twee toegangswegen op dezelfde tabel:
  *
- *   • admin*  — voor het MilMap-admin paneel (Sanctum + admin.auth). Een admin
- *               kan taken aanmaken, bijwerken en verwijderen.
- *   • deploy* — voor de headless deploy-app (X-Deploy-Token). Synchroniseert de
- *               volledige lijst en werkt status/exit-code/vervolgprompts bij.
- *
- * Beide kanten delen exact dezelfde JSON-shape (Todo::toApiArray, camelCase).
+ *   • admin*  — voor het MilMap-admin paneel (Sanctum + admin.auth). Volledige
+ *               CRUD met alle taak-velden (labels, prioriteit, toegewezene,
+ *               app-versie, deadline-week, workflow-status).
+ *   • deploy* — voor de headless deploy-app queue-runner (X-Deploy-Token). Die
+ *               spreekt nog de legacy queue-status (pending/queued/running/
+ *               done/failed); we vertalen aan de rand van/naar de 8 workflow-
+ *               fases zodat beide werelden samenwerken.
  */
 class TodoController extends Controller
 {
     // ── Admin (MilMap-paneel) ──────────────────────────────────────────
 
-    /**
-     * GET /api/v1/admin/todos — overzicht met optioneel statusfilter.
-     */
     public function adminIndex(Request $request)
     {
         $request->validate([
@@ -32,7 +30,7 @@ class TodoController extends Controller
             'status' => ['nullable', Rule::in(Todo::STATUSES)],
         ]);
 
-        $query = Todo::query()->with('creator');
+        $query = Todo::query()->with(['creator', 'labels']);
 
         if ($qs = $request->query('q')) {
             $query->where(function ($w) use ($qs) {
@@ -44,7 +42,7 @@ class TodoController extends Controller
             $query->where('status', $status);
         }
 
-        $todos = $query->orderByDesc('created_at')->get();
+        $todos = $query->orderBy('position')->orderByDesc('created_at')->get();
 
         return response()->json([
             'todos'  => $todos->map(fn ($t) => $t->toApiArray())->values(),
@@ -52,62 +50,63 @@ class TodoController extends Controller
         ]);
     }
 
-    /**
-     * POST /api/v1/admin/todos — admin maakt een nieuwe taak.
-     */
     public function adminStore(Request $request)
     {
-        $validated = $request->validate([
-            'title'       => 'required|string|max:5000',
-            'description' => 'nullable|string|max:10000',
-            'repo'        => 'nullable|string|max:50',
-            'mode'        => 'nullable|string|max:50',
-        ]);
+        $validated = $this->validateTask($request, true);
 
         $todo = Todo::create([
             'title'             => $validated['title'],
             'description'       => $validated['description'] ?? null,
             'repo'              => $validated['repo'] ?? 'frontend',
             'mode'              => $validated['mode'] ?? 'fix',
-            'status'            => 'pending',
+            'status'            => $validated['status'] ?? 'backlog',
+            'priority'          => $validated['priority'] ?? 'normaal',
+            'assignee'          => $validated['assignee'] ?? null,
+            'app_version'       => $validated['appVersion'] ?? null,
+            'deadline_week'     => $validated['deadlineWeek'] ?? null,
+            'deadline_year'     => $validated['deadlineYear'] ?? null,
             'source'            => 'admin',
             'created_by'        => Auth::id(),
             'status_changed_at' => now(),
         ]);
 
-        return response()->json(['todo' => $todo->fresh('creator')->toApiArray()], 201);
+        if (array_key_exists('labels', $validated)) {
+            $todo->labels()->sync($validated['labels'] ?? []);
+        }
+
+        return response()->json(['todo' => $todo->fresh(['creator', 'labels'])->toApiArray()], 201);
     }
 
-    /**
-     * PUT /api/v1/admin/todos/{id} — admin werkt een taak bij.
-     */
     public function adminUpdate(Request $request, string $id)
     {
         $todo = Todo::findOrFail($id);
-
-        $validated = $request->validate([
-            'title'       => 'sometimes|string|max:5000',
-            'description' => 'sometimes|nullable|string|max:10000',
-            'repo'        => 'sometimes|nullable|string|max:50',
-            'mode'        => 'sometimes|nullable|string|max:50',
-            'status'      => ['sometimes', Rule::in(Todo::STATUSES)],
-        ]);
+        $validated = $this->validateTask($request, false);
 
         if (array_key_exists('status', $validated) && $validated['status'] !== $todo->status) {
             $todo->status_changed_at = now();
-            $todo->completed_at = in_array($validated['status'], ['done', 'failed'], true)
-                ? now()
-                : null;
+            $todo->completed_at = $validated['status'] === 'productie' ? now() : null;
         }
 
-        $todo->fill($validated)->save();
+        foreach ([
+            'title' => 'title', 'description' => 'description', 'repo' => 'repo',
+            'mode' => 'mode', 'status' => 'status', 'priority' => 'priority',
+            'assignee' => 'assignee', 'appVersion' => 'app_version',
+            'deadlineWeek' => 'deadline_week', 'deadlineYear' => 'deadline_year',
+            'position' => 'position',
+        ] as $in => $col) {
+            if (array_key_exists($in, $validated)) {
+                $todo->{$col} = $validated[$in];
+            }
+        }
+        $todo->save();
 
-        return response()->json(['todo' => $todo->fresh('creator')->toApiArray()]);
+        if (array_key_exists('labels', $validated)) {
+            $todo->labels()->sync($validated['labels'] ?? []);
+        }
+
+        return response()->json(['todo' => $todo->fresh(['creator', 'labels'])->toApiArray()]);
     }
 
-    /**
-     * DELETE /api/v1/admin/todos/{id}
-     */
     public function adminDestroy(string $id)
     {
         Todo::where('id', $id)->delete();
@@ -115,24 +114,17 @@ class TodoController extends Controller
         return response()->json(['ok' => true]);
     }
 
-    // ── Deploy-app (X-Deploy-Token) ────────────────────────────────────
+    // ── Deploy-app (X-Deploy-Token) — legacy queue-status ──────────────
 
-    /**
-     * GET /api/v1/deploy/todos — volledige lijst voor de deploy-app.
-     */
     public function deployIndex()
     {
-        $todos = Todo::query()->orderByDesc('created_at')->get();
+        $todos = Todo::query()->with('labels')->orderByDesc('created_at')->get();
 
         return response()->json([
-            'todos' => $todos->map(fn ($t) => $t->toApiArray())->values(),
+            'todos' => $todos->map(fn ($t) => $t->toDeployArray())->values(),
         ]);
     }
 
-    /**
-     * POST /api/v1/deploy/todos — de deploy-app maakt (of her-upsert) een taak.
-     * Aanvaardt het eigen client-id zodat queue/log-koppelingen blijven kloppen.
-     */
     public function deployStore(Request $request)
     {
         $validated = $request->validate([
@@ -141,7 +133,7 @@ class TodoController extends Controller
             'description' => 'nullable|string|max:10000',
             'repo'        => 'nullable|string|max:50',
             'mode'        => 'nullable|string|max:50',
-            'status'      => ['nullable', Rule::in(Todo::STATUSES)],
+            'status'      => 'nullable|string|max:30',
         ]);
 
         $todo = Todo::create([
@@ -150,68 +142,57 @@ class TodoController extends Controller
             'description'       => $validated['description'] ?? '',
             'repo'              => $validated['repo'] ?? 'frontend',
             'mode'              => $validated['mode'] ?? 'fix',
-            'status'            => $validated['status'] ?? 'pending',
+            'status'            => $this->normalizeStatus($validated['status'] ?? null, 'backlog'),
             'source'            => 'deploy',
             'status_changed_at' => now(),
         ]);
 
-        return response()->json(['todo' => $todo->toApiArray()], 201);
+        return response()->json(['todo' => $todo->toDeployArray()], 201);
     }
 
-    /**
-     * PUT /api/v1/deploy/todos/{id} — de deploy-app werkt status / exit-code /
-     * vervolgprompts bij. De deploy-app is hier autoritair over de timing, dus
-     * meegestuurde tijdstempels winnen; anders beheren we ze automatisch.
-     */
     public function deployUpdate(Request $request, string $id)
     {
         $todo = Todo::findOrFail($id);
 
         $validated = $request->validate([
-            'title'           => 'sometimes|string|max:5000',
-            'description'     => 'sometimes|nullable|string|max:10000',
-            'repo'            => 'sometimes|nullable|string|max:50',
-            'mode'            => 'sometimes|nullable|string|max:50',
-            'status'         => ['sometimes', Rule::in(Todo::STATUSES)],
-            'lastExit'        => 'sometimes|nullable|integer',
-            'followups'       => 'sometimes|nullable|array',
+            'title'            => 'sometimes|string|max:5000',
+            'description'      => 'sometimes|nullable|string|max:10000',
+            'repo'             => 'sometimes|nullable|string|max:50',
+            'mode'             => 'sometimes|nullable|string|max:50',
+            'status'           => 'sometimes|string|max:30',
+            'lastExit'         => 'sometimes|nullable|integer',
+            'followups'        => 'sometimes|nullable|array',
             'followups.*.text' => 'required_with:followups|string',
-            'followups.*.at'  => 'nullable|string',
-            'completedAt'     => 'sometimes|nullable|date',
-            'statusChangedAt' => 'sometimes|nullable|date',
+            'followups.*.at'   => 'nullable|string',
+            'completedAt'      => 'sometimes|nullable|date',
+            'statusChangedAt'  => 'sometimes|nullable|date',
         ]);
 
-        // camelCase payload → snake_case kolommen.
-        foreach (['title', 'description', 'repo', 'mode', 'status'] as $k) {
-            if (array_key_exists($k, $validated)) {
-                $todo->{$k} = $validated[$k];
-            }
+        foreach (['title', 'description', 'repo', 'mode'] as $k) {
+            if (array_key_exists($k, $validated)) $todo->{$k} = $validated[$k];
+        }
+        if (array_key_exists('status', $validated)) {
+            $todo->status = $this->normalizeStatus($validated['status'], $todo->status);
         }
         if (array_key_exists('lastExit', $validated))  $todo->last_exit = $validated['lastExit'];
         if (array_key_exists('followups', $validated)) $todo->followups = $validated['followups'];
 
         if (array_key_exists('statusChangedAt', $validated)) {
             $todo->status_changed_at = $validated['statusChangedAt'];
-        } elseif (array_key_exists('status', $validated) && $todo->isDirty('status')) {
+        } elseif ($todo->isDirty('status')) {
             $todo->status_changed_at = now();
         }
-
         if (array_key_exists('completedAt', $validated)) {
             $todo->completed_at = $validated['completedAt'];
-        } elseif (array_key_exists('status', $validated) && $todo->isDirty('status')) {
-            $todo->completed_at = in_array($validated['status'], ['done', 'failed'], true)
-                ? now()
-                : null;
+        } elseif ($todo->isDirty('status')) {
+            $todo->completed_at = $todo->status === 'productie' ? now() : null;
         }
 
         $todo->save();
 
-        return response()->json(['todo' => $todo->toApiArray()]);
+        return response()->json(['todo' => $todo->toDeployArray()]);
     }
 
-    /**
-     * DELETE /api/v1/deploy/todos/{id}
-     */
     public function deployDestroy(string $id)
     {
         Todo::where('id', $id)->delete();
@@ -221,7 +202,37 @@ class TodoController extends Controller
 
     // ── Helpers ─────────────────────────────────────────────────────────
 
-    /** Aantallen per status, voor de filter-badges in het admin-panel. */
+    /** Gedeelde validatie voor admin store/update. $required = titel verplicht. */
+    private function validateTask(Request $request, bool $required): array
+    {
+        $req = $required ? 'required' : 'sometimes';
+
+        return $request->validate([
+            'title'        => "$req|string|max:5000",
+            'description'  => 'sometimes|nullable|string|max:100000',
+            'repo'         => 'sometimes|nullable|string|max:50',
+            'mode'         => 'sometimes|nullable|string|max:50',
+            'status'       => ['sometimes', Rule::in(Todo::STATUSES)],
+            'priority'     => ['sometimes', Rule::in(Todo::PRIORITIES)],
+            'assignee'     => 'sometimes|nullable|string|max:60',
+            'appVersion'   => 'sometimes|nullable|string|max:12',
+            'deadlineWeek' => 'sometimes|nullable|integer|min:1|max:53',
+            'deadlineYear' => 'sometimes|nullable|integer|min:2020|max:2100',
+            'position'     => 'sometimes|integer',
+            'labels'       => 'sometimes|nullable|array',
+            'labels.*'     => 'integer|exists:task_labels,id',
+        ]);
+    }
+
+    /** Accepteer zowel legacy queue-status als een workflow-fase. */
+    private function normalizeStatus(?string $status, string $fallback): string
+    {
+        if (! $status) return $fallback;
+        if (in_array($status, Todo::STATUSES, true)) return $status;
+        return Todo::LEGACY_TO_STATUS[$status] ?? $fallback;
+    }
+
+    /** Aantallen per status, voor de kolom-tellers/badges. */
     private function statusCounts(): array
     {
         $counts = Todo::selectRaw('status, COUNT(*) as c')

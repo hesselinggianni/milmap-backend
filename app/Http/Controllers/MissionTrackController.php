@@ -129,12 +129,15 @@ class MissionTrackController extends Controller
             ->groupBy('user_id')
             ->pluck('max_id');
 
-        $positions = MissionTrack::with('user:id,first_name,last_name,email')
+        $positions = MissionTrack::with('user:id,first_name,last_name,email,avatar_path')
             ->whereIn('id', $latest)
             ->get()
             ->map(fn ($t) => [
                 'user_id'     => $t->user_id,
                 'name'        => trim(($t->user->first_name ?? '') . ' ' . ($t->user->last_name ?? '')) ?: $t->user->email,
+                // Avatar zodat het Find My-achtige deelnemer-sheet echte foto's
+                // toont i.p.v. alleen initialen.
+                'avatar_url'  => $t->user->avatar_url,
                 'lat'         => $t->lat,
                 'lng'         => $t->lng,
                 'altitude'    => $t->altitude,

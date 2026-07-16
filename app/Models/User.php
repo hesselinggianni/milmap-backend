@@ -261,6 +261,7 @@ class User extends Authenticatable
 
         $key = self::planKeyForPrice($price);
         if ($key) {
+            if ($key === 'lifetime') return 'lifetime';
             return str_starts_with($key, 'team') ? 'team' : 'pro';
         }
 

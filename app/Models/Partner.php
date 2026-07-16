@@ -17,7 +17,7 @@ class Partner extends Model
         'commission_rate', 'discount_rate', 'stripe_account_id',
         'stripe_onboarding_complete', 'website', 'description', 'approved_at',
         'agreement_accepted_at', 'agreement_confirmed_at', 'agreement_ip',
-        'agreement_code', 'agreement_code_expires_at',
+        'agreement_version', 'agreement_code', 'agreement_code_expires_at',
     ];
 
     protected $casts = [

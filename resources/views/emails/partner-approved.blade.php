@@ -11,7 +11,7 @@
     <strong style="color:#f8fafc;">{{ rtrim(rtrim(number_format($partner->discount_rate, 2, '.', ''), '0'), '.') }}% korting</strong>
     en ontvang jij
     <strong style="color:#f8fafc;">{{ rtrim(rtrim(number_format($partner->commission_rate, 2, '.', ''), '0'), '.') }}% commissie</strong>
-    over elke betaling van gebruikers die via jou binnenkomen.
+    over hun betalingen in het eerste abonnementsjaar (maximaal 12 maanden per gebruiker).
   </p>
 
   {{-- Overeenkomst eerst --}}

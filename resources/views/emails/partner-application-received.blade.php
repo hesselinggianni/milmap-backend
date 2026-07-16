@@ -14,7 +14,7 @@
   <p style="margin:0 0 20px;font-size:14px;line-height:1.7;color:#cbd5e1;">
     Zodra je bent goedgekeurd ontvang je je persoonlijke referral-link
     (<strong style="color:#f8fafc;">{{ $partner->referral_code }}</strong>) waarmee je publiek korting geeft
-    en jij commissie ontvangt over elke betaling.
+    en jij commissie ontvangt over hun eerste abonnementsjaar.
   </p>
 
   @if($setupUrl)

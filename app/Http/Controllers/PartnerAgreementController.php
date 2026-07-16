@@ -20,6 +20,13 @@ class PartnerAgreementController extends Controller
 {
     private const CODE_TTL_HOURS = 24;
 
+    /**
+     * Versie van de overeenkomst-tekst in het portaal (AgreementView). Bij een
+     * tekstwijziging: datum ophogen, dan legt accept() vast wélke versie is
+     * aanvaard. De portaal-tekst toont dezelfde versie-datum.
+     */
+    public const AGREEMENT_VERSION = '2026-07-14';
+
     // ── GET /v1/partner/agreement ──────────────────────────────────
     public function status(Request $request): JsonResponse
     {
@@ -44,6 +51,7 @@ class PartnerAgreementController extends Controller
         $partner->forceFill([
             'agreement_accepted_at' => $partner->agreement_accepted_at ?? now(),
             'agreement_ip'          => $request->ip(),
+            'agreement_version'     => self::AGREEMENT_VERSION,
         ])->save();
 
         $this->sendCode($partner);
@@ -128,6 +136,7 @@ class PartnerAgreementController extends Controller
             'confirmed_at' => $partner->agreement_confirmed_at?->toISOString(),
             'complete'     => $partner->agreementComplete(),
             'code_sent'    => (bool) $partner->agreement_code,
+            'version'      => $partner->agreement_version ?: self::AGREEMENT_VERSION,
         ];
     }
 }

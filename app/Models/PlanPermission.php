@@ -29,6 +29,10 @@ class PlanPermission extends Model
         'team_shared_maps', 'live_location', 'exercise',
     ];
 
-    /** Abonnementen waarvoor rechten instelbaar zijn. */
-    public const PLANS = ['starter', 'pro', 'team'];
+    /**
+     * Abonnementen waarvoor rechten instelbaar zijn. 'lifetime' = het AppSumo
+     * lifetime-deal-abonnement; de rechten ervan worden via ditzelfde admin-scherm
+     * "Plannen & rechten" beheerd.
+     */
+    public const PLANS = ['starter', 'pro', 'team', 'lifetime'];
 }

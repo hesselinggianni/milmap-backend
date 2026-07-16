@@ -2,6 +2,17 @@
 
 use Illuminate\Support\Facades\Route;
 
+// Named route 'login' — MOET bestaan omdat Laravel's Authenticate-middleware
+// bij een niet-geauthenticeerd, niet-JSON request `route('login')` aanroept.
+// Zonder deze route gooit dat "Route [login] not defined." (een
+// RouteNotFoundException die de AuthenticationException-handler in
+// bootstrap/app.php níét kan vangen, want hij ontstaat al tijdens het opbouwen
+// van de redirect-URL in de middleware). We zijn een API-only backend, dus we
+// antwoorden hier gewoon met 401 JSON i.p.v. een inlog-pagina. Staat bewust
+// vóór de SPA-catch-all hieronder, anders slokt /{any} het request op.
+Route::get('/login', fn () => response()->json(['message' => 'Unauthenticated.'], 401))
+    ->name('login');
+
 // SPA-fallback: serveert de Vue-app-shell voor alle "echte" routes.
 // Belangrijk: verzoeken naar statische assets (.js, .css, .map, images, fonts…)
 // worden UITGESLOTEN. Bestaat zo'n asset niet meer (bv. een gehashte bundle van

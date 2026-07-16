@@ -15,7 +15,9 @@ use Throwable;
  */
 class AdminBillingController extends Controller
 {
-    public const PLAN_KEYS = ['pro_monthly', 'pro_yearly', 'team_monthly', 'team_yearly'];
+    // 'lifetime' = het AppSumo lifetime-deal-product. De admin koppelt hier de
+    // Stripe-prijs (100%-korting-abonnement) waaraan verzilverde codes worden gekoppeld.
+    public const PLAN_KEYS = ['pro_monthly', 'pro_yearly', 'team_monthly', 'team_yearly', 'lifetime'];
     public const SETTING_KEY = 'billing_prices';
 
     // NB: bewust GEEN StripeClient in de constructor. Als de Stripe-secret
@@ -35,6 +37,7 @@ class AdminBillingController extends Controller
             'pro_yearly'   => config('billing.stripe_price_pro_yearly'),
             'team_monthly' => config('billing.stripe_price_team_monthly'),
             'team_yearly'  => config('billing.stripe_price_team_yearly'),
+            'lifetime'     => config('billing.appsumo_price'),
         ];
     }
 
@@ -135,6 +138,7 @@ class AdminBillingController extends Controller
             'pro_yearly'   => ['nullable', 'string', 'max:255'],
             'team_monthly' => ['nullable', 'string', 'max:255'],
             'team_yearly'  => ['nullable', 'string', 'max:255'],
+            'lifetime'     => ['nullable', 'string', 'max:255'],
         ]);
 
         // Keep only the known plan keys, drop empties.

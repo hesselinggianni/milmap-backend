@@ -47,6 +47,7 @@ class AdminPartnerController extends Controller
                 'stripe_onboarding_complete' => $p->stripe_onboarding_complete,
                 'agreement_accepted_at'      => $p->agreement_accepted_at?->toISOString(),
                 'agreement_confirmed_at'     => $p->agreement_confirmed_at?->toISOString(),
+                'agreement_version'          => $p->agreement_version,
                 'referrals_count'            => $p->referrals_count,
                 'pending_earnings'           => $p->pendingEarnings(),
                 'total_earned'               => $p->totalEarned(),
