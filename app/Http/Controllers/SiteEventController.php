@@ -31,6 +31,13 @@ class SiteEventController extends Controller
 
     public function store(Request $request): \Illuminate\Http\Response
     {
+        // Bot-/crawler-verkeer (Googlebot, Lighthouse/PageSpeed-cron,
+        // linkpreviews, monitoring) telt niet mee: stil accepteren zonder iets
+        // op te slaan, zodat bots geen oracle hebben.
+        if (\App\Support\BotDetector::isBot($request->userAgent())) {
+            return response()->noContent();
+        }
+
         $data = $request->validate([
             'event'        => 'required|string|max:40',
             'path'         => 'required|string|max:300',
@@ -50,7 +57,9 @@ class SiteEventController extends Controller
 
         SiteEvent::create([
             'event'        => $data['event'],
-            'path'         => strtok($data['path'], '?'),
+            // Querystring én trailing slash weg: `/en/features/` en
+            // `/en/features` zijn dezelfde pagina en moeten samen tellen.
+            'path'         => rtrim((string) strtok($data['path'], '?'), '/') ?: '/',
             'referrer'     => $data['referrer'] ?? null,
             'locale'       => $data['locale'] ?? null,
             'utm_source'   => $data['utm_source'] ?? null,

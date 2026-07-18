@@ -33,6 +33,8 @@ return [
     'stripe_price_pro_yearly'   => env('STRIPE_PRICE_PRO_YEARLY'),
     'stripe_price_team_monthly' => env('STRIPE_PRICE_TEAM_MONTHLY'),
     'stripe_price_team_yearly'  => env('STRIPE_PRICE_TEAM_YEARLY'),
+    // Meter-prijs (€2) per seat bóven de inbegrepen seats — team-abonnement.
+    'stripe_price_team_extra_seat' => env('STRIPE_PRICE_TEAM_EXTRA_SEAT'),
 
     /*
     |--------------------------------------------------------------------------

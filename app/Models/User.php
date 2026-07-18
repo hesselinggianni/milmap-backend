@@ -222,9 +222,49 @@ class User extends Authenticatable
     public function plan(): string
     {
         $sub = $this->activeSubscription();
-        if (! $sub) return 'starter';
+        if ($sub) {
+            return self::tierForPrice($sub->stripe_price);
+        }
 
-        return self::tierForPrice($sub->stripe_price);
+        // Meeliften: geen eigen abonnement maar wél actief lid van een team dat
+        // door een team-abonnement wordt gevoed → erf het team-plan.
+        if ($this->activeTeamMembership()) {
+            return 'team';
+        }
+
+        return 'starter';
+    }
+
+    /**
+     * De actieve team-membership waarop deze gebruiker meelift, of null.
+     * Alleen geldig als de gebruiker géén eigen abonnement heeft (dan valt hij
+     * niet onder andermans abonnement — dat is de "1 abonnement per gebruiker"-regel)
+     * en de team-owner een actief team-abonnement heeft.
+     */
+    public function activeTeamMembership(): ?TeamMember
+    {
+        if (! $this->id) {
+            return null;
+        }
+
+        // Eigen actief abonnement gaat vóór: dan lift je nergens op mee.
+        if ($this->activeSubscription()) {
+            return null;
+        }
+
+        return TeamMember::where('user_id', $this->id)
+            ->where('status', TeamMember::STATUS_ACTIVE)
+            ->with('team.owner')
+            ->get()
+            ->first(function (TeamMember $m) {
+                $owner = $m->team?->owner;
+                if (! $owner) {
+                    return false;
+                }
+                $sub = $owner->activeSubscription();
+
+                return $sub && self::tierForPrice($sub->stripe_price) === 'team';
+            });
     }
 
     /**
@@ -332,7 +372,7 @@ class User extends Authenticatable
      */
     public function hasPremiumAccess(): bool
     {
-        return $this->onAppTrial() || $this->subscribed();
+        return $this->onAppTrial() || $this->subscribed() || $this->activeTeamMembership() !== null;
     }
 
     /**
@@ -358,16 +398,30 @@ class User extends Authenticatable
             ->where('module', $feature)
             ->first();
 
-        if (! $row) {
-            return $this->hasPremiumAccess();
+        $planAllows = $row
+            ? match ($action) {
+                'view' => $row->can_view,
+                'create' => $row->can_create,
+                'delete' => $row->can_delete,
+                default => $row->can_update,
+            }
+            : $this->hasPremiumAccess();
+
+        // Meelifter met per-lid rechten: de owner kan een lid per module
+        // beperken. Ontbreekt de module in de permissions-map → geen beperking
+        // (het lid krijgt wat het team-plan toestaat). Staat de module expliciet
+        // op false → alleen 'view' is toegestaan.
+        $membership = $this->activeTeamMembership();
+        if ($membership && is_array($membership->permissions)
+            && array_key_exists($feature, $membership->permissions)) {
+            $memberAllows = $membership->permissions[$feature]
+                ? true
+                : ($action === 'view');
+
+            return $planAllows && $memberAllows;
         }
 
-        return match ($action) {
-            'view' => $row->can_view,
-            'create' => $row->can_create,
-            'delete' => $row->can_delete,
-            default => $row->can_update,
-        };
+        return $planAllows;
     }
 
     /** Resterende proefdagen (naar boven afgerond), of null als er geen proef loopt. */
@@ -396,6 +450,18 @@ class User extends Authenticatable
      */
     public function premiumState(): array
     {
+        $membership = $this->activeTeamMembership();
+        $team = null;
+        if ($membership && $membership->team) {
+            $team = [
+                'id'         => $membership->team->id,
+                'name'       => $membership->team->name,
+                'role'       => $membership->role,
+                'owner_name' => $membership->team->owner?->full_name,
+                'via'        => 'member',   // lift mee op andermans team-abonnement
+            ];
+        }
+
         return [
             'plan'            => $this->plan(),          // starter | pro | team
             'has_premium'     => $this->hasPremiumAccess(),
@@ -405,6 +471,7 @@ class User extends Authenticatable
             'subscribed'      => $this->subscribed(),
             'map_limit'       => $this->hasPremiumAccess() ? null : self::FREE_MAP_LIMIT,
             'features'        => $this->entitlements(),
+            'team'            => $team,   // null tenzij je meelift op een team
         ];
     }
 

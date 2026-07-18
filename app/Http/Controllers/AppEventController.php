@@ -27,6 +27,13 @@ class AppEventController extends Controller
 
     public function store(Request $request): \Illuminate\Http\Response
     {
+        // Bot-/crawler-verkeer (Googlebot, Lighthouse/PageSpeed, linkpreviews,
+        // monitoring) telt niet mee: stil accepteren zonder iets op te slaan,
+        // zodat bots geen oracle hebben om de filtering te omzeilen.
+        if (\App\Support\BotDetector::isBot($request->userAgent())) {
+            return response()->noContent();
+        }
+
         $data = $request->validate([
             'events'              => 'required|array|max:' . self::MAX_BATCH,
             'events.*.type'       => 'required|string|in:route,action',
@@ -102,7 +109,9 @@ class AppEventController extends Controller
             return $seg;
         }, $segments);
 
-        return mb_substr(implode('/', $segments), 0, 200) ?: '/';
+        // Trailing slash weg (behalve op de root): `/hub/` en `/hub` zijn
+        // hetzelfde scherm en moeten samen tellen.
+        return mb_substr(rtrim(implode('/', $segments), '/'), 0, 200) ?: '/';
     }
 
     // ── Admin: aggregaties voor het analytics-dashboard ──────────────────

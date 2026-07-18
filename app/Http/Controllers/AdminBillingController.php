@@ -17,7 +17,9 @@ class AdminBillingController extends Controller
 {
     // 'lifetime' = het AppSumo lifetime-deal-product. De admin koppelt hier de
     // Stripe-prijs (100%-korting-abonnement) waaraan verzilverde codes worden gekoppeld.
-    public const PLAN_KEYS = ['pro_monthly', 'pro_yearly', 'team_monthly', 'team_yearly', 'lifetime'];
+    // 'team_extra_seat' = de meter-prijs (€2) voor elke seat bóven de inbegrepen
+    // seats (config/teams.php). Het team-abonnement rekent extra leden hierop af.
+    public const PLAN_KEYS = ['pro_monthly', 'pro_yearly', 'team_monthly', 'team_yearly', 'lifetime', 'team_extra_seat'];
     public const SETTING_KEY = 'billing_prices';
 
     // NB: bewust GEEN StripeClient in de constructor. Als de Stripe-secret
@@ -38,6 +40,7 @@ class AdminBillingController extends Controller
             'team_monthly' => config('billing.stripe_price_team_monthly'),
             'team_yearly'  => config('billing.stripe_price_team_yearly'),
             'lifetime'     => config('billing.appsumo_price'),
+            'team_extra_seat' => config('billing.stripe_price_team_extra_seat'),
         ];
     }
 
@@ -139,6 +142,7 @@ class AdminBillingController extends Controller
             'team_monthly' => ['nullable', 'string', 'max:255'],
             'team_yearly'  => ['nullable', 'string', 'max:255'],
             'lifetime'     => ['nullable', 'string', 'max:255'],
+            'team_extra_seat' => ['nullable', 'string', 'max:255'],
         ]);
 
         // Keep only the known plan keys, drop empties.

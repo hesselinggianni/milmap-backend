@@ -210,7 +210,7 @@ class MailCampaignController extends Controller
             'blocks.*.type'  => ['required', 'string'],
         ]);
 
-        $locale = in_array($data['locale'] ?? 'nl', ['nl', 'en', 'de', 'fr', 'es'], true) ? $data['locale'] : 'nl';
+        $locale = in_array($data['locale'] ?? 'nl', ['nl', 'en', 'de', 'fr', 'es', 'uk'], true) ? $data['locale'] : 'nl';
 
         // Uniek registry-sleutel afleiden uit het label (botst nooit met een
         // code-template of andere custom-template).
@@ -245,7 +245,7 @@ class MailCampaignController extends Controller
             'blocks.*.type' => ['required', 'string'],
         ]);
 
-        $locale = in_array($data['locale'] ?? 'nl', ['nl', 'en', 'de', 'fr', 'es'], true) ? $data['locale'] : 'nl';
+        $locale = in_array($data['locale'] ?? 'nl', ['nl', 'en', 'de', 'fr', 'es', 'uk'], true) ? $data['locale'] : 'nl';
 
         // De sleutel blijft ongewijzigd (campagnes/follow-ups verwijzen ernaar).
         $tpl->update([

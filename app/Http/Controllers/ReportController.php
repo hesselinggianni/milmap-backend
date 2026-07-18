@@ -2,12 +2,70 @@
 
 namespace App\Http\Controllers;
 
+use App\Models\Map;
 use App\Models\Report;
+use App\Models\ReportRevision;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Auth;
 
 class ReportController extends Controller
 {
+    // ── Autorisatie ──────────────────────────────────────────────────────────
+    // Gemarkeerde gebieden zijn gedeeld op kaartniveau: de eigenaar en elke
+    // geaccepteerde collaborator ziet ze; bewerken/verwijderen vereist een niet-
+    // viewer-rol. Reports zonder map_id blijven privé aan de maker.
+
+    private function mapAccess(Map $map, bool $editorRequired = false): bool
+    {
+        $userId = Auth::id();
+        if ((string) $map->owner_id === (string) $userId) return true;
+
+        $collab = $map->collaborators()
+            ->where('user_id', $userId)
+            ->where('status', 'accepted')
+            ->first();
+
+        if (! $collab) return false;
+        if ($editorRequired && $collab->role === 'viewer') return false;
+
+        return true;
+    }
+
+    private function reportAccess(Report $report, bool $editorRequired = false): bool
+    {
+        if ($report->map_id) {
+            $map = Map::find($report->map_id);
+            if ($map) return $this->mapAccess($map, $editorRequired);
+        }
+        // Persoonlijk report (geen kaart) → alleen de maker.
+        return (int) $report->user_id === (int) Auth::id();
+    }
+
+    /**
+     * Bereken een veld-voor-veld diff voor de wijzigingslog: { veld: {from,to} }.
+     */
+    private function diffChanges(Report $report, array $after): array
+    {
+        $changes = [];
+        foreach ($after as $key => $newVal) {
+            $oldVal = $report->getAttribute($key);
+            if (json_encode($oldVal) !== json_encode($newVal)) {
+                $changes[$key] = ['from' => $oldVal, 'to' => $newVal];
+            }
+        }
+        return $changes;
+    }
+
+    private function logRevision(Report $report, string $action, ?array $changes = null): void
+    {
+        ReportRevision::create([
+            'report_id' => $report->id,
+            'user_id'   => Auth::id(),
+            'action'    => $action,
+            'changes'   => $changes ?: null,
+        ]);
+    }
+
     /**
      * Get all reports for current user (optionally filtered by map)
      */
@@ -91,6 +149,8 @@ class ReportController extends Controller
             'status' => $validated['status'] ?? 'active',
         ]);
 
+        $this->logRevision($report, 'created');
+
         return response()->json($report, 201);
     }
 
@@ -99,11 +159,18 @@ class ReportController extends Controller
      */
     public function show($id)
     {
-        $report = Report::where('id', $id)
-            ->where('user_id', Auth::id())
-            ->firstOrFail();
+        $report = Report::findOrFail($id);
 
-        return response()->json($report);
+        if (! $this->reportAccess($report)) {
+            abort(403, 'Geen toegang tot dit gebied.');
+        }
+
+        // Wijzigingslog meesturen (met wie/wat/wanneer).
+        $report->setRelation('revisions', $report->revisions()->with('user')->get());
+        $data = $report->toArray();
+        $data['revisions'] = $report->revisions->map->toApiArray()->values();
+
+        return response()->json($data);
     }
 
     /**
@@ -111,9 +178,11 @@ class ReportController extends Controller
      */
     public function update(Request $request, $id)
     {
-        $report = Report::where('id', $id)
-            ->where('user_id', Auth::id())
-            ->firstOrFail();
+        $report = Report::findOrFail($id);
+
+        if (! $this->reportAccess($report, editorRequired: true)) {
+            abort(403, 'Geen bewerkrechten op dit gebied.');
+        }
 
         $validated = $request->validate([
             'category' => 'sometimes|string|in:threat,hazard,salute',
@@ -137,9 +206,18 @@ class ReportController extends Controller
             'status' => 'nullable|string|in:active,resolved,archived',
         ]);
 
+        // Diff bepalen vóór de update zodat de wijzigingslog van→naar kent.
+        $changes = $this->diffChanges($report, $validated);
         $report->update($validated);
+        if (! empty($changes)) {
+            $this->logRevision($report, 'updated', $changes);
+        }
 
-        return response()->json($report);
+        $report->setRelation('revisions', $report->revisions()->with('user')->get());
+        $data = $report->toArray();
+        $data['revisions'] = $report->revisions->map->toApiArray()->values();
+
+        return response()->json($data);
     }
 
     /**
@@ -147,11 +225,13 @@ class ReportController extends Controller
      */
     public function destroy($id)
     {
-        $report = Report::where('id', $id)
-            ->where('user_id', Auth::id())
-            ->firstOrFail();
+        $report = Report::findOrFail($id);
 
-        $report->delete();
+        if (! $this->reportAccess($report, editorRequired: true)) {
+            abort(403, 'Geen bewerkrechten op dit gebied.');
+        }
+
+        $report->delete(); // revisies vervallen via cascade
 
         return response()->json(['message' => 'Report deleted']);
     }
@@ -174,11 +254,21 @@ class ReportController extends Controller
      */
     public function getByMap(Request $request, $mapId)
     {
-        return response()->json(
-            Report::where('user_id', Auth::id())
+        $map = Map::find($mapId);
+        // Gedeeld op de kaart: elke deelnemer ziet alle gebieden. Bestaat de
+        // kaart niet (server nog niet gesynct) of geen toegang → val terug op de
+        // eigen reports zodat lokale/privé-kaarten blijven werken.
+        if ($map && $this->mapAccess($map)) {
+            $reports = Report::where('map_id', $mapId)
+                ->orderBy('created_at', 'desc')
+                ->get();
+        } else {
+            $reports = Report::where('user_id', Auth::id())
                 ->where('map_id', $mapId)
                 ->orderBy('created_at', 'desc')
-                ->get()
-        );
+                ->get();
+        }
+
+        return response()->json($reports);
     }
 }

@@ -12,16 +12,39 @@ class TeamMember extends Model
 
     protected $table = 'team_members';
 
+    public const STATUS_PENDING = 'pending';
+    public const STATUS_ACTIVE  = 'active';
+
+    public const ROLE_MEMBER = 'member';
+    public const ROLE_GUEST  = 'guest';
+
     protected $fillable = [
         'team_id',
         'email',
         'user_id',
         'added_by',
+        'role',
+        'permissions',
+        'status',
+    ];
+
+    protected $casts = [
+        'permissions' => 'array',
     ];
 
     public function team(): BelongsTo
     {
         return $this->belongsTo(Team::class, 'team_id');
+    }
+
+    public function isActive(): bool
+    {
+        return $this->status === self::STATUS_ACTIVE;
+    }
+
+    public function isGuest(): bool
+    {
+        return $this->role === self::ROLE_GUEST;
     }
 
     public function user(): BelongsTo

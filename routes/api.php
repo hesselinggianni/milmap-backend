@@ -130,6 +130,15 @@ Route::prefix('v1')->middleware(['api'])->group(function () {
     // Public share endpoint (no auth required)
     Route::get('/share/{token}', [MapShareController::class, 'showByToken']);
 
+    // Terrain-RGB DEM-tiles (bergterrein-lagen) — cachende proxy voor Mapbox.
+    // Publiek: OpenLayers laadt tiles als <img> zonder auth-headers. Eigen ruime
+    // throttle i.p.v. throttle:api — één kaart-pan is al tientallen tiles en zou
+    // anders het reguliere API-budget (60/min) van de gebruiker opeten.
+    Route::get('/tiles/terrain/{z}/{x}/{y}', [\App\Http\Controllers\TerrainTileController::class, 'show'])
+        ->whereNumber(['z', 'x', 'y'])
+        ->withoutMiddleware('throttle:api')
+        ->middleware('throttle:600,1');
+
     // Status-page domains — public; the Nuxt status page (milmap.nl/status)
     // fetches the enabled domains here. Managed via the admin routes below.
     Route::get('/status/domains', [StatusPageController::class, 'publicIndex'])
@@ -313,12 +322,19 @@ Route::prefix('v1')->middleware(['api'])->group(function () {
             Route::get('/teams', [TeamController::class, 'index']);
             Route::post('/teams', [TeamController::class, 'store']);
             Route::post('/teams/{team}/members', [TeamController::class, 'addMember']);
+            Route::put('/teams/{team}/members/{member}', [TeamController::class, 'updateMember']);
             Route::delete('/teams/{team}/members/{member}', [TeamController::class, 'removeMember']);
             Route::post('/teams/{team}/invite', [TeamController::class, 'invite']);
             Route::get('/teams/{team}', [TeamController::class, 'show']);
             Route::put('/teams/{team}', [TeamController::class, 'update']);
             Route::delete('/teams/{team}', [TeamController::class, 'destroy']);
         });
+
+        // Keuze-flow voor een uitgenodigd lid dat al een eigen abonnement heeft.
+        // Bewust BUITEN RequiresPremium:teams — de uitgenodigde hoeft zelf geen
+        // team-feature te hebben; hij beslist alleen keep/join over de uitnodiging.
+        Route::get('/team-memberships/pending', [TeamController::class, 'pendingForMe']);
+        Route::post('/team-memberships/{member}/decide', [TeamController::class, 'decide']);
 
         // ── Oefening-modus: Terrein (Site) beheer ───────────────────────
         // Terrein aanmaken/beheren + rollen (commander/controller/player) =
@@ -704,6 +720,9 @@ Route::prefix('v1')->middleware(['api'])->group(function () {
             Route::post  ('/admin/legal/reorder',  [AdminLegalController::class, 'reorder']);
             Route::get   ('/admin/legal/{slug}',   [AdminLegalController::class, 'show']);
             Route::delete('/admin/legal/{slug}',   [AdminLegalController::class, 'destroy']);
+
+            // ── Teams & abonnementen (read-only overzicht) ─────────────
+            Route::get   ('/admin/teams',               [\App\Http\Controllers\AdminTeamController::class, 'index']);
 
             // ── Link-in-bio-CMS (knoppen voor milmap.nl/link-in-bio) ────
             Route::get   ('/admin/bio-links',           [\App\Http\Controllers\AdminBioLinkController::class, 'index']);

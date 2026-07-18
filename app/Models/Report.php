@@ -55,6 +55,14 @@ class Report extends Model
     }
 
     /**
+     * Wijzigingsgeschiedenis (nieuwste eerst).
+     */
+    public function revisions()
+    {
+        return $this->hasMany(ReportRevision::class)->orderBy('id', 'desc');
+    }
+
+    /**
      * Scope: Filter by category
      */
     public function scopeByCategory($query, $category)
