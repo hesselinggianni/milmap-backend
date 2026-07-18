@@ -49,4 +49,11 @@ return [
         'model' => env('ANTHROPIC_MODEL', 'claude-opus-4-8'),
     ],
 
+    // Google PageSpeed Insights — optionele API-sleutel voor hogere quota.
+    // Zonder sleutel werkt de meting bij laag volume ook; de sleutel kan óók
+    // in-app via Settings (pagespeed_api_key) worden gezet, die wint hiervan.
+    'pagespeed' => [
+        'key' => env('PAGESPEED_API_KEY'),
+    ],
+
 ];

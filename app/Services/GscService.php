@@ -115,4 +115,20 @@ class GscService
             'position'    => (float) ($r['position'] ?? 0),
         ], $this->query([$dimension], $days, $rowLimit));
     }
+
+    /** Dagelijkse tijdreeks (voor de kliks/vertoningen-grafiek), oplopend op datum. */
+    public function byDate(int $days = 28): array
+    {
+        $rows = array_map(fn ($r) => [
+            'date'        => $r['keys'][0] ?? '',
+            'clicks'      => (int) round($r['clicks'] ?? 0),
+            'impressions' => (int) round($r['impressions'] ?? 0),
+            'ctr'         => (float) ($r['ctr'] ?? 0),
+            'position'    => (float) ($r['position'] ?? 0),
+        ], $this->query(['date'], $days, max(100, $days + 5)));
+
+        usort($rows, fn ($a, $b) => strcmp($a['date'], $b['date']));
+
+        return $rows;
+    }
 }

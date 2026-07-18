@@ -27,6 +27,12 @@ class BillingController extends Controller
     // en blijven de getoonde bedragen stabiel tot de beheerder ze bewust ververst.
     public const PRICING_CACHE_KEY = 'billing_pricing_v1';
 
+    // Plan-slots die NOOIT in de publieke plannenlijst/pricing mogen verschijnen.
+    // 'lifetime' = het verborgen AppSumo lifetime-deal-plan; alleen bereikbaar
+    // via de AppSumo-verzilverflow (app.milmap.nl/appsumo), niet als los te
+    // kiezen abonnement.
+    public const HIDDEN_PLAN_KEYS = ['lifetime'];
+
     // ── Plan registry ──────────────────────────────────────────────
     // Map our plan keys to Stripe Price IDs. The admin can override the .env
     // defaults by selecting products in the admin UI (stored in settings);
@@ -95,6 +101,11 @@ class BillingController extends Controller
             Log::warning('billing.pricing: onverwachte fout', ['error' => $e->getMessage()]);
 
             return response()->json(['plans' => (object) []]);
+        }
+
+        // Verborgen plannen (AppSumo lifetime) nooit publiek tonen.
+        foreach (self::HIDDEN_PLAN_KEYS as $hidden) {
+            unset($plans[$hidden]);
         }
 
         return response()->json(['plans' => empty($plans) ? (object) [] : $plans]);
@@ -741,6 +752,11 @@ class BillingController extends Controller
 
         $out = [];
         foreach ($pricing as $key => $p) {
+            // 'lifetime' is het verborgen AppSumo-plan: alleen bereikbaar via de
+            // AppSumo-verzilverflow, nooit in de publieke plannenlijst tonen.
+            if (in_array($key, self::HIDDEN_PLAN_KEYS, true)) {
+                continue;
+            }
             $out[] = [
                 'key'      => $key,
                 'name'     => $p['product_name'] ?: ($names[$key] ?? 'Plan'),

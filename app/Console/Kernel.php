@@ -11,6 +11,7 @@ use App\Console\Commands\ArchiveUnverifiedUsers;
 use App\Console\Commands\ProcessMailFollowups;
 use App\Console\Commands\GenerateSalesTodos;
 use App\Console\Commands\PayoutPartners;
+use App\Console\Commands\MonitorPageSpeed;
 
 class Kernel extends ConsoleKernel
 {
@@ -27,6 +28,7 @@ class Kernel extends ConsoleKernel
         ProcessMailFollowups::class,
         GenerateSalesTodos::class,
         PayoutPartners::class,
+        MonitorPageSpeed::class,
     ];
 
     /**
@@ -88,6 +90,14 @@ class Kernel extends ConsoleKernel
             ->withoutOverlapping()
             ->runInBackground()
             ->appendOutputTo(storage_path('logs/seo-tasks.log'));
+
+        // Dagelijkse PageSpeed-meting van de gemonitorde URL's + prestatie-taken
+        // uit lage scores. Rustig gepland (kan traag zijn: URL's × mobiel/desktop).
+        $schedule->command('pagespeed:monitor')
+            ->dailyAt('06:30')
+            ->withoutOverlapping()
+            ->runInBackground()
+            ->appendOutputTo(storage_path('logs/pagespeed.log'));
 
         // Maandelijkse partneruitbetaling: alle pending commissies per partner
         // in één Stripe-Connect-transfer (minimum €10, zie PayoutPartners).

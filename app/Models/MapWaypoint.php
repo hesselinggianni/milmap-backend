@@ -30,6 +30,11 @@ class MapWaypoint extends Model
         return $this->belongsTo(User::class);
     }
 
+    public function images()
+    {
+        return $this->hasMany(MapWaypointImage::class, 'map_waypoint_id')->orderBy('created_at');
+    }
+
     public function toClientArray(): array
     {
         return [
@@ -42,6 +47,9 @@ class MapWaypoint extends Model
             'label'    => $this->label,
             'color'    => $this->color,
             'icon'     => $this->icon,
+            'images'   => $this->relationLoaded('images')
+                ? $this->images->map->toApiArray()->values()->all()
+                : [],
         ];
     }
 }

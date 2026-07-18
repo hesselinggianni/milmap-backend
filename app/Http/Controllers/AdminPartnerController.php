@@ -62,8 +62,34 @@ class AdminPartnerController extends Controller
                 'pending_applications' => Partner::where('status', Partner::STATUS_PENDING)->count(),
                 'approved'             => Partner::where('status', Partner::STATUS_APPROVED)->count(),
                 'open_commissions'     => (float) PartnerCommission::where('status', PartnerCommission::STATUS_PENDING)->sum('commission_amount'),
+                // Alle openstaande commissies (over alle partners) gegroepeerd
+                // per verwachte uitbetaalmaand, zodat de admin ziet welk bedrag
+                // in welke ronde de deur uit gaat.
+                'upcoming_payouts'     => $this->upcomingPayouts(),
             ],
         ]);
+    }
+
+    /**
+     * Openstaande commissies over álle partners, gegroepeerd per verwachte
+     * uitbetaalmaand (1e van de maand). Oplopende lijst met periode, bedrag en
+     * aantal commissies.
+     */
+    private function upcomingPayouts(): array
+    {
+        return PartnerCommission::where('status', PartnerCommission::STATUS_PENDING)
+            ->get()
+            ->groupBy(fn ($c) => $c->expectedPayoutDate()?->format('Y-m'))
+            ->filter(fn ($group, $period) => $period !== '')
+            ->map(fn ($group, $period) => [
+                'period' => $period,
+                'date'   => $group->first()->expectedPayoutDate()?->toISOString(),
+                'amount' => round((float) $group->sum('commission_amount'), 2),
+                'count'  => $group->count(),
+            ])
+            ->sortKeys()
+            ->values()
+            ->all();
     }
 
     // ── POST /admin/partners/{partner}/approve ─────────────────────

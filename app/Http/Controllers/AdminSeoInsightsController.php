@@ -35,6 +35,7 @@ class AdminSeoInsightsController extends Controller
             'serviceAccount' => $this->gsc->serviceAccountEmail(),
             'days'           => $days,
             'totals'         => $this->gsc->totals($days),
+            'byDate'         => $this->gsc->byDate($days),
             'topQueries'     => $this->gsc->topRows('query', $days, 25),
             'topPages'       => $this->gsc->topRows('page', $days, 25),
         ]);

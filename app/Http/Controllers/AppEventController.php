@@ -87,6 +87,12 @@ class AppEventController extends Controller
         if ($type !== 'route') {
             return mb_substr($name, 0, 200);
         }
+        $segments = array_values(array_filter(
+            explode('/', $name),
+            // Kaartcamera-segment (`@lat,lng,zoom`) is geen apart scherm → weg,
+            // zodat alle `/map/:id/@…` samen op `/map/:id` uitkomen.
+            fn ($seg) => ! str_starts_with($seg, '@')
+        ));
         $segments = array_map(function ($seg) {
             if ($seg === '') return $seg;
             // puur numeriek, uuid, of lange hex/token → :id
@@ -94,7 +100,7 @@ class AppEventController extends Controller
             if (preg_match('/^[0-9a-f]{8}-[0-9a-f]{4}-/i', $seg)) return ':id';
             if (preg_match('/^[0-9a-f]{16,}$/i', $seg)) return ':id';
             return $seg;
-        }, explode('/', $name));
+        }, $segments);
 
         return mb_substr(implode('/', $segments), 0, 200) ?: '/';
     }
@@ -106,8 +112,23 @@ class AppEventController extends Controller
 
     public function adminSummary(Request $request): \Illuminate\Http\JsonResponse
     {
+        // Periode: relatief via ?days, óf een exact venster via ?from&?to
+        // (ISO-datums, bv. voor "vandaag"/"gisteren"). $until blijft null bij
+        // een relatieve periode (loopt dan door tot nu).
         $days  = max(1, min(365, (int) $request->query('days', 30)));
         $since = now()->subDays($days)->startOfDay();
+        $until = null;
+
+        $fromParam = $request->query('from');
+        $toParam   = $request->query('to');
+        if ($fromParam) {
+            try { $since = \Illuminate\Support\Carbon::parse($fromParam)->startOfDay(); }
+            catch (\Throwable $e) { /* val terug op days-venster */ }
+        }
+        if ($toParam) {
+            try { $until = \Illuminate\Support\Carbon::parse($toParam)->endOfDay(); }
+            catch (\Throwable $e) { $until = null; }
+        }
 
         // Platform-filter: all | site (milmap.nl) | web (app.milmap.nl) | ios | android | desktop
         $platform = (string) $request->query('platform', 'all');
@@ -119,12 +140,17 @@ class AppEventController extends Controller
         $includeSite = $platform === 'all' || $platform === 'site';
 
         // Verse query-builders (elke aanroep = nieuwe builder).
-        $appBase = function () use ($since, $appPlatformFilter) {
+        $appBase = function () use ($since, $until, $appPlatformFilter) {
             $q = AppEvent::where('occurred_at', '>=', $since);
+            if ($until) $q->where('occurred_at', '<=', $until);
             if ($appPlatformFilter) $q->where('platform', $appPlatformFilter);
             return $q;
         };
-        $siteBase = fn () => SiteEvent::where('occurred_at', '>=', $since);
+        $siteBase = function () use ($since, $until) {
+            $q = SiteEvent::where('occurred_at', '>=', $since);
+            if ($until) $q->where('occurred_at', '<=', $until);
+            return $q;
+        };
 
         // ── Top-routes (schermen) — app-routes + milmap.nl-pageviews ──
         $routeLists = [];
@@ -240,7 +266,7 @@ class AppEventController extends Controller
         $daily = array_values($dailyMap);
 
         // ── Navigatie-flow (opeenvolgende schermen) ──
-        $flow = $this->flowTransitions($since, $includeApp, $includeSite, $appPlatformFilter);
+        $flow = $this->flowTransitions($since, $includeApp, $includeSite, $appPlatformFilter, $until);
 
         // ── Herkomst (UTM) — alleen app-events dragen UTM's ──
         $utmAgg = function (string $col) use ($appBase) {
@@ -256,7 +282,7 @@ class AppEventController extends Controller
         ] : ['sources' => [], 'mediums' => [], 'campaigns' => []];
 
         return response()->json([
-            'range'       => ['days' => $days, 'since' => $since->toIso8601String()],
+            'range'       => ['days' => $days, 'since' => $since->toIso8601String(), 'until' => $until ? $until->toIso8601String() : null],
             'platform'    => $platform,
             'totals'      => [
                 'route_views'   => $routeViews,
@@ -305,20 +331,22 @@ class AppEventController extends Controller
      * chronologisch (occurred_at + id als tiebreaker binnen dezelfde batch) en
      * telt opeenvolgende paren. Begrensd zodat de berekening licht blijft.
      */
-    private function flowTransitions($since, bool $includeApp, bool $includeSite, ?string $appPlatformFilter): array
+    private function flowTransitions($since, bool $includeApp, bool $includeSite, ?string $appPlatformFilter, $until = null): array
     {
         $rows = [];
 
         if ($includeApp) {
             $q = AppEvent::where('occurred_at', '>=', $since)->where('type', 'route');
+            if ($until) $q->where('occurred_at', '<=', $until);
             if ($appPlatformFilter) $q->where('platform', $appPlatformFilter);
             foreach ($q->orderByDesc('occurred_at')->limit(20000)->get(['id', 'visitor_hash', 'name', 'occurred_at']) as $e) {
                 $rows[] = ['h' => $e->visitor_hash, 'n' => $e->name, 'ts' => $e->occurred_at->timestamp, 'id' => (int) $e->id];
             }
         }
         if ($includeSite) {
-            foreach (SiteEvent::where('occurred_at', '>=', $since)->where('event', 'pageview')
-                ->orderByDesc('occurred_at')->limit(20000)->get(['id', 'visitor_hash', 'path', 'occurred_at']) as $e) {
+            $sq = SiteEvent::where('occurred_at', '>=', $since)->where('event', 'pageview');
+            if ($until) $sq->where('occurred_at', '<=', $until);
+            foreach ($sq->orderByDesc('occurred_at')->limit(20000)->get(['id', 'visitor_hash', 'path', 'occurred_at']) as $e) {
                 $rows[] = ['h' => $e->visitor_hash, 'n' => $e->path, 'ts' => $e->occurred_at->timestamp, 'id' => (int) $e->id];
             }
         }

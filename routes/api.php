@@ -210,6 +210,11 @@ Route::prefix('v1')->middleware(['api'])->group(function () {
     Route::get('/legal/{slug}', [LegalController::class, 'show'])
         ->middleware('throttle:120,1');
 
+    // Link-in-bio links — publiek uitgelezen door milmap.nl/link-in-bio (Nuxt).
+    // Alleen ingeschakelde links. Beheer onder /admin/bio-links.
+    Route::get('/bio-links', [\App\Http\Controllers\BioLinkController::class, 'index'])
+        ->middleware('throttle:120,1');
+
     // ── Campagne-mail: publieke afmeld- + tracking-routes ───────────────
     // Bewust hier (api.php) i.p.v. web.php: de SPA-catch-all (/{any}) in web.php
     // zou anders elke GET opslokken. Token komt uit mail_sends.token.
@@ -450,6 +455,9 @@ Route::prefix('v1')->middleware(['api'])->group(function () {
         Route::post('/maps/{mapId}/waypoints', [MapWaypointController::class, 'store']);
         Route::put('/maps/{mapId}/waypoints/{localId}', [MapWaypointController::class, 'update']);
         Route::delete('/maps/{mapId}/waypoints/{localId}', [MapWaypointController::class, 'destroy']);
+        // Waypoint-foto's
+        Route::post('/maps/{mapId}/waypoints/{localId}/images', [MapWaypointController::class, 'uploadImage']);
+        Route::delete('/maps/{mapId}/waypoints/{localId}/images/{imageId}', [MapWaypointController::class, 'deleteImage']);
 
         // ── Missions (owner + collaborators with roles) ──────────────────
         // Literal invitation routes first so they aren't captured by {id}.
@@ -696,6 +704,12 @@ Route::prefix('v1')->middleware(['api'])->group(function () {
             Route::post  ('/admin/legal/reorder',  [AdminLegalController::class, 'reorder']);
             Route::get   ('/admin/legal/{slug}',   [AdminLegalController::class, 'show']);
             Route::delete('/admin/legal/{slug}',   [AdminLegalController::class, 'destroy']);
+
+            // ── Link-in-bio-CMS (knoppen voor milmap.nl/link-in-bio) ────
+            Route::get   ('/admin/bio-links',           [\App\Http\Controllers\AdminBioLinkController::class, 'index']);
+            Route::post  ('/admin/bio-links',           [\App\Http\Controllers\AdminBioLinkController::class, 'upsert']);
+            Route::post  ('/admin/bio-links/reorder',   [\App\Http\Controllers\AdminBioLinkController::class, 'reorder']);
+            Route::delete('/admin/bio-links/{id}',      [\App\Http\Controllers\AdminBioLinkController::class, 'destroy']);
 
             // In-app notificatie-feed voor de admin-app (nieuwe mail / support /
             // feature requests). Onder de admin-prefix zodat de frontend-

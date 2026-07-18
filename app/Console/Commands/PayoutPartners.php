@@ -27,11 +27,13 @@ class PayoutPartners extends Command
 
     /**
      * Terugbetaal-venster: een commissie wordt pas uitbetaalbaar wanneer de
-     * betaling 30 dagen oud is en niet is terugbetaald. Refunds binnen dat
+     * betaling zo veel dagen oud is en niet is terugbetaald. Refunds binnen dat
      * venster zetten de commissie op 'refunded' (zie PartnerService), dus
-     * alles wat hier door de filter komt heeft het venster overleefd.
+     * alles wat hier door de filter komt heeft het venster overleefd. De
+     * waarde staat op PartnerCommission zodat het portaal exact dezelfde
+     * verwachte uitbetaaldatum kan tonen.
      */
-    private const REFUND_HOLD_DAYS = 30;
+    private const REFUND_HOLD_DAYS = PartnerCommission::REFUND_HOLD_DAYS;
 
     public function handle(): int
     {

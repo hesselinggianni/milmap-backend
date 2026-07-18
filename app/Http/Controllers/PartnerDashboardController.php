@@ -90,6 +90,8 @@ class PartnerDashboardController extends Controller
             'status'            => $c->status,
             'paid_at'           => $c->paid_at?->toISOString(),
             'created_at'        => $c->created_at?->toISOString(),
+            // Wanneer deze commissie (naar verwachting) wordt uitbetaald.
+            'expected_payout_at' => $c->expectedPayoutDate()?->toISOString(),
         ]);
 
         return response()->json($commissions);
@@ -108,7 +110,32 @@ class PartnerDashboardController extends Controller
                 ->where('status', PartnerCommission::STATUS_PAID)
                 ->where('paid_at', '>=', $monthStart)
                 ->sum('commission_amount'),
+            // Openstaande commissies gegroepeerd per verwachte uitbetaalmaand,
+            // zodat de partner ziet wat er wanneer aankomt.
+            'upcoming_payouts'     => $this->upcomingPayouts($partner),
         ];
+    }
+
+    /**
+     * Groepeer alle pending commissies per verwachte uitbetaalmaand (1e van de
+     * maand). Teruggegeven als oplopende lijst met periode, bedrag en aantal.
+     */
+    private function upcomingPayouts($partner): array
+    {
+        return $partner->commissions()
+            ->where('status', PartnerCommission::STATUS_PENDING)
+            ->get()
+            ->groupBy(fn ($c) => $c->expectedPayoutDate()?->format('Y-m'))
+            ->filter(fn ($group, $period) => $period !== '')
+            ->map(fn ($group, $period) => [
+                'period' => $period,                                            // 'YYYY-MM'
+                'date'   => $group->first()->expectedPayoutDate()?->toISOString(),
+                'amount' => round((float) $group->sum('commission_amount'), 2),
+                'count'  => $group->count(),
+            ])
+            ->sortKeys()
+            ->values()
+            ->all();
     }
 
     private function maskEmail(?string $email): string
