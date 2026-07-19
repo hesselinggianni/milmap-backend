@@ -50,7 +50,31 @@ class MessageCreated implements ShouldBroadcastNow
             'ciphertext_self' => $this->message->ciphertext_self,
             // Group message: each client picks the box sealed to its own user id.
             'ciphertexts'     => $this->message->ciphertexts,
+            // Antwoord-op: alle sealed kopieën van het origineel meegeven — het
+            // kanaal is gedeeld, dus per-viewer trimmen kan hier niet. Elke
+            // client kiest (net als bij het hoofdbericht) zijn eigen box.
+            'reply_to_id'     => $this->message->reply_to_id,
+            'reply_to'        => $this->message->reply_to_id ? $this->replyPayload() : null,
             'created_at'      => $this->message->created_at?->toIso8601String(),
+        ];
+    }
+
+    private function replyPayload(): ?array
+    {
+        $parent = $this->message->replyTo;
+        if (! $parent) {
+            return null;
+        }
+
+        return [
+            'id'              => $parent->id,
+            'sender_id'       => $parent->sender_id,
+            'type'            => $parent->type ?? 'text',
+            'encryption'      => $parent->encryption,
+            'ciphertext'      => $parent->ciphertext,
+            'ciphertext_self' => $parent->ciphertext_self,
+            'ciphertexts'     => $parent->ciphertexts,
+            'created_at'      => $parent->created_at?->toIso8601String(),
         ];
     }
 }

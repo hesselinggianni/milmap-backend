@@ -34,6 +34,14 @@ class AppEventController extends Controller
             return response()->noContent();
         }
 
+        // Lokale ontwikkeling (backend + app op dezelfde machine) telt nooit
+        // mee — vangnet naast de client-side uitsluiting van dev/localhost in
+        // services/analytics.js (trackingEnabled). Op productie zit nginx
+        // ervoor en is het request-IP nooit loopback.
+        if (in_array($request->ip(), ['127.0.0.1', '::1'], true)) {
+            return response()->noContent();
+        }
+
         $data = $request->validate([
             'events'              => 'required|array|max:' . self::MAX_BATCH,
             'events.*.type'       => 'required|string|in:route,action',

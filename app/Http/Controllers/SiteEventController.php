@@ -27,6 +27,7 @@ class SiteEventController extends Controller
         'gate_shown',       // minimap: login-gate getoond
         'gate_cta_click',   // minimap: gate-CTA aangeklikt
         'lead_submit',      // e-mail lead-capture (fase 1)
+        'exit_shown',       // exit-intent popup getoond (bv. pricing-korting)
     ];
 
     public function store(Request $request): \Illuminate\Http\Response

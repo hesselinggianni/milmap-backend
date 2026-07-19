@@ -102,6 +102,7 @@ class User extends Authenticatable
             'settings'          => 'array',
             'trial_ends_at'     => 'datetime',
             'view_only'         => 'boolean',
+            'is_demo'           => 'boolean',
             'last_seen_at'      => 'datetime',
             'key_escrow_updated_at' => 'datetime',
             // At-rest encryption (APP_KEY) for the account unlock key: a DB

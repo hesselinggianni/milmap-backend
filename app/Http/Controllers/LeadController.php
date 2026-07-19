@@ -52,13 +52,52 @@ class LeadController extends Controller
             app(CrmLeadPushService::class)->push($lead);
         }
 
+        // Exit-intent op /pricing belooft "we mailen je 50% korting" — die mail
+        // moet dus direct komen, niet pas na handmatige admin-actie. Eén keer
+        // per e-mailadres (notified_at is de grendel); mint een unieke Stripe-
+        // code en stuur de bestaande download/korting-mail. Faalt dit (Stripe
+        // niet geconfigureerd, mail stuk), dan blijft de lead gewoon staan en
+        // kan admin alsnog handmatig versturen.
+        $couponSent = false;
+        if (($data['source'] ?? null) === 'pricing-exit' && ! $lead->notified_at) {
+            $couponSent = $this->sendCouponMail($lead);
+        }
+
         return response()->json([
             'ok'       => true,
             'is_new'   => $lead->wasRecentlyCreated,
-            'message'  => $lead->wasRecentlyCreated
-                ? 'Bedankt! Je hoort van ons zodra MilMap live gaat.'
-                : 'Je staat al op de lijst — we sturen je een mail zodra MilMap live gaat.',
+            'message'  => $couponSent
+                ? 'Check je inbox — je persoonlijke kortingscode is onderweg.'
+                : ($lead->wasRecentlyCreated
+                    ? 'Bedankt! Je hoort van ons zodra MilMap live gaat.'
+                    : 'Je staat al op de lijst — we sturen je een mail zodra MilMap live gaat.'),
         ]);
+    }
+
+    /**
+     * Mint een unieke 50%-jaarcode en mail die naar de lead; markeert de lead
+     * als geïnformeerd. Stil falen (false) — de aanroeper bepaalt de boodschap.
+     */
+    private function sendCouponMail(Lead $lead): bool
+    {
+        try {
+            $result = app(LaunchCouponService::class)->createYearlyHalfOffCode($lead->email);
+            Mail::to($lead->email)->send(new AppDownloadMail(
+                couponCode: $result['code'],
+                couponExpiresLabel: $result['expires_at']->locale('nl')->isoFormat('D MMMM YYYY'),
+                appStoreUrl: config('milmap.app_store_url'),
+                playStoreUrl: config('milmap.play_store_url'),
+                webAppUrl: config('milmap.web_app_url'),
+            ));
+        } catch (\Throwable $e) {
+            report($e);
+            return false;
+        }
+
+        $lead->notified_at = now();
+        $lead->save();
+
+        return true;
     }
 
     /**

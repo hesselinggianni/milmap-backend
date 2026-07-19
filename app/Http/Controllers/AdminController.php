@@ -24,7 +24,7 @@ class AdminController extends Controller
     {
         try {
             // Alleen tellingen — bewust geen kaarttitels/datums inladen.
-            $baseUsers = User::select('id', 'first_name', 'last_name', 'email', 'is_admin', 'created_at', 'email_verified_at', 'last_seen_at', 'trial_ends_at')
+            $baseUsers = User::select('id', 'first_name', 'last_name', 'email', 'is_admin', 'is_demo', 'created_at', 'email_verified_at', 'last_seen_at', 'trial_ends_at')
                 ->withCount('maps')
                 ->get();
 
@@ -75,6 +75,7 @@ class AdminController extends Controller
                     'name'             => trim(($user->first_name ?? '') . ' ' . ($user->last_name ?? '')) ?: $user->email,
                     'email'            => $user->email,
                     'is_admin'         => (bool) $user->is_admin,
+                    'is_demo'          => (bool) $user->is_demo,
                     'maps_count'       => (int) $user->maps_count,
                     'route_maps_count' => (int) ($routeMapCounts[$user->id] ?? 0),
                     'missions_count'   => (int) ($missionCounts[$user->id] ?? 0),
@@ -100,12 +101,14 @@ class AdminController extends Controller
             return response()->json([
                 'users' => $users,
                 'stats' => [
-                    'total_users'     => $baseUsers->count(),
+                    // Demo-accounts (eigen test-accounts) tellen niet mee in de
+                    // totalen/groei; ze blijven wél zichtbaar in de lijst.
+                    'total_users'     => $baseUsers->where('is_demo', false)->count(),
                     'total_maps'      => Map::count(),
                     'total_routemaps' => RouteMap::count(),
                     'total_missions'  => Mission::count(),
                     'deltas' => [
-                        'users'     => $delta(User::query()),
+                        'users'     => $delta(User::where('is_demo', false)),
                         'admins'    => $delta(User::where('is_admin', true)),
                         'maps'      => $delta(Map::query()),
                         'routemaps' => $delta(RouteMap::query()),
@@ -390,6 +393,7 @@ class AdminController extends Controller
                     'name'              => $user->full_name,
                     'email'             => $user->email,
                     'is_admin'          => (bool) $user->is_admin,
+                    'is_demo'           => (bool) $user->is_demo,
                     'language'          => $user->language,
                     'view_only'         => $user->isViewOnly(),
                     'email_verified_at' => $user->email_verified_at,
@@ -458,6 +462,33 @@ class AdminController extends Controller
                 'message' => 'Fout bij ophalen gebruiker',
                 'error'   => $e->getMessage(),
             ], 500);
+        }
+    }
+
+    /**
+     * Markeer een gebruiker als demo-account (of maak dat ongedaan).
+     *
+     * Demo-accounts zijn eigen test-/presentatie-accounts: ze tellen niet mee
+     * in de admin-statistieken en de app stopt er de gebruiksanalyse voor
+     * (zie setTrackingUser in de frontend).
+     */
+    public function setDemo(Request $request, $userId)
+    {
+        $data = $request->validate(['is_demo' => 'required|boolean']);
+
+        try {
+            $user = User::findOrFail($userId);
+            $user->is_demo = (bool) $data['is_demo'];
+            $user->save();
+
+            return response()->json([
+                'message' => $user->is_demo
+                    ? 'Gebruiker gemarkeerd als demo-account'
+                    : 'Demo-markering verwijderd',
+                'is_demo' => (bool) $user->is_demo,
+            ], 200);
+        } catch (\Illuminate\Database\Eloquent\ModelNotFoundException $e) {
+            return response()->json(['message' => 'Gebruiker niet gevonden', 'error' => 'not_found'], 404);
         }
     }
 

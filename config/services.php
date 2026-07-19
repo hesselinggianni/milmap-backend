@@ -28,6 +28,14 @@ return [
         'key' => env('RESEND_KEY'),
     ],
 
+    // Mapbox — server-side token voor de terrain-tile-proxy (TerrainTileController).
+    // Waarde komt uit .env (MAPBOX_TOKEN). Geen hardcoded fallback: GitHub's
+    // push-protection blokkeert Mapbox-tokens in de code (ook de publieke
+    // pk-variant), dus de token hoort in .env — lokaal én op de server.
+    'mapbox' => [
+        'token' => env('MAPBOX_TOKEN'),
+    ],
+
     'slack' => [
         'notifications' => [
             'bot_user_oauth_token' => env('SLACK_BOT_USER_OAUTH_TOKEN'),

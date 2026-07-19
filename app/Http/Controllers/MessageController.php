@@ -36,7 +36,7 @@ class MessageController extends Controller
             ->value('cleared_at');
 
         $messages = Message::where('conversation_id', $conversation->id)
-            ->with('reactions')
+            ->with(['reactions', 'replyTo'])
             ->when($clearedAt, fn ($q) => $q->where('created_at', '>', $clearedAt))
             ->when($before, fn ($q) => $q->where('id', '<', $before))
             ->when($after,  fn ($q) => $q->where('id', '>', $after))
@@ -74,7 +74,23 @@ class MessageController extends Controller
             'ciphertexts.*'   => ['string', 'max:20000'],
             'encryption'      => ['nullable', 'in:sealed,none'],
             'type'            => ['nullable', 'in:text,location,mission,image,file,voice,poll,event,contact,medevac'],
+            'reply_to_id'     => ['nullable', 'integer'],
         ]);
+
+        // Een antwoord moet verwijzen naar een bericht in DIT gesprek — anders
+        // zou een client via reply_to_id metadata van vreemde gesprekken kunnen
+        // opvragen (de quote-payload bevat de sealed box van het origineel).
+        $replyToId = null;
+        if (! empty($data['reply_to_id'])) {
+            $replyToId = Message::where('conversation_id', $conversation->id)
+                ->whereKey($data['reply_to_id'])
+                ->value('id');
+            if (! $replyToId) {
+                return response()->json([
+                    'message' => 'Het bericht waarop je antwoordt bestaat niet (meer) in dit gesprek.',
+                ], 422);
+            }
+        }
 
         // SECURITY: validate the per-recipient ciphertext map against the
         // conversation roster. Without this a client could (a) smuggle a group
@@ -107,6 +123,7 @@ class MessageController extends Controller
         $message = Message::create([
             'conversation_id' => $conversation->id,
             'sender_id'       => $userId,
+            'reply_to_id'     => $replyToId,
             'ciphertext'      => $data['ciphertext'] ?? null,
             'ciphertext_self' => $data['ciphertext_self'] ?? null,
             'ciphertexts'     => $data['ciphertexts'] ?? null,
@@ -127,6 +144,82 @@ class MessageController extends Controller
         return response()->json([
             'message' => $message->forViewer($userId),
         ], 201);
+    }
+
+    /**
+     * Alle vastgezette berichten van een gesprek (voor de pin-banner bovenin de
+     * chat). Los van het berichten-venster: een pin van weken terug blijft zo
+     * zichtbaar zonder de hele geschiedenis te laden. Oudste pin eerst.
+     */
+    public function pins(Request $request, $conversationId)
+    {
+        $userId = Auth::id();
+
+        $conversation = Conversation::findOrFail($conversationId);
+        if (! $conversation->hasParticipant($userId)) {
+            return response()->json(['message' => 'Forbidden.'], 403);
+        }
+
+        $pins = Message::where('conversation_id', $conversation->id)
+            ->whereNotNull('pinned_at')
+            ->with(['reactions', 'replyTo'])
+            ->orderBy('pinned_at')
+            ->limit(50)
+            ->get();
+
+        return response()->json([
+            'pins' => $pins->map(fn (Message $m) => $m->forViewer($userId))->values(),
+        ]);
+    }
+
+    /**
+     * Zet een bericht vast in het gesprek. Elke deelnemer mag vastzetten (het
+     * is een team-chat); nogmaals vastzetten ververst alleen de timestamp.
+     */
+    public function pin(Request $request, $conversationId, $messageId)
+    {
+        return $this->setPinned($conversationId, $messageId, true);
+    }
+
+    /** Maak een vastgezet bericht weer los. Elke deelnemer mag losmaken. */
+    public function unpin(Request $request, $conversationId, $messageId)
+    {
+        return $this->setPinned($conversationId, $messageId, false);
+    }
+
+    private function setPinned($conversationId, $messageId, bool $pinned)
+    {
+        $userId = Auth::id();
+
+        $conversation = Conversation::findOrFail($conversationId);
+        if (! $conversation->hasParticipant($userId)) {
+            return response()->json(['message' => 'Forbidden.'], 403);
+        }
+
+        $message = Message::where('conversation_id', $conversation->id)
+            ->whereKey($messageId)
+            ->firstOrFail();
+
+        $message->update([
+            'pinned_at' => $pinned ? now() : null,
+            'pinned_by' => $pinned ? $userId : null,
+        ]);
+
+        try {
+            broadcast(new \App\Events\MessagePinned(
+                $conversation->id,
+                (int) $message->id,
+                $pinned,
+                $pinned ? (int) $userId : null,
+                $message->pinned_at?->toIso8601String()
+            ))->toOthers();
+        } catch (\Throwable $e) {
+            \Illuminate\Support\Facades\Log::warning('[chat] pin broadcast failed: ' . $e->getMessage());
+        }
+
+        return response()->json([
+            'message' => $message->forViewer($userId),
+        ]);
     }
 
     /**

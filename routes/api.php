@@ -609,6 +609,11 @@ Route::prefix('v1')->middleware(['api'])->group(function () {
         Route::post('/chat/conversations/{id}/messages/{messageId}/reactions', [MessageController::class, 'react']);
         Route::delete('/chat/conversations/{id}/messages/{messageId}/reactions', [MessageController::class, 'unreact']);
 
+        // Vastzetten: pin-banner bovenin de chat. Elke deelnemer mag (los)maken.
+        Route::get('/chat/conversations/{id}/pins', [MessageController::class, 'pins']);
+        Route::post('/chat/conversations/{id}/messages/{messageId}/pin', [MessageController::class, 'pin']);
+        Route::delete('/chat/conversations/{id}/messages/{messageId}/pin', [MessageController::class, 'unpin']);
+
         // Chat attachments
         Route::post('/chat/attachments', [ChatAttachmentController::class, 'store']);
 
@@ -873,6 +878,8 @@ Route::prefix('v1')->middleware(['api'])->group(function () {
             // Gratis (premium-)toegang toekennen/verlengen + handmatig e-mail verifiëren.
             Route::post('/admin/users/{userId}/grant-access', [AdminController::class, 'grantAccess']);
             Route::post('/admin/users/{userId}/verify-email', [AdminController::class, 'verifyUserEmail']);
+            // Demo-account aan/uit: telt dan niet mee in statistieken/analytics.
+            Route::post('/admin/users/{userId}/set-demo', [AdminController::class, 'setDemo']);
 
             // ── Admin mail client (IMAP/SMTP inboxes) ───────────────────
             // Inbox configuration (CRUD). Passwords are write-only.
