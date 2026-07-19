@@ -30,7 +30,22 @@ crypto-bot/
 - **Positielimieten:** max % van equity én absolute EUR-cap, plus minimum-order-check.
 - **Auto-inleg met harde cap:** virtuele top-ups stoppen automatisch bij de lifetime-cap.
 
-## Backend draaien
+## Snelste start (aanbevolen) — één commando
+
+Vereist: PHP 8.2+, Composer, Node 18+ (op macOS via Homebrew).
+
+```bash
+cd crypto-bot
+./start.sh          # installeert deps, zet DB op, start API + worker + scheduler + dashboard
+```
+
+Dat opent (op macOS) automatisch **http://localhost:4000**. Stoppen: `./stop.sh`.
+Poorten aanpassen kan met env-vars: `API_PORT=8010 WEB_PORT=4100 ./start.sh`.
+
+> De frontend draait op **4000** en de API op **8001** — bewust anders dan milmap
+> (3000/8000), zodat beide tegelijk lokaal kunnen draaien.
+
+## Backend draaien (handmatig)
 
 ```bash
 cd backend

@@ -1,0 +1,9 @@
+# Runtime logs/pids van start.sh
+.api.log
+.queue.log
+.schedule.log
+.web.log
+.api.pid
+.queue.pid
+.schedule.pid
+.web.pid
