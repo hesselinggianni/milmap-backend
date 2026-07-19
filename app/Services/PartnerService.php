@@ -119,15 +119,18 @@ class PartnerService
     }
 
     /**
-     * Idempotente Stripe-coupon per kortingspercentage (duration=forever: de
-     * korting geldt zolang het abonnement loopt, passend bij de doorlopende
-     * commissie voor de partner).
+     * Idempotente Stripe-coupon per kortingspercentage. De korting geldt de
+     * eerste 12 maanden (repeating): bij een maandabonnement de eerste 12
+     * termijnen, bij een jaarabonnement dus alleen de eerste jaarfactuur —
+     * hetzelfde venster als de partnercommissie (COMMISSION_WINDOW_MONTHS).
+     * Nieuwe id-namespace (milmap-partner12-…) zodat de oude forever-coupons
+     * in Stripe onaangeroerd blijven.
      */
     public function discountCouponId(float $percentOff): string
     {
         $percentOff = round($percentOff, 2);
-        // Stripe-coupon-ids mogen geen punt bevatten; 12.5 → milmap-partner-12_5
-        $couponId = 'milmap-partner-' . str_replace('.', '_', rtrim(rtrim(number_format($percentOff, 2, '.', ''), '0'), '.'));
+        // Stripe-coupon-ids mogen geen punt bevatten; 12.5 → milmap-partner12-12_5
+        $couponId = 'milmap-partner12-' . str_replace('.', '_', rtrim(rtrim(number_format($percentOff, 2, '.', ''), '0'), '.'));
 
         try {
             $this->stripe->coupons->retrieve($couponId);
@@ -138,13 +141,48 @@ class PartnerService
         }
 
         $this->stripe->coupons->create([
-            'id'          => $couponId,
-            'percent_off' => $percentOff,
-            'duration'    => 'forever',
-            'name'        => "MilMap Partnerkorting {$percentOff}%",
+            'id'                 => $couponId,
+            'percent_off'        => $percentOff,
+            'duration'           => 'repeating',
+            'duration_in_months' => self::COMMISSION_WINDOW_MONTHS,
+            'name'               => "MilMap Partnerkorting {$percentOff}% (eerste 12 mnd)",
         ]);
 
         return $couponId;
+    }
+
+    /**
+     * Guest-checkout-variant van applyReferralDiscount: er is nog geen user
+     * (het account ontstaat pas in de webhook), dus de korting komt direct
+     * van de partner achter de meegegeven referral-code. Zelfde regels als
+     * attachReferral: partner moet approved zijn met complete overeenkomst.
+     */
+    public function applyCodeDiscount(array $sessionParams, ?string $code): array
+    {
+        $code = strtoupper(trim((string) $code));
+        if ($code === '' || isset($sessionParams['discounts'])) {
+            return $sessionParams;
+        }
+
+        $partner = Partner::where('referral_code', $code)
+            ->where('status', Partner::STATUS_APPROVED)
+            ->first();
+        if (! $partner || ! $partner->agreementComplete() || $partner->discount_rate <= 0) {
+            return $sessionParams;
+        }
+
+        try {
+            $couponId = $this->discountCouponId((float) $partner->discount_rate);
+            $sessionParams['discounts'] = [['coupon' => $couponId]];
+            // Stripe staat 'discounts' en 'allow_promotion_codes' niet samen toe.
+            unset($sessionParams['allow_promotion_codes']);
+        } catch (\Throwable $e) {
+            Log::warning('[partner] guest-kortingscoupon toepassen mislukt', [
+                'code' => $code, 'error' => $e->getMessage(),
+            ]);
+        }
+
+        return $sessionParams;
     }
 
     /**

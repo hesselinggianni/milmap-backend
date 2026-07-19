@@ -25,7 +25,9 @@ class BillingController extends Controller
     // verlopen: hij blijft staan tot een admin nieuwe prijzen koppelt (savePriceMap)
     // of de cache handmatig leegt in de admin-omgeving. Zo hammeren we Stripe niet
     // en blijven de getoonde bedragen stabiel tot de beheerder ze bewust ververst.
-    public const PRICING_CACHE_KEY = 'billing_pricing_v1';
+    // v2: sinds multi-currency (currency_options/USD) — de bump dwingt een
+    // verse opbouw af zodat een oude cache zonder USD-bedragen niet blijft hangen.
+    public const PRICING_CACHE_KEY = 'billing_pricing_v2';
 
     // Plan-slots die NOOIT in de publieke plannenlijst/pricing mogen verschijnen.
     // 'lifetime' = het verborgen AppSumo lifetime-deal-plan; alleen bereikbaar
@@ -81,6 +83,71 @@ class BillingController extends Controller
         };
     }
 
+    // ── Valuta-keuze ───────────────────────────────────────────────
+    /**
+     * Bepaal in welke valuta deze bezoeker prijzen moet zien: een expliciete
+     * `?currency=usd|eur` wint; anders krijgen Amerikaanse bezoekers (GeoIP)
+     * USD. Alles buiten dat: null → de standaardvaluta van de Stripe-price.
+     */
+    private function requestCurrency(Request $request): ?string
+    {
+        $q = strtolower((string) $request->query('currency'));
+        if (in_array($q, ['eur', 'usd'], true)) {
+            return $q;
+        }
+
+        return \App\Support\GeoIp::country($request) === 'US' ? 'usd' : null;
+    }
+
+    /**
+     * Pas de gekozen valuta toe op een prijsregel uit cachedPricing(): staat er
+     * voor die valuta een bedrag in de currency_options van de price, dan
+     * vervangen amount/currency dat bedrag. Zo tonen we NOOIT een valuta die
+     * Stripe niet daadwerkelijk kan afrekenen.
+     */
+    private function priceInCurrency(array $p, ?string $currency): array
+    {
+        if ($currency && strtolower((string) ($p['currency'] ?? '')) !== $currency
+            && isset($p['currency_options'][$currency])) {
+            $p['amount']   = $p['currency_options'][$currency];
+            $p['currency'] = strtoupper($currency);
+        }
+        unset($p['currency_options']); // intern detail, niet voor de client
+
+        return $p;
+    }
+
+    /**
+     * De valuta waarin een checkout-sessie voor dit plan moet afrekenen, of
+     * null voor de standaardvaluta van de price. Alleen een afwijkende valuta
+     * (USD) als de price die daadwerkelijk ondersteunt (currency_options in
+     * Stripe) — anders zou het aanmaken van de sessie falen.
+     */
+    private function checkoutCurrency(Request $request, string $planKey): ?string
+    {
+        $currency = $request->filled('currency')
+            ? strtolower((string) $request->input('currency'))
+            : $this->requestCurrency($request);
+        if (! in_array($currency, ['eur', 'usd'], true)) {
+            return null;
+        }
+
+        try {
+            $p = $this->cachedPricing()[$planKey] ?? null;
+        } catch (\Throwable $e) {
+            return null; // prijzen onbekend → veilige default (price-valuta)
+        }
+        if (! $p) {
+            return null;
+        }
+
+        if (strtolower((string) ($p['currency'] ?? '')) === $currency) {
+            return null; // al de standaardvaluta — niets afdwingen
+        }
+
+        return isset($p['currency_options'][$currency]) ? $currency : null;
+    }
+
     // ── GET /billing/pricing ───────────────────────────────────────
     // Public — returns the live Stripe pricing for every MilMap plan slot so the
     // checkout/landing pages show the real amount + currency that Stripe will
@@ -88,7 +155,9 @@ class BillingController extends Controller
     // resolves to its mapped Stripe Price ID (admin override → .env default) and
     // we read the unit_amount/currency/interval plus the parent product id back
     // from Stripe. Cached briefly so a busy checkout page never hammers Stripe.
-    public function pricing()
+    // Amerikaanse bezoekers (GeoIP of ?currency=usd) krijgen de USD-bedragen
+    // uit de currency_options van de prices, mits die in Stripe zijn gezet.
+    public function pricing(Request $request)
     {
         if (! config('billing.stripe_secret')) {
             // Stripe not configured → no live data; the client toont '…'.
@@ -106,6 +175,11 @@ class BillingController extends Controller
         // Verborgen plannen (AppSumo lifetime) nooit publiek tonen.
         foreach (self::HIDDEN_PLAN_KEYS as $hidden) {
             unset($plans[$hidden]);
+        }
+
+        $currency = $this->requestCurrency($request);
+        foreach ($plans as $key => $p) {
+            $plans[$key] = $this->priceInCurrency($p, $currency);
         }
 
         return response()->json(['plans' => empty($plans) ? (object) [] : $plans]);
@@ -154,7 +228,12 @@ class BillingController extends Controller
             }
 
             try {
-                $price = $this->stripe->prices->retrieve($priceId, ['expand' => ['product']]);
+                // currency_options = de bedragen per extra valuta (bv. USD) die
+                // de beheerder in Stripe op de price zet; alleen zichtbaar met
+                // een expliciete expand.
+                $price = $this->stripe->prices->retrieve($priceId, [
+                    'expand' => ['product', 'currency_options'],
+                ]);
             } catch (\Throwable $e) {
                 // A single broken/deleted price must not nuke the whole response.
                 Log::warning('billing.pricing: kon price niet laden', [
@@ -167,6 +246,16 @@ class BillingController extends Controller
 
             $product = $price->product ?? null;
 
+            // Extra valuta's (naast de standaardvaluta van de price) met hun
+            // bedrag in centen: ['usd' => 599, …]. Leeg als er geen zijn.
+            $currencyOptions = [];
+            foreach ((array) ($price->currency_options ?? []) as $code => $opt) {
+                $amount = is_object($opt) ? ($opt->unit_amount ?? null) : ($opt['unit_amount'] ?? null);
+                if ($amount !== null) {
+                    $currencyOptions[strtolower((string) $code)] = (int) $amount;
+                }
+            }
+
             $out[$key] = [
                 'plan'         => $key,
                 'price_id'     => $price->id,
@@ -177,6 +266,7 @@ class BillingController extends Controller
                 'amount'       => $price->unit_amount,                 // in cents
                 'currency'     => strtoupper((string) $price->currency),
                 'interval'     => $price->recurring->interval ?? null, // month | year | null
+                'currency_options' => $currencyOptions,                // bv. ['usd' => 599]
             ];
         }
 
@@ -202,6 +292,9 @@ class BillingController extends Controller
             'first_name' => 'nullable|string|max:100',
             'last_name'  => 'nullable|string|max:100',
             'coupon'     => 'nullable|string|max:64',
+            'currency'   => 'nullable|string|in:eur,usd',
+            // Partner-referral (bv. via app.milmap.nl/?partner=CODE).
+            'referral_code' => 'nullable|string|max:32',
         ]);
 
         $plans   = $this->plans();
@@ -256,6 +349,9 @@ class BillingController extends Controller
                     'reg_email'            => $request->email,
                     'reg_first_name'       => (string) ($request->first_name ?? ''),
                     'reg_last_name'        => (string) ($request->last_name ?? ''),
+                    // Rijdt mee zodat de webhook het nieuwe account aan de
+                    // partner kan koppelen (attachReferral).
+                    'reg_referral_code'    => strtoupper(trim((string) ($request->referral_code ?? ''))),
                 ];
             }
 
@@ -278,10 +374,17 @@ class BillingController extends Controller
                 'metadata'    => $meta,
                 'allow_promotion_codes'      => true,
                 'billing_address_collection' => 'auto',
-                'locale'                     => 'nl',
+                // 'auto': checkout-taal volgt de browser (US → Engels).
+                'locale'                     => 'auto',
             ]);
             if ($pmTypes = $this->paymentMethodTypes()) {
                 $sessionParams['payment_method_types'] = $pmTypes;
+            }
+
+            // Amerikaanse klanten rekenen in dollars af — mits de price een
+            // USD-bedrag (currency_options) heeft.
+            if ($currency = $this->checkoutCurrency($request, $request->plan)) {
+                $sessionParams['currency'] = $currency;
             }
 
             // Korting uit de mail (bv. MILMAP-XXXX-XXXX) automatisch toepassen.
@@ -292,6 +395,14 @@ class BillingController extends Controller
             // nog geen referral, dus valt dit stil weg).
             $sessionParams = app(\App\Services\PartnerService::class)
                 ->applyReferralDiscount($sessionParams, $user);
+
+            // Gloednieuwe gast mét partnercode: korting direct op basis van de
+            // code (het account — en dus de referral — ontstaat pas in de
+            // webhook na een geslaagde betaling).
+            if ($isNewUser) {
+                $sessionParams = app(\App\Services\PartnerService::class)
+                    ->applyCodeDiscount($sessionParams, $request->input('referral_code'));
+            }
 
             $session = $this->stripe->checkout->sessions->create($sessionParams);
         } catch (\Stripe\Exception\ExceptionInterface $e) {
@@ -433,8 +544,9 @@ class BillingController extends Controller
     public function createCheckout(Request $request)
     {
         $request->validate([
-            'plan'   => 'required|string|in:pro_monthly,pro_yearly,team_monthly,team_yearly',
-            'coupon' => 'nullable|string|max:64',
+            'plan'     => 'required|string|in:pro_monthly,pro_yearly,team_monthly,team_yearly',
+            'coupon'   => 'nullable|string|max:64',
+            'currency' => 'nullable|string|in:eur,usd',
         ]);
 
         $user   = $request->user();
@@ -482,10 +594,18 @@ class BillingController extends Controller
             ],
             'allow_promotion_codes' => true,
             'billing_address_collection' => 'auto',
-            'locale' => 'nl',
+            // 'auto' laat Stripe de checkout-taal op de browser afstemmen —
+            // Amerikaanse klanten zien Engels, Nederlandse gewoon Nederlands.
+            'locale' => 'auto',
         ];
         if ($pmTypes = $this->paymentMethodTypes()) {
             $sessionParams['payment_method_types'] = $pmTypes;
+        }
+
+        // Amerikaanse klanten rekenen in dollars af (gekozen valuta van de
+        // client, anders GeoIP) — mits de price een USD-bedrag heeft.
+        if ($currency = $this->checkoutCurrency($request, $request->plan)) {
+            $sessionParams['currency'] = $currency;
         }
 
         // Korting uit de mail (bv. MILMAP-XXXX-XXXX) automatisch toepassen.
@@ -727,7 +847,7 @@ class BillingController extends Controller
 
     // ── GET /billing/plans ─────────────────────────────────────────
     // Selectable plans with LIVE prices from Stripe (never hardcoded).
-    public function availablePlans()
+    public function availablePlans(Request $request)
     {
         $names = [
             'pro_monthly'  => 'Pro',
@@ -750,6 +870,9 @@ class BillingController extends Controller
             return response()->json(['plans' => []]);
         }
 
+        // Amerikaanse bezoekers (GeoIP of ?currency=usd) zien de USD-bedragen.
+        $currency = $this->requestCurrency($request);
+
         $out = [];
         foreach ($pricing as $key => $p) {
             // 'lifetime' is het verborgen AppSumo-plan: alleen bereikbaar via de
@@ -757,6 +880,7 @@ class BillingController extends Controller
             if (in_array($key, self::HIDDEN_PLAN_KEYS, true)) {
                 continue;
             }
+            $p = $this->priceInCurrency($p, $currency);
             $out[] = [
                 'key'      => $key,
                 'name'     => $p['product_name'] ?: ($names[$key] ?? 'Plan'),
@@ -928,6 +1052,13 @@ class BillingController extends Controller
             $userId    = $user->id;
             // Alleen een activatiemail sturen als het account nu net is aangemaakt.
             $isNewUser = $user->wasRecentlyCreated;
+
+            // Kwam deze gast via een partnerlink binnen, koppel het kersverse
+            // account dan aan die partner (commissie + korting-administratie).
+            if ($user->wasRecentlyCreated && ! empty($session->metadata->reg_referral_code)) {
+                app(\App\Services\PartnerService::class)
+                    ->attachReferral($user, $session->metadata->reg_referral_code);
+            }
         }
 
         if (! $userId) return;

@@ -131,6 +131,37 @@ class AdminPartnerController extends Controller
         return response()->json(['ok' => true, 'partner' => $partner->only(['id', 'commission_rate', 'discount_rate'])]);
     }
 
+    // ── PUT /admin/partners/{partner}/code ─────────────────────────
+    // Referral-code hernoemen (bv. WILLEM10 → DEFENSIECOMMUNITY). De oude
+    // link stopt direct met werken voor níeuwe aanmeldingen; bestaande
+    // referrals/commissies hangen aan partner_id en blijven dus intact.
+    public function updateCode(Request $request, Partner $partner): JsonResponse
+    {
+        // Normaliseren vóór validatie zodat "willem-10 " gewoon werkt en de
+        // unique-check op de definitieve (hoofdletter)vorm draait.
+        $request->merge(['referral_code' => strtoupper(trim((string) $request->input('referral_code')))]);
+
+        $validated = $request->validate([
+            'referral_code' => [
+                'required', 'string', 'min:3', 'max:20',
+                // Leesbaar in een URL: letters/cijfers, optioneel met streepjes.
+                'regex:/^[A-Z0-9]+(-[A-Z0-9]+)*$/',
+                'unique:partners,referral_code,' . $partner->id,
+            ],
+        ], [
+            'referral_code.regex'  => 'Alleen letters, cijfers en streepjes (geen spaties).',
+            'referral_code.unique' => 'Deze code is al in gebruik door een andere partner.',
+        ]);
+
+        $partner->update($validated);
+
+        return response()->json([
+            'ok'           => true,
+            'referral_code' => $partner->referral_code,
+            'referral_url'  => $partner->referralUrl(),
+        ]);
+    }
+
     // ── POST /admin/partners/payouts ───────────────────────────────
     // Handmatig een uitbetalingsronde starten (zelfde command als de cron).
     public function triggerPayouts(): JsonResponse

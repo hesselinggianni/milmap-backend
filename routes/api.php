@@ -778,6 +778,7 @@ Route::prefix('v1')->middleware(['api'])->group(function () {
             Route::post('/admin/partners/{partner}/approve',  [\App\Http\Controllers\AdminPartnerController::class, 'approve']);
             Route::post('/admin/partners/{partner}/suspend',  [\App\Http\Controllers\AdminPartnerController::class, 'suspend']);
             Route::put ('/admin/partners/{partner}/rates',    [\App\Http\Controllers\AdminPartnerController::class, 'updateRates']);
+            Route::put ('/admin/partners/{partner}/code',     [\App\Http\Controllers\AdminPartnerController::class, 'updateCode']);
             Route::post('/admin/partners/payouts',            [\App\Http\Controllers\AdminPartnerController::class, 'triggerPayouts']);
 
             // ── Kosten/inkomsten-grootboek ──────────────────────────────
