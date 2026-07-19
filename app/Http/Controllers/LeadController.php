@@ -3,10 +3,12 @@
 namespace App\Http\Controllers;
 
 use App\Mail\AppDownloadMail;
+use App\Mail\NewLeadNotification;
 use App\Models\Lead;
 use App\Services\CrmLeadPushService;
 use App\Services\LaunchCouponService;
 use Illuminate\Http\Request;
+use Illuminate\Support\Facades\Log;
 use Illuminate\Support\Facades\Mail;
 use Illuminate\Validation\Rule;
 
@@ -50,6 +52,15 @@ class LeadController extends Controller
         // sales ze direct kan opvolgen vanuit admin → Sales / CRM.
         if ($lead->wasRecentlyCreated) {
             app(CrmLeadPushService::class)->push($lead);
+
+            // Admin-notificatie bij elke nieuwe lead (zelfde patroon als
+            // NewUserRegistered bij registratie). Best-effort: een mailfout
+            // mag de lead-opslag/response nooit breken.
+            try {
+                Mail::to('hesselinggianni@gmail.com')->send(new NewLeadNotification($lead));
+            } catch (\Throwable $e) {
+                Log::warning('[leads] kon admin-notificatie niet versturen: ' . $e->getMessage());
+            }
         }
 
         // Exit-intent op /pricing belooft "we mailen je 50% korting" — die mail
