@@ -266,6 +266,11 @@ Route::prefix('v1')->middleware(['api'])->group(function () {
     Route::post('/m/u/{token}', [MailUnsubscribeController::class, 'update'])->middleware('throttle:30,1');
     // Open-tracking-pixel (1×1 gif). Ruimere throttle want sommige clients prefetchen.
     Route::get('/m/o/{token}.gif', [MailTrackingController::class, 'pixel'])->middleware('throttle:120,1');
+
+    // Universeel verzendlog (sent_emails): open-pixel + klik-redirect voor
+    // álle uitgaande mail (transactioneel én campagne). Zie SentMailTracker.
+    Route::get('/m/o2/{token}.gif', [\App\Http\Controllers\SentEmailTrackingController::class, 'pixel'])->middleware('throttle:120,1');
+    Route::get('/m/c/{token}',      [\App\Http\Controllers\SentEmailTrackingController::class, 'click'])->middleware('throttle:120,1');
 });
 
 
@@ -772,11 +777,18 @@ Route::prefix('v1')->middleware(['api'])->group(function () {
             Route::post  ('/admin/leads/{id}/send-download-mail', [LeadController::class, 'adminSendDownloadMail']);
             Route::delete('/admin/leads/{id}',              [LeadController::class, 'adminDestroy']);
 
+            // ── Verzonden e-mails (universeel uitgaand-maillog) ─────────
+            Route::get   ('/admin/sent-mails',      [\App\Http\Controllers\AdminSentMailController::class, 'index']);
+            Route::get   ('/admin/sent-mails/{id}', [\App\Http\Controllers\AdminSentMailController::class, 'show']);
+
             // ── Agenda (geplande mails/campagnes, verzonden, leads + eigen afspraken) ─
             Route::get   ('/admin/agenda/events',            [AdminAgendaController::class, 'events']);
             Route::post  ('/admin/agenda/appointments',      [AdminAgendaController::class, 'store']);
             Route::put   ('/admin/agenda/appointments/{id}', [AdminAgendaController::class, 'update']);
             Route::delete('/admin/agenda/appointments/{id}', [AdminAgendaController::class, 'destroy']);
+            // iCal-abonnee-URL (voor het toevoegen aan iPhone/macOS-Agenda).
+            Route::get   ('/admin/agenda/ical-url',          [AdminAgendaController::class, 'icalUrl']);
+            Route::post  ('/admin/agenda/ical-url/reset',    [AdminAgendaController::class, 'icalReset']);
 
             // ── Partnerbeheer (aanmeldingen, rates, uitbetalingen) ──────
             Route::get ('/admin/partners',                    [\App\Http\Controllers\AdminPartnerController::class, 'index']);
