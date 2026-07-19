@@ -37,6 +37,7 @@ return [
     'risk' => [
         'max_position_pct' => env('BOT_MAX_POSITION_PCT', 0.20),   // 20% of equity per position
         'max_position_eur' => env('BOT_MAX_POSITION_EUR', 250),    // absolute cap
+        'max_total_exposure_pct' => env('BOT_MAX_TOTAL_EXPOSURE_PCT', 0.60), // across all coins combined
         'max_daily_loss_pct' => env('BOT_MAX_DAILY_LOSS_PCT', 0.05),
         'max_drawdown_pct' => env('BOT_MAX_DRAWDOWN_PCT', 0.20),
         'min_order_eur' => env('BOT_MIN_ORDER_EUR', 10),

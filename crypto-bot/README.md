@@ -58,6 +58,20 @@ php artisan schedule:work             # laat de bot per minuut tikken
 | `bot:report` | Portfolio-overzicht |
 | `bot:halt [--resume]` | Kill-switch aan/uit |
 
+### Meerdere coins traden
+De bot draait per strategie-config, elk met een eigen markt — dus meerdere coins
+tegelijk is gewoon meerdere configs:
+
+```bash
+php artisan bot:add-market ETH-EUR                       # regel-strategie
+php artisan bot:add-market SOL-EUR --strategy=llm_claude # Claude-AI op deze coin
+php artisan bot:add-market XRP-EUR --inactive            # aangemaakt maar (nog) uit
+```
+
+Elke coin krijgt zijn eigen wallet en positie. De **totale-blootstelling-limiet**
+(`BOT_MAX_TOTAL_EXPOSURE_PCT`, standaard 60%) zorgt dat alle coins samen nooit meer
+dan dat deel van je equity inzetten; per positie geldt daarnaast `BOT_MAX_POSITION_PCT`.
+
 ### De Claude-strategie inschakelen
 Zet `ANTHROPIC_API_KEY` in `.env`, maak een `llm_claude`-config aan
 (`php artisan bot:seed-account --strategy=llm_claude`) en activeer die. De LLM geeft

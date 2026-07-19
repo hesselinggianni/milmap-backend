@@ -105,6 +105,20 @@ final class RiskManager
         $notionalCap = BigDecimal::of((string) $maxPositionEur);
         $notional = $notionalPct->isGreaterThan($notionalCap) ? $notionalCap : $notionalPct;
 
+        // Total-exposure cap ACROSS ALL COINS: the combined value of open
+        // positions may not exceed this fraction of equity. Prevents several
+        // markets each taking a full position and over-committing the account.
+        $maxTotalExposurePct = (float) config('bot.risk.max_total_exposure_pct', 0.60);
+        $allowedExposure = $equity->multipliedBy((string) $maxTotalExposurePct);
+        $currentExposure = $value['positions_value']->amount();
+        $room = $allowedExposure->minus($currentExposure);
+        if ($room->isLessThanOrEqualTo(BigDecimal::zero())) {
+            return RiskDecision::block('max total exposure across all markets reached');
+        }
+        if ($notional->isGreaterThan($room)) {
+            $notional = $room; // clamp to remaining exposure room
+        }
+
         // Minimum notional guard (reject dust).
         $minNotional = (float) config('bot.risk.min_order_eur', 10);
         if ($notional->isLessThan(BigDecimal::of((string) $minNotional))) {
