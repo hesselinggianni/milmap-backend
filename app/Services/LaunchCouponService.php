@@ -46,7 +46,10 @@ class LaunchCouponService
         $expiresAt = Carbon::now()->addYear();
 
         $params = [
-            'coupon'          => $couponId,
+            // Sinds Stripe-API-versie met stripe-php v20 zit de coupon genest
+            // onder 'promotion' i.p.v. als plat 'coupon'-veld (anders:
+            // "Received unknown parameter: coupon").
+            'promotion'       => ['coupon' => $couponId, 'type' => 'coupon'],
             'code'            => $this->generateCode(),
             'max_redemptions' => 1,                       // 1x te gebruiken
             'expires_at'      => $expiresAt->timestamp,   // in te wisselen binnen 1 jaar
