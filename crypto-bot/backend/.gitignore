@@ -1,0 +1,17 @@
+/vendor
+/node_modules
+/.env
+/.env.backup
+/.phpunit.cache
+/storage/*.key
+/storage/logs/*
+!/storage/logs/.gitkeep
+/storage/framework/cache/*
+/storage/framework/sessions/*
+/storage/framework/views/*
+!/storage/framework/**/.gitkeep
+/database/*.sqlite
+/database/*.sqlite-journal
+/public/storage
+.DS_Store
+composer.lock

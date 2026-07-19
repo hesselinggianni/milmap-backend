@@ -1,0 +1,68 @@
+:root {
+  --bg: #0f1420;
+  --panel: #1a2030;
+  --border: #2a3346;
+  --text: #e5e9f0;
+  --muted: #8b93a7;
+  --green: #3fb950;
+  --red: #f85149;
+  --accent: #58a6ff;
+}
+
+* { box-sizing: border-box; }
+
+body {
+  margin: 0;
+  font-family: system-ui, -apple-system, Segoe UI, Roboto, sans-serif;
+  background: var(--bg);
+  color: var(--text);
+}
+
+a { color: var(--accent); text-decoration: none; }
+
+.nav {
+  display: flex;
+  gap: 1rem;
+  align-items: center;
+  padding: 0.75rem 1.25rem;
+  background: var(--panel);
+  border-bottom: 1px solid var(--border);
+  flex-wrap: wrap;
+}
+.nav a { color: var(--muted); font-weight: 500; }
+.nav a.router-link-active { color: var(--text); }
+
+.container { padding: 1.25rem; max-width: 1100px; margin: 0 auto; }
+
+.grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(160px, 1fr)); gap: 1rem; }
+
+.card {
+  background: var(--panel);
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  padding: 1rem;
+}
+.card .label { color: var(--muted); font-size: 0.8rem; }
+.card .value { font-size: 1.4rem; font-weight: 600; margin-top: 0.25rem; }
+
+table { width: 100%; border-collapse: collapse; }
+th, td { text-align: left; padding: 0.5rem 0.6rem; border-bottom: 1px solid var(--border); font-size: 0.85rem; }
+th { color: var(--muted); font-weight: 500; }
+
+.badge { display: inline-block; padding: 0.15rem 0.55rem; border-radius: 999px; font-size: 0.75rem; font-weight: 600; }
+.badge.paper { background: #1f6feb33; color: var(--accent); }
+.badge.live { background: #f8514933; color: var(--red); }
+.badge.on { background: #f8514933; color: var(--red); }
+.badge.off { background: #3fb95033; color: var(--green); }
+
+.btn {
+  background: var(--accent); color: #04121f; border: none; border-radius: 8px;
+  padding: 0.5rem 0.9rem; font-weight: 600; cursor: pointer;
+}
+.btn.danger { background: var(--red); color: #fff; }
+.btn.ghost { background: transparent; color: var(--text); border: 1px solid var(--border); }
+
+.pos { color: var(--green); }
+.neg { color: var(--red); }
+.muted { color: var(--muted); }
+h2 { margin: 0.4rem 0 1rem; }
