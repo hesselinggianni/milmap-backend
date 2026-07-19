@@ -248,8 +248,15 @@ class BillingController extends Controller
 
             // Extra valuta's (naast de standaardvaluta van de price) met hun
             // bedrag in centen: ['usd' => 599, …]. Leeg als er geen zijn.
+            // LET OP: currency_options is een StripeObject; een (array)-cast
+            // levert de interne properties op i.p.v. de valuta-map, dus
+            // expliciet via toArray() converteren.
+            $rawOptions = $price->currency_options ?? null;
+            if ($rawOptions instanceof \Stripe\StripeObject) {
+                $rawOptions = $rawOptions->toArray();
+            }
             $currencyOptions = [];
-            foreach ((array) ($price->currency_options ?? []) as $code => $opt) {
+            foreach ((array) ($rawOptions ?? []) as $code => $opt) {
                 $amount = is_object($opt) ? ($opt->unit_amount ?? null) : ($opt['unit_amount'] ?? null);
                 if ($amount !== null) {
                     $currencyOptions[strtolower((string) $code)] = (int) $amount;
