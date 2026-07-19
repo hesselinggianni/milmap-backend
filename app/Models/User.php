@@ -74,6 +74,9 @@ class User extends Authenticatable
     protected $hidden = [
         'password',
         'remember_token',
+        // Geheim iCal-feed-token: nooit meesturen in user-listings/profielen;
+        // wordt alleen als onderdeel van de feed-URL uitgegeven (AdminAgenda).
+        'agenda_ical_token',
         // Encrypted key-escrow blob: never leak it in user listings/profiles.
         // It is returned only via the dedicated GET /chat/keys/escrow endpoint.
         'key_escrow',

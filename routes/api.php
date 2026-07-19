@@ -158,6 +158,13 @@ Route::prefix('v1')->middleware(['api'])->group(function () {
     // Stripe webhook — public, verified via signature
     Route::post('/billing/webhook', [BillingController::class, 'handleWebhook']);
 
+    // ── Admin-agenda iCal-feed ────────────────────────────────────
+    // PUBLIEK (geen auth-header — de iPhone/macOS-Agenda kan die niet
+    // meesturen). Beveiliging zit in het lange, geheime token in de URL;
+    // de controller staat alleen admins toe. Rate-limited tegen scannen.
+    Route::get('/agenda/feed/{token}', [AdminAgendaController::class, 'ical'])
+        ->middleware('throttle:60,1');
+
     // ── Partnersysteem (partners.milmap.nl) ──────────────────────
     // Publiek: aanmelden als partner + referral-code valideren (de registratie-
     // pagina toont hiermee de korting en partnernaam).
