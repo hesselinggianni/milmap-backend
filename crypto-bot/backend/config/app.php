@@ -1,7 +1,5 @@
 <?php
 
-use Illuminate\Support\Facades\Facade;
-
 return [
     'name' => env('APP_NAME', 'Crypto Trading Bot'),
     'env' => env('APP_ENV', 'production'),
@@ -17,9 +15,4 @@ return [
     'maintenance' => [
         'driver' => 'file',
     ],
-    'providers' => [
-        App\Providers\AppServiceProvider::class,
-        App\Providers\BotServiceProvider::class,
-    ],
-    'aliases' => Facade::defaultAliases()->toArray(),
 ];
