@@ -5,6 +5,7 @@ namespace App\Console\Commands;
 use App\Jobs\SendCampaignMessage;
 use App\Models\MailFollowup;
 use App\Models\MailSend;
+use App\Models\User;
 use App\Services\MailTemplateRegistry;
 use Illuminate\Console\Command;
 use Illuminate\Support\Facades\DB;
@@ -26,6 +27,13 @@ class ProcessMailFollowups extends Command
 {
     protected $signature = 'mail:process-followups';
     protected $description = 'Verstuur follow-up-mails op basis van hun voorwaarde + vertraging.';
+
+    /**
+     * Templates die alleen zin hebben voor gebruikers zonder actief betaald abonnement
+     * (upsell/korting). Een betalende gebruiker slaat deze stap over — gemarkeerd als
+     * 'skipped_subscribed' zodat de keten niet blijft herproberen.
+     */
+    private const PAID_ONLY_SKIP_TEMPLATES = ['onboarding_upgrade', 'onboarding_discount'];
 
     public function handle(): int
     {
@@ -106,6 +114,11 @@ class ProcessMailFollowups extends Command
             return false;
         }
 
+        // Abonnement-check: een gebruiker die al betaalt hoeft geen upsell/korting-mail.
+        $skipForSubscriber = $prev->user_id
+            && in_array($f->template_key, self::PAID_ONLY_SKIP_TEMPLATES, true)
+            && (User::find($prev->user_id)?->subscribed() ?? false);
+
         try {
             $child = MailSend::firstOrCreate(
                 ['campaign_id' => $f->campaign_id, 'followup_id' => $f->id, 'email' => $prev->email],
@@ -117,7 +130,7 @@ class ProcessMailFollowups extends Command
                     'template_key' => $f->template_key,
                     'category_id'  => $f->category_id ?: $campaign->category_id,
                     'subject'      => $f->subject_override ?: ($resolved['subject'] ?? null),
-                    'status'       => 'queued',
+                    'status'       => $skipForSubscriber ? 'skipped_subscribed' : 'queued',
                     'token'        => $this->newToken(),
                     'position'     => $f->position,
                 ],
@@ -129,6 +142,10 @@ class ProcessMailFollowups extends Command
 
         if (! $child->wasRecentlyCreated) {
             return false;
+        }
+
+        if ($skipForSubscriber) {
+            return false; // wél geregistreerd (idempotent), maar niet verzonden/geteld
         }
 
         SendCampaignMessage::dispatch($child->id);
