@@ -666,4 +666,87 @@ class AdminController extends Controller
 
         return response()->json(['ok' => true]);
     }
+
+    /**
+     * GET /api/v1/admin/sidebar-counts
+     * Aantal "nieuw"/nog-te-behandelen items per Sales-onderdeel, voor de
+     * badges in de admin-nav (Partners/Leads/Feature requests/Sales-CRM).
+     */
+    public function sidebarCounts()
+    {
+        return response()->json([
+            'partners'         => \App\Models\Partner::where('status', 'pending')->count(),
+            'leads'            => \App\Models\Lead::whereNull('notified_at')->count(),
+            'feature_requests' => \App\Models\FeatureRequest::where('status', 'new')->count(),
+            'crm_deals'        => \App\Models\CrmDeal::where('status', 'open')->where('stage', 'lead')->count(),
+        ]);
+    }
+
+    /**
+     * GET /api/v1/admin/reports/range-summary?from=Y-m-d&to=Y-m-d
+     * Omzet (Stripe) + nieuwe gebruikers binnen een exacte periode, voor het
+     * periode-filter op de Rapportage-pagina (vandaag/gisteren/week/maand/
+     * kwartaal/jaar). Losse, lichte query — geen MRR-projectie zoals getRevenue().
+     */
+    public function reportsRangeSummary(Request $request)
+    {
+        $from = $request->query('from');
+        $to   = $request->query('to');
+        if (! $from || ! $to) {
+            return response()->json(['message' => 'from en to zijn verplicht (Y-m-d).'], 422);
+        }
+
+        $fromTs = \Illuminate\Support\Carbon::parse($from)->startOfDay();
+        $toTs   = \Illuminate\Support\Carbon::parse($to)->endOfDay();
+
+        $newUsers = User::where('is_demo', false)
+            ->whereBetween('created_at', [$fromTs, $toTs])
+            ->count();
+
+        $secret = config('billing.stripe_secret');
+        if (! $secret) {
+            return response()->json([
+                'new_users' => $newUsers,
+                'revenue'   => ['available' => false, 'reason' => 'no_stripe'],
+            ]);
+        }
+
+        $total    = 0;
+        $currency = 'EUR';
+        try {
+            $stripe = new \Stripe\StripeClient($secret);
+            foreach (
+                $stripe->charges->all([
+                    'created' => ['gte' => $fromTs->timestamp, 'lte' => $toTs->timestamp],
+                    'limit'   => 100,
+                ])->autoPagingIterator() as $ch
+            ) {
+                if (($ch->status ?? null) !== 'succeeded' || ! ($ch->paid ?? false)) {
+                    continue;
+                }
+                $net = (int) ($ch->amount ?? 0) - (int) ($ch->amount_refunded ?? 0);
+                if ($net <= 0) {
+                    continue;
+                }
+                $total += $net;
+                if (! empty($ch->currency)) {
+                    $currency = strtoupper($ch->currency);
+                }
+            }
+        } catch (\Throwable $e) {
+            return response()->json([
+                'new_users' => $newUsers,
+                'revenue'   => ['available' => false, 'reason' => 'stripe_error'],
+            ]);
+        }
+
+        return response()->json([
+            'new_users' => $newUsers,
+            'revenue'   => [
+                'available' => true,
+                'amount'    => $total / 100,
+                'currency'  => $currency,
+            ],
+        ]);
+    }
 }

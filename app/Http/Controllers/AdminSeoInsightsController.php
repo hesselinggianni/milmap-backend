@@ -21,6 +21,12 @@ class AdminSeoInsightsController extends Controller
         $days = (int) $request->query('days', 28);
         $days = max(7, min(90, $days));
 
+        // Rapportage-filter: expliciete van/tot-periode (vandaag/gisteren/
+        // kwartaal/jaar) overschrijft de dagen-terug-berekening.
+        $from  = $request->query('from');
+        $to    = $request->query('to');
+        $range = ($from && $to) ? ['from' => $from, 'to' => $to] : null;
+
         if (! $this->gsc->isConfigured()) {
             return response()->json([
                 'configured'  => false,
@@ -34,10 +40,10 @@ class AdminSeoInsightsController extends Controller
             'siteUrl'        => $this->gsc->siteUrl(),
             'serviceAccount' => $this->gsc->serviceAccountEmail(),
             'days'           => $days,
-            'totals'         => $this->gsc->totals($days),
+            'totals'         => $this->gsc->totals($days, $range),
             'byDate'         => $this->gsc->byDate($days),
-            'topQueries'     => $this->gsc->topRows('query', $days, 25),
-            'topPages'       => $this->gsc->topRows('page', $days, 25),
+            'topQueries'     => $this->gsc->topRows('query', $days, 25, $range),
+            'topPages'       => $this->gsc->topRows('page', $days, 25, $range),
         ]);
     }
 

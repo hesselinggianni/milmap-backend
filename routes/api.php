@@ -758,6 +758,12 @@ Route::prefix('v1')->middleware(['api'])->group(function () {
             Route::get('/admin/client-errors', [AdminController::class, 'clientErrors']);
             Route::delete('/admin/client-errors', [AdminController::class, 'clearClientErrors']);
 
+            // Badge-counts voor de Sales-nav-groep (Partners/Leads/Feature requests/CRM).
+            Route::get('/admin/sidebar-counts', [AdminController::class, 'sidebarCounts']);
+
+            // Omzet + nieuwe gebruikers binnen een exacte periode (Rapportage-filter).
+            Route::get('/admin/reports/range-summary', [AdminController::class, 'reportsRangeSummary']);
+
             // ── Stripe billing configuration ────────────────────────────
             Route::get('/admin/billing/prices', [AdminBillingController::class, 'prices']);
             Route::get('/admin/billing/price-map', [AdminBillingController::class, 'priceMap']);

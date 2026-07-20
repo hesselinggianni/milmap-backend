@@ -72,19 +72,24 @@ class GscService
 
     /**
      * Ruwe Search Analytics-query. $dimensions bv. ['query'] of ['page'] (leeg =
-     * totalen). Geeft de 'rows' terug (of []).
+     * totalen). Geeft de 'rows' terug (of []). $range overschrijft $days met een
+     * expliciete ['from' => 'Y-m-d', 'to' => 'Y-m-d'] periode (voor de
+     * rapportage-filter — vandaag/gisteren/kwartaal/jaar).
      */
-    public function query(array $dimensions, int $days = 28, int $rowLimit = 25): array
+    public function query(array $dimensions, int $days = 28, int $rowLimit = 25, ?array $range = null): array
     {
         $token = $this->accessToken();
         $site  = $this->siteUrl();
         if (! $token || ! $site) return [];
 
+        $startDate = $range['from'] ?? now()->subDays($days)->toDateString();
+        $endDate   = $range['to'] ?? now()->toDateString();
+
         $resp = Http::withToken($token)->post(
             'https://searchconsole.googleapis.com/webmasters/v3/sites/' . rawurlencode($site) . '/searchAnalytics/query',
             [
-                'startDate'  => now()->subDays($days)->toDateString(),
-                'endDate'    => now()->toDateString(),
+                'startDate'  => $startDate,
+                'endDate'    => $endDate,
                 'dimensions' => $dimensions,
                 'rowLimit'   => $rowLimit,
             ]
@@ -93,9 +98,9 @@ class GscService
         return $resp->json('rows', []) ?: [];
     }
 
-    public function totals(int $days = 28): array
+    public function totals(int $days = 28, ?array $range = null): array
     {
-        $r = $this->query([], $days, 1)[0] ?? null;
+        $r = $this->query([], $days, 1, $range)[0] ?? null;
 
         return [
             'clicks'      => (int) round($r['clicks'] ?? 0),
@@ -105,7 +110,7 @@ class GscService
         ];
     }
 
-    public function topRows(string $dimension, int $days = 28, int $rowLimit = 25): array
+    public function topRows(string $dimension, int $days = 28, int $rowLimit = 25, ?array $range = null): array
     {
         return array_map(fn ($r) => [
             'key'         => $r['keys'][0] ?? '',
@@ -113,7 +118,7 @@ class GscService
             'impressions' => (int) round($r['impressions'] ?? 0),
             'ctr'         => (float) ($r['ctr'] ?? 0),
             'position'    => (float) ($r['position'] ?? 0),
-        ], $this->query([$dimension], $days, $rowLimit));
+        ], $this->query([$dimension], $days, $rowLimit, $range));
     }
 
     /** Dagelijkse tijdreeks (voor de kliks/vertoningen-grafiek), oplopend op datum. */
