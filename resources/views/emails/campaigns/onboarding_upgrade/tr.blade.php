@@ -43,5 +43,5 @@
     </tr>
   </table>
 
-  @include('emails.partials.unsubscribe-footer')
+  @include('emails.partials.unsubscribe-footer', ['unsubLine' => 'Bu e-postayı MilMap\'e kaydolduğun için alıyorsun.', 'unsubLabel' => 'Bu e-postalardan çık'])
 @endsection

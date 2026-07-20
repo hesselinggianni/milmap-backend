@@ -146,7 +146,7 @@ class MailCampaignController extends Controller
             $resolved['view'],
             $resolved['subject'],
             array_merge(
-                ['name' => 'Voorbeeld', 'appUrl' => config('app.app_url', 'https://app.milmap.nl'), 'siteUrl' => 'https://milmap.nl'],
+                ['name' => 'Voorbeeld', 'appUrl' => config('app.app_url', 'https://app.milmap.nl'), 'siteUrl' => 'https://milmap.nl', 'locale' => $resolved['locale']],
                 $resolved['data'] ?? [] // custom-template blocks (leeg voor code-templates)
             ),
             '#', // dummy afmeldlink in preview
@@ -176,7 +176,7 @@ class MailCampaignController extends Controller
             $resolved['view'],
             '[TEST] ' . $resolved['subject'],
             array_merge(
-                ['name' => 'Test', 'appUrl' => config('app.app_url', 'https://app.milmap.nl'), 'siteUrl' => 'https://milmap.nl'],
+                ['name' => 'Test', 'appUrl' => config('app.app_url', 'https://app.milmap.nl'), 'siteUrl' => 'https://milmap.nl', 'locale' => $resolved['locale']],
                 $resolved['data'] ?? []
             ),
             '#',

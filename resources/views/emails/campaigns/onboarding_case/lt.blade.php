@@ -39,5 +39,5 @@
     </tr>
   </table>
 
-  @include('emails.partials.unsubscribe-footer')
+  @include('emails.partials.unsubscribe-footer', ['unsubLine' => 'Šį laišką gaunate, nes užsiregistravote MilMap.', 'unsubLabel' => 'Atsisakyti šių laiškų'])
 @endsection

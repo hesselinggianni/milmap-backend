@@ -60,7 +60,7 @@ class SendCampaignMessage implements ShouldQueue
         $unsub   = $base . '/api/v1/m/u/' . $send->token;
         $pixel   = $base . '/api/v1/m/o/' . $send->token . '.gif';
         $data    = array_merge(
-            ['name' => $send->name, 'appUrl' => $appUrl, 'siteUrl' => 'https://milmap.nl'],
+            ['name' => $send->name, 'appUrl' => $appUrl, 'siteUrl' => 'https://milmap.nl', 'locale' => $resolved['locale']],
             $resolved['data'] ?? [] // custom-template blocks (leeg voor code-templates)
         );
         $subject = $send->subject ?: $resolved['subject'];
