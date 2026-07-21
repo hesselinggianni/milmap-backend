@@ -159,9 +159,21 @@ class BillingController extends Controller
     // uit de currency_options van de prices, mits die in Stripe zijn gezet.
     public function pricing(Request $request)
     {
+        // Trial-lengte, gratis-kaartlimiet en team-seats zijn "specs" die de
+        // frontend eerder als losse hardcoded getallen in i18n-strings had
+        // staan (7 dagen / 5 kaarten / 10 teamleden). Eén bron van waarheid:
+        // altijd meegeven, ook zonder Stripe-config — dit blokkeert nooit op
+        // billing en marketingcopy (checkout, start-funnel) kan 'm interpoleren
+        // i.p.v. het getal zelf te vertalen.
+        $limits = [
+            'trial_days'          => \App\Models\User::APP_TRIAL_DAYS,
+            'free_map_limit'      => \App\Models\User::FREE_MAP_LIMIT,
+            'team_included_seats' => (int) config('teams.included_seats', 10),
+        ];
+
         if (! config('billing.stripe_secret')) {
             // Stripe not configured → no live data; the client toont '…'.
-            return response()->json(['plans' => (object) []]);
+            return response()->json(['plans' => (object) [], 'limits' => $limits]);
         }
 
         try {
@@ -169,7 +181,7 @@ class BillingController extends Controller
         } catch (\Throwable $e) {
             Log::warning('billing.pricing: onverwachte fout', ['error' => $e->getMessage()]);
 
-            return response()->json(['plans' => (object) []]);
+            return response()->json(['plans' => (object) [], 'limits' => $limits]);
         }
 
         // Verborgen plannen (AppSumo lifetime) nooit publiek tonen.
@@ -182,7 +194,7 @@ class BillingController extends Controller
             $plans[$key] = $this->priceInCurrency($p, $currency);
         }
 
-        return response()->json(['plans' => empty($plans) ? (object) [] : $plans]);
+        return response()->json(['plans' => empty($plans) ? (object) [] : $plans, 'limits' => $limits]);
     }
 
     /**
