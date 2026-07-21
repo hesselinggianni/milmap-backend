@@ -74,6 +74,20 @@ class LeadController extends Controller
             $couponSent = $this->sendCouponMail($lead);
         }
 
+        // Start-funnel-lead (app.milmap.nl/): vulde e-mail in, geen account
+        // (nog). Schrijf 'm in de lead-nurture-drip (mail 1 direct, mail 2 na
+        // 4 dagen via de follow-up-engine). Idempotent en zelf-falend — mag de
+        // lead-opslag nooit breken. Ook bruikbaar als backfill: een lead die
+        // hier eerder al door kwam zonder nurture-mail (bv. vóór deze feature
+        // live ging) krijgt 'm alsnog bij een volgende submit.
+        if (($data['source'] ?? null) === 'start-funnel') {
+            try {
+                app(\App\Services\LeadNurtureService::class)->enroll($lead);
+            } catch (\Throwable $e) {
+                Log::warning('[leads] lead-nurture-enrollment mislukt: ' . $e->getMessage());
+            }
+        }
+
         return response()->json([
             'ok'       => true,
             'is_new'   => $lead->wasRecentlyCreated,

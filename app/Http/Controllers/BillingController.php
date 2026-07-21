@@ -1066,6 +1066,17 @@ class BillingController extends Controller
                 app(\App\Services\PartnerService::class)
                     ->attachReferral($user, $session->metadata->reg_referral_code);
             }
+
+            // Kwam dit e-mailadres eerder binnen als lead (start-funnel zonder
+            // afgemaakte registratie)? Markeer 'm als geconverteerd — stopt de
+            // lead-nurture-mails (account afmaken / waarom MilMap).
+            if ($user->wasRecentlyCreated) {
+                try {
+                    \App\Models\Lead::markConverted($user->email);
+                } catch (\Throwable $e) {
+                    Log::warning('[billing] lead-conversie markeren mislukt: ' . $e->getMessage());
+                }
+            }
         }
 
         if (! $userId) return;

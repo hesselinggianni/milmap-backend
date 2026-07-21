@@ -21,6 +21,9 @@ class LaunchCouponService
     /** Vaste, herbruikbare coupon-id zodat we 'm niet elke keer opnieuw maken. */
     private const COUPON_ID = 'milmap-launch-50-yearly';
 
+    /** Coupon-id voor de lead-nurture-code (20%, geldt op élk plan — niet jaar-only). */
+    private const LEAD_NURTURE_COUPON_ID = 'milmap-lead-20-first';
+
     public function __construct()
     {
         $this->stripe = new StripeClient(['api_key' => config('billing.stripe_secret') ?: null]);
@@ -64,6 +67,61 @@ class LaunchCouponService
             'code'       => $promo->code,
             'expires_at' => $expiresAt,
         ];
+    }
+
+    /**
+     * Genereer één unieke promotiecode voor de lead-nurture-mail: 20% korting op
+     * de eerste factuur (élk plan, niet beperkt tot jaar), met een kort
+     * geldigheidsvenster ($validDays — de mail belooft "2 dagen geldig") en
+     * max_redemptions=1 zodat 'm maar door één betaling verzilverd kan worden.
+     *
+     * @return array{code:string, expires_at:Carbon}
+     */
+    public function createLeadNurtureCode(?string $email = null, int $validDays = 2): array
+    {
+        if (! $this->isConfigured()) {
+            throw new \RuntimeException('Stripe is niet geconfigureerd (billing.stripe_secret ontbreekt).');
+        }
+
+        $couponId  = $this->ensureLeadNurtureCoupon();
+        $expiresAt = Carbon::now()->addDays($validDays);
+
+        $params = [
+            'promotion'       => ['coupon' => $couponId, 'type' => 'coupon'],
+            'code'            => $this->generateCode(),
+            'max_redemptions' => 1,
+            'expires_at'      => $expiresAt->timestamp,
+        ];
+        if ($email) {
+            $params['metadata'] = ['email' => $email, 'campaign' => 'lead-nurture-finish-account'];
+        }
+
+        $promo = $this->stripe->promotionCodes->create($params);
+
+        return [
+            'code'       => $promo->code,
+            'expires_at' => $expiresAt,
+        ];
+    }
+
+    /** Idempotent: 20% off, eenmalig (eerste factuur), geen product-beperking. */
+    private function ensureLeadNurtureCoupon(): string
+    {
+        try {
+            $this->stripe->coupons->retrieve(self::LEAD_NURTURE_COUPON_ID);
+            return self::LEAD_NURTURE_COUPON_ID;
+        } catch (\Throwable $e) {
+            // Bestaat nog niet → aanmaken.
+        }
+
+        $this->stripe->coupons->create([
+            'id'          => self::LEAD_NURTURE_COUPON_ID,
+            'percent_off' => 20,
+            'duration'    => 'once',
+            'name'        => 'MilMap — 20% op je eerste factuur (account afmaken)',
+        ]);
+
+        return self::LEAD_NURTURE_COUPON_ID;
     }
 
     /**

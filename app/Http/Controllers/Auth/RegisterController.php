@@ -129,6 +129,15 @@ class RegisterController extends Controller
             Log::warning('[register] funnel-enrollment mislukt: ' . $e->getMessage());
         }
 
+        // Kwam dit e-mailadres eerder binnen als lead (bv. via de start-funnel
+        // zonder de registratie af te maken)? Markeer 'm als geconverteerd —
+        // stopt de lead-nurture-mails (account afmaken / waarom MilMap).
+        try {
+            \App\Models\Lead::markConverted($user->email);
+        } catch (\Throwable $e) {
+            Log::warning('[register] lead-conversie markeren mislukt: ' . $e->getMessage());
+        }
+
         // Generate a Sanctum token scoped to the regular-app 'user' ability so
         // it can never satisfy tokenCan('admin') (admin routes require a token
         // minted through the admin login flow).

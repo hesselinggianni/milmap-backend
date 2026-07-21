@@ -3,6 +3,7 @@
 namespace App\Console\Commands;
 
 use App\Jobs\SendCampaignMessage;
+use App\Models\Lead;
 use App\Models\MailFollowup;
 use App\Models\MailSend;
 use App\Models\User;
@@ -119,6 +120,13 @@ class ProcessMailFollowups extends Command
             && in_array($f->template_key, self::PAID_ONLY_SKIP_TEMPLATES, true)
             && (User::find($prev->user_id)?->subscribed() ?? false);
 
+        // Lead-check: kwam deze prev-mail van een lead (geen user_id) en heeft
+        // die lead ondertussen een account gekregen (Lead::markConverted, bv.
+        // via registratie of guest-checkout)? Dan hoeft de vervolgmail
+        // ("account afmaken" / "waarom MilMap") niet meer.
+        $skipForConverted = $prev->lead_id
+            && (Lead::find($prev->lead_id)?->converted_at !== null);
+
         try {
             $child = MailSend::firstOrCreate(
                 ['campaign_id' => $f->campaign_id, 'followup_id' => $f->id, 'email' => $prev->email],
@@ -130,7 +138,7 @@ class ProcessMailFollowups extends Command
                     'template_key' => $f->template_key,
                     'category_id'  => $f->category_id ?: $campaign->category_id,
                     'subject'      => $f->subject_override ?: ($resolved['subject'] ?? null),
-                    'status'       => $skipForSubscriber ? 'skipped_subscribed' : 'queued',
+                    'status'       => $skipForSubscriber ? 'skipped_subscribed' : ($skipForConverted ? 'skipped_converted' : 'queued'),
                     'token'        => $this->newToken(),
                     'position'     => $f->position,
                 ],
@@ -144,7 +152,7 @@ class ProcessMailFollowups extends Command
             return false;
         }
 
-        if ($skipForSubscriber) {
+        if ($skipForSubscriber || $skipForConverted) {
             return false; // wél geregistreerd (idempotent), maar niet verzonden/geteld
         }
 
