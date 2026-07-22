@@ -49,6 +49,12 @@ return [
         'todo_token' => env('DEPLOY_TODO_TOKEN'),
     ],
 
+    // Gedeeld geheim waarmee ota-release.sh (MilMap-Frontend) nieuwe OTA-bundels
+    // publiceert (header: X-Ota-Token). Niet gezet → publish-endpoint weigert alles.
+    'ota' => [
+        'publish_token' => env('OTA_PUBLISH_TOKEN'),
+    ],
+
     // Anthropic (Claude) — gebruikt door de SEO-CMS "Genereer met Claude"-knop.
     // Zonder ANTHROPIC_API_KEY faalt de generate-endpoint netjes (422); de rest
     // van het CMS werkt gewoon. SDK-alternatief: composer require anthropic-ai/sdk.

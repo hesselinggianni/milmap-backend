@@ -30,6 +30,7 @@ return Application::configure(basePath: dirname(__DIR__))
             'admin.auth'   => \App\Http\Middleware\AdminAuth::class,
             'deploy.token' => \App\Http\Middleware\DeployTokenAuth::class,
             'partner'      => \App\Http\Middleware\EnsureUserIsPartner::class,
+            'ota.token'    => \App\Http\Middleware\OtaTokenAuth::class,
         ]);
     })
     ->withExceptions(function (Exceptions $exceptions) {

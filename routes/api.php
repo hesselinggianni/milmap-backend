@@ -26,6 +26,7 @@ use App\Http\Controllers\AdminMailAccountController;
 use App\Http\Controllers\AdminMailboxController;
 use App\Http\Controllers\AdminBillingController;
 use App\Http\Controllers\MapShareController;
+use App\Http\Controllers\OtaUpdateController;
 use App\Http\Controllers\BillingController;
 use App\Http\Controllers\MapCollaboratorController;
 use App\Http\Controllers\MapWaypointController;
@@ -926,6 +927,20 @@ Route::prefix('v1')->middleware(['api'])->group(function () {
     });
 });
 
+
+/*
+ * OTA-update endpoints voor de Capacitor-app (@capgo/capacitor-updater,
+ * self-hosted). /ota/check is publiek: de plugin post hier bij elke
+ * app-start/resume naartoe (zie capacitor.config.json → CapacitorUpdater.updateUrl).
+ * /ota/publish is beveiligd met een gedeeld geheim (header X-Ota-Token),
+ * en wordt aangeroepen door ota-release.sh (MilMap-Frontend) na elke build.
+ */
+Route::prefix('v1')->middleware(['api'])->group(function () {
+    Route::post('/ota/check', [OtaUpdateController::class, 'check']);
+});
+Route::prefix('v1')->middleware(['api', 'ota.token'])->group(function () {
+    Route::post('/ota/publish', [OtaUpdateController::class, 'publish']);
+});
 
 /*
  * Deploy-app endpoints — headless toegang met een gedeeld geheim
