@@ -104,7 +104,9 @@ class ReportController extends Controller
     {
         $validated = $request->validate([
             'map_id' => 'nullable|uuid',
-            'category' => 'required|string|in:threat,hazard,salute',
+            // Vrije string i.p.v. vaste enum: gebruikers kunnen eigen
+            // meldingsformulieren (categorieën) aanmaken, net als `type` al vrij is.
+            'category' => 'required|string|max:50',
             'type' => 'required|string|max:50',
             'subtype' => 'nullable|string|max:50',
             'latitude' => 'required|numeric|between:-90,90',
@@ -185,7 +187,7 @@ class ReportController extends Controller
         }
 
         $validated = $request->validate([
-            'category' => 'sometimes|string|in:threat,hazard,salute',
+            'category' => 'sometimes|string|max:50',
             'type' => 'sometimes|string|max:50',
             'subtype' => 'nullable|string|max:50',
             'latitude' => 'sometimes|numeric|between:-90,90',
