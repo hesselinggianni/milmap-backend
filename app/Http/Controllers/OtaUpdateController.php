@@ -54,7 +54,9 @@ class OtaUpdateController extends Controller
             'version'  => ['required', 'string', 'max:32'],
             'platform' => ['nullable', 'string', 'in:all,ios,android'],
             'channel'  => ['nullable', 'string', 'max:32'],
-            'mandatory' => ['nullable', 'boolean'],
+            // 'boolean' accepteert alleen 1/0/"1"/"0"/true/false — niet de string
+            // "false"/"true" die curl -F meestuurt. 'in' dekt beide vormen.
+            'mandatory' => ['nullable', 'in:0,1,true,false'],
             'min_native_version' => ['nullable', 'string', 'max:32'],
             'bundle'   => ['required', 'file', 'mimes:zip'],
         ]);
