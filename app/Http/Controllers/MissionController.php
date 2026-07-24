@@ -22,9 +22,15 @@ class MissionController extends Controller
         $teamIds = TeamMember::where('user_id', $userId)->pluck('team_id');
 
         $missions = Mission::query()
-            // Eager-load what present()/roleFor() need so the list isn't N+1
-            // (one collaborators + one linked-team query per mission otherwise).
-            ->with(['collaborators', 'linkedTeam' => fn ($q) => $q->withCount('members')])
+            // Eager-load exactly what present()/roleFor() pull via loadMissing()
+            // below, so the list isn't N+1 (one collaborators.user + one owner
+            // query per mission otherwise — 'collaborators' alone doesn't cover
+            // the nested .user relation that present() also needs).
+            ->with([
+                'collaborators.user:id,first_name,last_name,avatar_path',
+                'owner:id,first_name,last_name,avatar_path',
+                'linkedTeam' => fn ($q) => $q->withCount('members'),
+            ])
             ->where('owner_id', $userId)
             ->orWhereHas('collaborators', function ($q) use ($userId) {
                 $q->where('user_id', $userId)->where('status', 'accepted');
@@ -338,11 +344,12 @@ class MissionController extends Controller
 
         // Always expose the collaborator roster as an array so the client can
         // safely read `mission.collaborators.length` (e.g. a participant-count
-        // badge). The mission list already eager-loads this relation, so
-        // loadMissing() is a no-op there (no N+1); the single-mission paths load
-        // it on demand. Kept to a minimal, non-sensitive shape — the full
-        // management view with e-mails lives behind the owner/admin-only
-        // GET /missions/{id}/collaborators endpoint.
+        // badge). index() eager-loads collaborators.user + owner with the exact
+        // same shape used here, so loadMissing() is a true no-op on the list
+        // path (no N+1); the single-mission paths load it on demand. Kept to a
+        // minimal, non-sensitive shape — the full management view with e-mails
+        // lives behind the owner/admin-only GET /missions/{id}/collaborators
+        // endpoint.
         $mission->loadMissing(['collaborators.user:id,first_name,last_name,avatar_path', 'owner:id,first_name,last_name,avatar_path']);
         $out['collaborators'] = $mission->collaborators->map(fn ($c) => [
             'id'      => $c->id,
