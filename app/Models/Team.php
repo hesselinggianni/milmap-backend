@@ -82,6 +82,18 @@ class Team extends Model
         $used  = 1 + $distinctMembers;   // owner telt zelf mee
         $extra = max(0, $used - $included);
 
+        // Koos de klant bij checkout een groter team-pakket (bv. 25 seats) dan
+        // er nu daadwerkelijk leden zijn uitgenodigd, dan blijft de extra-seat-
+        // afrekening op dat gekochte aantal staan i.p.v. terug te zakken naar
+        // het werkelijke gebruik — anders zou TeamSeatBillingService::sync()
+        // het vooraf betaalde pakket stilzwijgend verkleinen bij elke
+        // ledenmutatie. Zie Subscription::purchased_seats.
+        $owner = User::find($ownerId);
+        $purchasedSeats = $owner?->activeSubscription()?->purchased_seats;
+        if ($purchasedSeats) {
+            $extra = max($extra, max(0, (int) $purchasedSeats - $included));
+        }
+
         return ['included' => $included, 'used' => $used, 'extra' => $extra];
     }
 

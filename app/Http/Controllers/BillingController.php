@@ -44,6 +44,36 @@ class BillingController extends Controller
         return AdminBillingController::effectiveMap();
     }
 
+    // ── Team-seats bij checkout ──────────────────────────────────────
+    // Een team-abonnement bevat config('teams.included_seats') seats (10).
+    // Wil de klant meteen voor een groter team afrekenen (bv. 25 gebruikers),
+    // dan voegen we een tweede line item toe op de 'team_extra_seat'-meterprijs
+    // met quantity = seats - included_seats, zodat Stripe direct voor het
+    // volledige team afrekent i.p.v. pas na losse invites (zie
+    // TeamSeatBillingService, dat ná checkout op basis van werkelijk gebruik
+    // bijstelt — dit line item is alleen de "vooraf gekozen pakketgrootte").
+    // Retourneert null als het plan geen team-plan is, seats leeg/≤ included
+    // is, of de extra-seat-prijs nog niet is gekoppeld in de admin.
+    private function extraSeatLineItem(string $planKey, ?int $seats): ?array
+    {
+        if (! str_starts_with($planKey, 'team_') || ! $seats) {
+            return null;
+        }
+
+        $included = (int) config('teams.included_seats', 10);
+        $extra    = $seats - $included;
+        if ($extra <= 0) {
+            return null;
+        }
+
+        $priceId = AdminBillingController::effectiveMap()['team_extra_seat'] ?? null;
+        if (! $priceId) {
+            return null;
+        }
+
+        return ['price' => $priceId, 'quantity' => $extra];
+    }
+
     public function __construct()
     {
         // Geef de secret als api_key door, of null wanneer hij ontbreekt/leeg is.
@@ -314,6 +344,8 @@ class BillingController extends Controller
             'currency'   => 'nullable|string|in:eur,usd',
             // Partner-referral (bv. via app.milmap.nl/?partner=CODE).
             'referral_code' => 'nullable|string|max:32',
+            // Vooraf gekozen teamgrootte (alleen relevant bij team_monthly/yearly).
+            'seats' => 'nullable|integer|min:1|max:500',
         ]);
 
         $plans   = $this->plans();
@@ -379,12 +411,15 @@ class BillingController extends Controller
             // de sessie altijd minstens één geldige methode heeft; zie
             // paymentMethodTypes(). Een lege config laat de methode-keuze aan de
             // dashboard-config over (dynamic payment methods).
+            $lineItems = [['price' => $priceId, 'quantity' => 1]];
+            if ($extraSeatItem = $this->extraSeatLineItem($request->plan, $request->integer('seats'))) {
+                $lineItems[] = $extraSeatItem;
+                $meta['seats'] = (string) $request->integer('seats');
+            }
+
             $sessionParams = array_merge($customerParams, [
                 'mode'                 => 'subscription',
-                'line_items'           => [[
-                    'price'    => $priceId,
-                    'quantity' => 1,
-                ]],
+                'line_items'           => $lineItems,
                 'subscription_data' => [
                     'metadata' => $meta,
                 ],
@@ -566,6 +601,8 @@ class BillingController extends Controller
             'plan'     => 'required|string|in:pro_monthly,pro_yearly,team_monthly,team_yearly',
             'coupon'   => 'nullable|string|max:64',
             'currency' => 'nullable|string|in:eur,usd',
+            // Vooraf gekozen teamgrootte (alleen relevant bij team_monthly/yearly).
+            'seats'    => 'nullable|integer|min:1|max:500',
         ]);
 
         $user   = $request->user();
@@ -592,25 +629,23 @@ class BillingController extends Controller
         // Create Checkout Session
         // Toegestane betaalmethodes uit config (default 'card') — zie
         // paymentMethodTypes() / guestCheckout() voor de toelichting.
+        $lineItems = [['price' => $priceId, 'quantity' => 1]];
+        $meta = ['user_id' => $user->id, 'plan' => $request->plan];
+        if ($extraSeatItem = $this->extraSeatLineItem($request->plan, $request->integer('seats'))) {
+            $lineItems[] = $extraSeatItem;
+            $meta['seats'] = (string) $request->integer('seats');
+        }
+
         $sessionParams = [
             'customer'             => $user->stripe_id,
             'mode'                 => 'subscription',
-            'line_items'           => [[
-                'price'    => $priceId,
-                'quantity' => 1,
-            ]],
+            'line_items'           => $lineItems,
             'subscription_data' => [
-                'metadata' => [
-                    'user_id' => $user->id,
-                    'plan'    => $request->plan,
-                ],
+                'metadata' => $meta,
             ],
             'success_url' => "{$siteUrl}/billing/success?session_id={CHECKOUT_SESSION_ID}",
             'cancel_url'  => "{$siteUrl}/billing/cancel",
-            'metadata'    => [
-                'user_id' => $user->id,
-                'plan'    => $request->plan,
-            ],
+            'metadata'    => $meta,
             'allow_promotion_codes' => true,
             'billing_address_collection' => 'auto',
             // 'auto' laat Stripe de checkout-taal op de browser afstemmen —
@@ -1103,18 +1138,26 @@ class BillingController extends Controller
 
         $priceId = $stripeSub->items->data[0]->price->id ?? null;
 
+        // Vooraf gekozen teamgrootte (bv. 25) reed mee in de session-metadata
+        // (zie BillingController::extraSeatLineItem / checkout/guestCheckout).
+        // Alleen aanwezig bij een team-plan met een gekozen pakket > included_seats.
+        $purchasedSeats = isset($session->metadata->seats)
+            ? (int) $session->metadata->seats
+            : null;
+
         $sub = Subscription::updateOrCreate(
             ['stripe_id' => $stripeSubId],
             [
-                'user_id'       => $userId,
-                'type'          => 'default',
-                'stripe_status' => $stripeSub->status,
-                'stripe_price'  => $priceId,
-                'quantity'      => $stripeSub->items->data[0]->quantity ?? 1,
-                'trial_ends_at' => $stripeSub->trial_end
+                'user_id'         => $userId,
+                'type'            => 'default',
+                'stripe_status'   => $stripeSub->status,
+                'stripe_price'    => $priceId,
+                'quantity'        => $stripeSub->items->data[0]->quantity ?? 1,
+                'purchased_seats' => $purchasedSeats,
+                'trial_ends_at'   => $stripeSub->trial_end
                     ? \Carbon\Carbon::createFromTimestamp($stripeSub->trial_end)
                     : null,
-                'ends_at'       => null,
+                'ends_at'         => null,
             ]
         );
 

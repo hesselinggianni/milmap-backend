@@ -15,6 +15,7 @@ class Subscription extends Model
         'stripe_status',
         'stripe_price',
         'quantity',
+        'purchased_seats',
         'trial_ends_at',
         'ends_at',
     ];
