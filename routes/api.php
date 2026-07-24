@@ -99,7 +99,7 @@ Route::prefix('v1')->middleware(['api'])->group(function () {
     // /admin/analytics. Ruimere throttle want de client stuurt batches.
     Route::post('/app-events', [\App\Http\Controllers\AppEventController::class, 'store'])
         ->middleware('throttle:120,1');
-    Route::post('/login', [LoginController::class, 'store']);
+    Route::post('/login', [LoginController::class, 'store'])->middleware('throttle:10,1');
     // E-mail-eerst auth-flow: bepaalt of een e-mail al een account heeft, zodat
     // de client kan kiezen tussen inloggen of registreren. Zwaar gethrottled om
     // account-enumeratie af te remmen.
@@ -124,9 +124,14 @@ Route::prefix('v1')->middleware(['api'])->group(function () {
     Route::post('/password/reset', [PasswordResetController::class, 'resetPassword'])
         ->middleware('throttle:10,1');
 
-    // Admin authentication (public endpoints)
-    Route::post('/admin/request-code', [AdminAuthController::class, 'requestCode']);
-    Route::post('/admin/verify-code', [AdminAuthController::class, 'verifyCode']);
+    // Admin authentication (public endpoints).
+    // verify-code MOET gethrottled zijn: het is een 6-cijferige code (1M
+    // combinaties) die 15 minuten geldig is — zonder rate limit hier was die
+    // binnen het geldigheidsvenster volledig brute-forceable.
+    Route::post('/admin/request-code', [AdminAuthController::class, 'requestCode'])
+        ->middleware('throttle:10,1');
+    Route::post('/admin/verify-code', [AdminAuthController::class, 'verifyCode'])
+        ->middleware('throttle:10,1');
 
     // Public share endpoint (no auth required)
     Route::get('/share/{token}', [MapShareController::class, 'showByToken']);
