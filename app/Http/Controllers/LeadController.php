@@ -45,6 +45,7 @@ class LeadController extends Controller
                 'utm_source' => $data['utm_source'] ?? null,
                 'ip_address' => $request->ip(),
                 'user_agent' => substr((string) $request->userAgent(), 0, 255),
+                'platform'   => self::detectPlatform((string) $request->userAgent()),
             ],
         );
 
@@ -63,7 +64,7 @@ class LeadController extends Controller
             }
         }
 
-        // Exit-intent op /pricing belooft "we mailen je 50% korting" — die mail
+        // Exit-intent op /pricing belooft "we mailen je 20% korting" — die mail
         // moet dus direct komen, niet pas na handmatige admin-actie. Eén keer
         // per e-mailadres (notified_at is de grendel); mint een unieke Stripe-
         // code en stuur de bestaande download/korting-mail. Faalt dit (Stripe
@@ -100,13 +101,31 @@ class LeadController extends Controller
     }
 
     /**
-     * Mint een unieke 50%-jaarcode en mail die naar de lead; markeert de lead
+     * Grove platform-detectie uit de User-Agent: 'ios' | 'android' | 'web'.
+     * Puur voor sales-attributie (is dit een mobiele bezoeker die de app kan
+     * downloaden, en op welk platform) — geen device-fingerprinting, alleen
+     * het OS-label. Onbekend/leeg → 'web' (desktop-aanname is de veilige
+     * default; false negatives op exotische UA's zijn niet erg hier).
+     */
+    private static function detectPlatform(string $userAgent): string
+    {
+        if (preg_match('/iPhone|iPad|iPod/i', $userAgent)) {
+            return 'ios';
+        }
+        if (preg_match('/Android/i', $userAgent)) {
+            return 'android';
+        }
+        return 'web';
+    }
+
+    /**
+     * Mint een unieke 20%-jaarcode en mail die naar de lead; markeert de lead
      * als geïnformeerd. Stil falen (false) — de aanroeper bepaalt de boodschap.
      */
     private function sendCouponMail(Lead $lead): bool
     {
         try {
-            $result = app(LaunchCouponService::class)->createYearlyHalfOffCode($lead->email);
+            $result = app(LaunchCouponService::class)->createYearlyDiscountCode($lead->email);
             Mail::to($lead->email)->send(new AppDownloadMail(
                 couponCode: $result['code'],
                 couponExpiresLabel: $result['expires_at']->locale('nl')->isoFormat('D MMMM YYYY'),
@@ -135,11 +154,12 @@ class LeadController extends Controller
     public function adminIndex(Request $request)
     {
         $request->validate([
-            'q'       => 'nullable|string|max:255',
-            'source'  => 'nullable|string|max:64',
-            'pending' => 'nullable|in:0,1',
-            'page'    => 'nullable|integer|min:1',
-            'per'     => 'nullable|integer|min:1|max:200',
+            'q'        => 'nullable|string|max:255',
+            'source'   => 'nullable|string|max:64',
+            'platform' => 'nullable|in:ios,android,web',
+            'pending'  => 'nullable|in:0,1',
+            'page'     => 'nullable|integer|min:1',
+            'per'      => 'nullable|integer|min:1|max:200',
         ]);
 
         $per = (int) $request->query('per', 25);
@@ -150,6 +170,9 @@ class LeadController extends Controller
         }
         if ($s = $request->query('source')) {
             $q->where('source', $s);
+        }
+        if ($p = $request->query('platform')) {
+            $q->where('platform', $p);
         }
         if ($request->query('pending') === '1') {
             $q->whereNull('notified_at');
@@ -164,6 +187,7 @@ class LeadController extends Controller
                 'source'      => $l->source,
                 'utm_source'  => $l->utm_source,
                 'ip_address'  => $l->ip_address,
+                'platform'    => $l->platform,
                 'notified_at' => optional($l->notified_at)->toIso8601String(),
                 'created_at'  => optional($l->created_at)->toIso8601String(),
             ])->values(),
@@ -192,7 +216,7 @@ class LeadController extends Controller
     /**
      * POST /api/v1/admin/leads/{id}/send-download-mail — verstuur de
      * app-download-mail handmatig naar deze lead: mint een unieke Stripe-
-     * promotiecode (50% op het jaarabonnement, 1x, 1 jaar geldig), verstuurt de
+     * promotiecode (20% op het jaarabonnement, 1x, 1 jaar geldig), verstuurt de
      * Apple-clean mail en markeert de lead als geïnformeerd.
      */
     public function adminSendDownloadMail(int $id, LaunchCouponService $coupons)
@@ -200,7 +224,7 @@ class LeadController extends Controller
         $lead = Lead::findOrFail($id);
 
         try {
-            $result = $coupons->createYearlyHalfOffCode($lead->email);
+            $result = $coupons->createYearlyDiscountCode($lead->email);
         } catch (\Throwable $e) {
             return response()->json([
                 'ok'      => false,
