@@ -3,7 +3,6 @@
 namespace App\Console;
 
 use Illuminate\Foundation\Console\Kernel as ConsoleKernel;
-use App\Console\Commands\FetchEmails; // Voeg het juiste pad toe naar je command
 use App\Console\Commands\SendStatusNotification;
 use App\Console\Commands\NotifyNewMail;
 use App\Console\Commands\ArchiveUnverifiedUsers;
@@ -20,7 +19,6 @@ class Kernel extends ConsoleKernel
      * @var array
      */
     protected $commands = [
-        FetchEmails::class, // Voeg het command toe
         SendStatusNotification::class,
         NotifyNewMail::class,
         ArchiveUnverifiedUsers::class,
