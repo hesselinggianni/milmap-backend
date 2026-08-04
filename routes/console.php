@@ -18,8 +18,13 @@ Schedule::command('tiles:prune-terrain')->dailyAt('04:10');
 // ->withSchedule() in bootstrap/app.php), dus onderstaande commands draaiden
 // nooit via cron. Hierheen verplaatst op 2026-08-04.
 
-Schedule::command('emails:fetch')->everyMinute();
-Schedule::command('check:status')->everyMinute();
+// emails:fetch (FetchEmails) en check:status (CheckWebsiteStatus) staan hier
+// BEWUST NIET in de schedule: ze verwijzen naar App\Http\Controllers\
+// EmailController resp. App\Models\Website, die niet (meer) bestaan — dode
+// legacy-code, allebei al vervangen door mail:notify-new resp. status:monitor
+// hieronder. Nooit gemerkt omdat de hele schedule tot 2026-08-04 stillag; nu
+// wél geregistreerd zouden ze elke minuut een exception loggen. Command-
+// bestanden laten staan (kunnen weg, maar dat is een aparte opruimactie).
 
 // Status-page-domeinen (milmap.nl/status) monitoren + uptime/incidenten
 // bijhouden. withoutOverlapping zodat trage checks niet opstapelen.
