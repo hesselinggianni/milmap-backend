@@ -2,7 +2,6 @@
 
 namespace App\Console;
 
-use Illuminate\Console\Scheduling\Schedule;
 use Illuminate\Foundation\Console\Kernel as ConsoleKernel;
 use App\Console\Commands\FetchEmails; // Voeg het juiste pad toe naar je command
 use App\Console\Commands\SendStatusNotification;
@@ -31,82 +30,8 @@ class Kernel extends ConsoleKernel
         MonitorPageSpeed::class,
     ];
 
-    /**
-     * Definieer de geplande opdrachten voor de applicatie.
-     *
-     * @param  \Illuminate\Console\Scheduling\Schedule  $schedule
-     * @return void
-     */
-    protected function schedule(Schedule $schedule)
-    {
-        // Voer de fetchEmails taak elke minuut uit
-        $schedule->command('emails:fetch')->everyMinute();
-        $schedule->command('check:status')->everyMinute();
-        // Status-page-domeinen (milmap.nl/status) monitoren + uptime/incidenten
-        // bijhouden. withoutOverlapping zodat trage checks niet opstapelen.
-        $schedule->command('status:monitor')->everyMinute()->withoutOverlapping();
-
-        // Nieuwe-mail notificaties voor de admin-app. withoutOverlapping zodat
-        // een trage IMAP-poll de volgende run niet laat opstapelen.
-        $schedule->command('mail:notify-new')
-            ->everyMinute()
-            ->withoutOverlapping();
-
-        // Follow-up-campagnemails: scan elke minuut welke regels mogen uitgaan
-        // (vertraging op dag-niveau, dus per minuut scannen is ruim voldoende).
-        $schedule->command('mail:process-followups')
-            ->everyMinute()
-            ->withoutOverlapping();
-
-        // Definitief verwijderen wat langer dan 60 dagen in de prullenbak zit.
-        // Draait 's nachts (lage piek), met overlap-bescherming en logging.
-        $schedule->command('trash:purge')
-            ->dailyAt('03:15')
-            ->withoutOverlapping()
-            ->runInBackground()
-            ->appendOutputTo(storage_path('logs/trash-purge.log'));
-
-        // Archiveer accounts die na 90 dagen nog niet zijn geverifieerd (en niet
-        // betalen). Het e-mailadres komt daarmee vrij om opnieuw te registreren.
-        $schedule->command('users:archive-unverified')
-            ->dailyAt('03:30')
-            ->withoutOverlapping()
-            ->runInBackground()
-            ->appendOutputTo(storage_path('logs/archive-unverified.log'));
-
-        // Genereer elke ochtend automatisch sales-taken uit de actieve signalen
-        // (aflopende trials, churn-risico, niet-benaderde leads, enz.), zodat de
-        // takenlijst dagelijks up-to-date staat met concrete verkoop-acties.
-        $schedule->command('sales:generate-todos')
-            ->dailyAt('07:00')
-            ->withoutOverlapping()
-            ->runInBackground()
-            ->appendOutputTo(storage_path('logs/sales-todos.log'));
-
-        // Dagelijkse SEO-taken uit Google Search Console-signalen (no-op als
-        // GSC niet is geconfigureerd).
-        $schedule->command('seo:generate-tasks')
-            ->dailyAt('07:15')
-            ->withoutOverlapping()
-            ->runInBackground()
-            ->appendOutputTo(storage_path('logs/seo-tasks.log'));
-
-        // Dagelijkse PageSpeed-meting van de gemonitorde URL's + prestatie-taken
-        // uit lage scores. Rustig gepland (kan traag zijn: URL's × mobiel/desktop).
-        $schedule->command('pagespeed:monitor')
-            ->dailyAt('06:30')
-            ->withoutOverlapping()
-            ->runInBackground()
-            ->appendOutputTo(storage_path('logs/pagespeed.log'));
-
-        // Maandelijkse partneruitbetaling: alle pending commissies per partner
-        // in één Stripe-Connect-transfer (minimum €10, zie PayoutPartners).
-        $schedule->command('partners:payout')
-            ->monthlyOn(1, '08:00')
-            ->withoutOverlapping()
-            ->runInBackground()
-            ->appendOutputTo(storage_path('logs/partner-payouts.log'));
-    }
-
-
+    // De geplande opdrachten staan niet meer hier: deze schedule()-methode
+    // wordt door de Laravel 11-bootstrap (bootstrap/app.php) niet geladen
+    // (geen ->withSchedule()), dus alles hieronder draaide nooit via cron.
+    // Zie routes/console.php voor de actieve Schedule::command(...)-definities.
 }
