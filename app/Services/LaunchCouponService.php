@@ -7,10 +7,10 @@ use Stripe\StripeClient;
 
 /**
  * Mint unieke, eenmalig bruikbare Stripe-promotiecodes voor de launch-campagne:
- * 50% korting op een jaarabonnement, geldig om in te wisselen tot 1 jaar na
+ * 20% korting op een jaarabonnement, geldig om in te wisselen tot 1 jaar na
  * uitgifte, en maar 1x te gebruiken.
  *
- * Eén gedeelde Stripe-coupon (50% off, duration=once, beperkt tot de
+ * Eén gedeelde Stripe-coupon (20% off, duration=once, beperkt tot de
  * jaar-producten) wordt idempotent aangemaakt; per ontvanger genereren we een
  * losse promotion_code zodat elke code uniek + individueel intrekbaar is.
  */
@@ -18,8 +18,13 @@ class LaunchCouponService
 {
     private StripeClient $stripe;
 
-    /** Vaste, herbruikbare coupon-id zodat we 'm niet elke keer opnieuw maken. */
-    private const COUPON_ID = 'milmap-launch-50-yearly';
+    /**
+     * Vaste, herbruikbare coupon-id zodat we 'm niet elke keer opnieuw maken.
+     * Nieuwe id (was 'milmap-launch-50-yearly') omdat Stripe's percent_off
+     * immutable is op een bestaande coupon — de oude 50%-coupon blijft anders
+     * stilzwijgend actief ook al staat hieronder 20%.
+     */
+    private const COUPON_ID = 'milmap-launch-20-yearly';
 
     /** Coupon-id voor de lead-nurture-code (20%, geldt op élk plan — niet jaar-only). */
     private const LEAD_NURTURE_COUPON_ID = 'milmap-lead-20-first';
@@ -39,7 +44,7 @@ class LaunchCouponService
      *
      * @return array{code:string, expires_at:Carbon}
      */
-    public function createYearlyHalfOffCode(?string $email = null): array
+    public function createYearlyDiscountCode(?string $email = null): array
     {
         if (! $this->isConfigured()) {
             throw new \RuntimeException('Stripe is niet geconfigureerd (billing.stripe_secret ontbreekt).');
@@ -118,16 +123,21 @@ class LaunchCouponService
             'id'          => self::LEAD_NURTURE_COUPON_ID,
             'percent_off' => 20,
             'duration'    => 'once',
-            'name'        => 'MilMap — 20% op je eerste factuur (account afmaken)',
+            // Stripe's coupon-'name' staat max. 40 tekens toe — de oorspronkelijke
+            // naam ("MilMap — 20% op je eerste factuur (account afmaken)", 53
+            // tekens) liet coupons->create() altijd falen, waardoor deze hele
+            // lead-nurture-mail nooit verstuurd werd (stil gefaald, zie
+            // LeadNurtureService::enroll()'s try/catch).
+            'name'        => 'MilMap — 20% eerste factuur',
         ]);
 
         return self::LEAD_NURTURE_COUPON_ID;
     }
 
     /**
-     * Zorg dat de gedeelde launch-coupon bestaat (idempotent). 50% off, eenmalig
+     * Zorg dat de gedeelde launch-coupon bestaat (idempotent). 20% off, eenmalig
      * toegepast (= eerste jaarfactuur), beperkt tot de jaar-producten als die in
-     * de billing-config staan — anders een algemene 50%-eenmalig-coupon.
+     * de billing-config staan — anders een algemene 20%-eenmalig-coupon.
      */
     private function ensureCoupon(): string
     {
@@ -140,9 +150,9 @@ class LaunchCouponService
 
         $params = [
             'id'          => self::COUPON_ID,
-            'percent_off' => 50,
+            'percent_off' => 20,
             'duration'    => 'once',
-            'name'        => 'MilMap Launch — 50% op je jaarabonnement',
+            'name'        => 'MilMap Launch — 20% op je jaarabonnement',
         ];
 
         $products = $this->yearlyProductIds();
