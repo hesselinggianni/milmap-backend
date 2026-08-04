@@ -66,6 +66,12 @@ class LeadNurtureService
             return false;
         }
 
+        // Taal van de bezoeker (browsertaal, vastgelegd bij het invullen van
+        // het formulier — zie LeadController::store()). Onbekend of niet
+        // ondersteund → Engels, nooit stilzwijgend Nederlands versturen naar
+        // een lead waarvan we de taal niet kennen.
+        $language = in_array($lead->language, ['nl', 'en', 'de', 'es', 'fr'], true) ? $lead->language : 'en';
+
         $webAppUrl = rtrim(config('milmap.web_app_url', 'https://app.milmap.nl'), '/');
         $continueUrl = $webAppUrl . '/checkout/pro_monthly?' . http_build_query([
             'email'  => $lead->email,
@@ -75,8 +81,9 @@ class LeadNurtureService
         try {
             Mail::to($lead->email)->send(new LeadFinishAccountMail(
                 couponCode: $result['code'],
-                couponExpiresLabel: $result['expires_at']->locale('nl')->isoFormat('D MMMM'),
+                couponExpiresLabel: $result['expires_at']->locale($language)->isoFormat('D MMMM'),
                 continueUrl: $continueUrl,
+                leadLocale: $language,
             ));
         } catch (\Throwable $e) {
             Log::warning('[lead-nurture] mail versturen mislukt: ' . $e->getMessage());
@@ -96,7 +103,7 @@ class LeadNurtureService
             'followup_id'  => 0,
             'email'        => $lead->email,
             'lead_id'      => $lead->id,
-            'language'     => 'nl',
+            'language'     => $language,
             'template_key' => 'lead_finish_account',
             'category_id'  => $campaign->category_id,
             'subject'      => 'Maak je MilMap-account af — 20% korting, 2 dagen geldig',

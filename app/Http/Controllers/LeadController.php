@@ -34,6 +34,12 @@ class LeadController extends Controller
             'email'      => ['required', 'email', 'max:255'],
             'source'     => ['nullable', 'string', 'max:64'],
             'utm_source' => ['nullable', 'string', 'max:64'],
+            // Browsertaal van de bezoeker (bv. "en" uit navigator.language),
+            // los van de taal van de pagina waarop het formulier stond — een
+            // Duitse bezoeker op een via een NL-link gedeelde pagina moet
+            // toch een Duitse mail krijgen. Alleen de taalcode zelf (2
+            // letters); regio's (en-US) worden vóór verzenden al afgekapt.
+            'locale'     => ['nullable', 'string', 'regex:/^[a-z]{2}$/'],
         ]);
 
         $email = mb_strtolower(trim($data['email']));
@@ -46,6 +52,7 @@ class LeadController extends Controller
                 'ip_address' => $request->ip(),
                 'user_agent' => substr((string) $request->userAgent(), 0, 255),
                 'platform'   => self::detectPlatform((string) $request->userAgent()),
+                'language'   => $data['locale'] ?? null,
             ],
         );
 
@@ -75,13 +82,17 @@ class LeadController extends Controller
             $couponSent = $this->sendCouponMail($lead);
         }
 
-        // Start-funnel-lead (app.milmap.nl/): vulde e-mail in, geen account
-        // (nog). Schrijf 'm in de lead-nurture-drip (mail 1 direct, mail 2 na
-        // 4 dagen via de follow-up-engine). Idempotent en zelf-falend — mag de
-        // lead-opslag nooit breken. Ook bruikbaar als backfill: een lead die
-        // hier eerder al door kwam zonder nurture-mail (bv. vóór deze feature
-        // live ging) krijgt 'm alsnog bij een volgende submit.
-        if (($data['source'] ?? null) === 'start-funnel') {
+        // Start-funnel-lead (milmap.nl/app, /app2): vulde e-mail in, geen
+        // account (nog). Schrijf 'm in de lead-nurture-drip (mail 1 direct,
+        // mail 2 na 4 dagen via de follow-up-engine). Idempotent en
+        // zelf-falend — mag de lead-opslag nooit breken. Ook bruikbaar als
+        // backfill: een lead die hier eerder al door kwam zonder nurture-mail
+        // (bv. vóór deze feature live ging) krijgt 'm alsnog bij een
+        // volgende submit.
+        // NB: de frontend stuurt 'app2-landing' (beide varianten van de
+        // start-funnel-pagina) — 'start-funnel' stond hier vergeten sinds de
+        // oorspronkelijke bouw, waardoor deze hele drip nooit afging.
+        if (in_array($data['source'] ?? null, ['start-funnel', 'app2-landing'], true)) {
             try {
                 app(\App\Services\LeadNurtureService::class)->enroll($lead);
             } catch (\Throwable $e) {
@@ -188,6 +199,7 @@ class LeadController extends Controller
                 'utm_source'  => $l->utm_source,
                 'ip_address'  => $l->ip_address,
                 'platform'    => $l->platform,
+                'language'    => $l->language,
                 'notified_at' => optional($l->notified_at)->toIso8601String(),
                 'created_at'  => optional($l->created_at)->toIso8601String(),
             ])->values(),

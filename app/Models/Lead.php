@@ -9,7 +9,7 @@ class Lead extends Model
     protected $table = 'leads';
 
     protected $fillable = [
-        'email', 'source', 'utm_source', 'ip_address', 'user_agent', 'platform', 'notified_at', 'converted_at',
+        'email', 'source', 'utm_source', 'ip_address', 'user_agent', 'platform', 'language', 'notified_at', 'converted_at',
     ];
 
     protected $casts = [

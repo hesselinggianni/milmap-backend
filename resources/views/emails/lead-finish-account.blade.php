@@ -8,19 +8,19 @@
     $line  = '#e5e5ea';
 @endphp
 <!DOCTYPE html>
-<html lang="nl">
+<html lang="{{ $localeCode }}">
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <meta name="color-scheme" content="light">
   <meta name="supported-color-schemes" content="light">
-  <title>Maak je MilMap-account af</title>
+  <title>{{ $lang['title'] }}</title>
 </head>
 <body style="margin:0;padding:0;background-color:#f5f5f7;-webkit-font-smoothing:antialiased;font-family:-apple-system,BlinkMacSystemFont,'SF Pro Display','Segoe UI',Roboto,Helvetica,Arial,sans-serif;color:{{ $ink }};">
 
   <!-- Preheader (verborgen) -->
   <div style="display:none;max-height:0;overflow:hidden;opacity:0;">
-    Je bent er bijna — maak je MilMap-account af en krijg 20% korting op je eerste factuur. Nog 2 dagen geldig.
+    {{ $lang['preheader'] }}
   </div>
 
   <table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0" style="background-color:#f5f5f7;">
@@ -52,13 +52,13 @@
                 <tr>
                   <td align="center" style="padding:40px 32px 8px;">
                     <p style="margin:0 0 10px;font-size:12px;font-weight:600;letter-spacing:0.08em;text-transform:uppercase;color:{{ $blue }};">
-                      Je bent er bijna
+                      {{ $lang['eyebrow'] }}
                     </p>
                     <h1 style="margin:0 0 12px;font-size:26px;line-height:1.2;font-weight:700;letter-spacing:-0.02em;color:{{ $ink }};">
-                      Maak je MilMap-account af
+                      {{ $lang['title'] }}
                     </h1>
                     <p style="margin:0;font-size:16px;line-height:1.5;color:{{ $muted }};max-width:380px;">
-                      Je was bezig met aanmelden bij MilMap — plan routes, deel kaarten en werk samen met je team, zelfs offline in het veld.
+                      {{ $lang['intro'] }}
                     </p>
                   </td>
                 </tr>
@@ -73,10 +73,10 @@
                       <tr>
                         <td align="center" style="padding:24px 22px;">
                           <p style="margin:0 0 4px;font-size:11px;font-weight:700;letter-spacing:0.08em;text-transform:uppercase;color:{{ $blue }};">
-                            Jouw persoonlijke code
+                            {{ $lang['codeLabel'] }}
                           </p>
                           <p style="margin:0 0 14px;font-size:22px;font-weight:700;letter-spacing:-0.01em;color:{{ $ink }};">
-                            20% korting op je eerste factuur
+                            {{ $lang['discount'] }}
                           </p>
 
                           <table role="presentation" cellpadding="0" cellspacing="0" border="0" align="center">
@@ -92,15 +92,15 @@
                               <td style="background-color:{{ $blue }};border-radius:12px;">
                                 <a href="{{ $continueUrl }}" target="_blank"
                                    style="display:inline-block;padding:13px 30px;font-size:15px;font-weight:600;color:#ffffff;text-decoration:none;">
-                                  Account afmaken
+                                  {{ $lang['button'] }}
                                 </a>
                               </td>
                             </tr>
                           </table>
 
                           <p style="margin:16px 0 0;font-size:12px;line-height:1.5;color:{{ $muted }};">
-                            Eénmalig te gebruiken — je code werkt automatisch mee op de knop hierboven.
-                            @if($couponExpiresLabel) Geldig t/m {{ $couponExpiresLabel }}. @endif
+                            {{ $lang['oneTime'] }}
+                            @if($couponExpiresLabel) {{ str_replace(':date', $couponExpiresLabel, $lang['validUntil']) }} @endif
                           </p>
                         </td>
                       </tr>
@@ -114,7 +114,7 @@
                 <tr>
                   <td style="padding:14px 32px 34px;">
                     <p style="margin:0;font-size:13px;line-height:1.6;color:{{ $muted }};text-align:center;">
-                      Vragen? Mail ons gerust op
+                      {{ $lang['questions'] }}
                       <a href="mailto:support@milmap.nl" style="color:{{ $blue }};text-decoration:none;">support@milmap.nl</a>.
                     </p>
                   </td>
@@ -129,7 +129,7 @@
             <td align="center" style="padding:22px 24px 8px;">
               <p style="margin:0 0 4px;font-size:12px;color:{{ $muted }};">MilMap &middot; milmap.nl</p>
               <p style="margin:0;font-size:11px;color:#a1a1a6;line-height:1.5;">
-                Je ontvangt deze e-mail omdat je je e-mailadres hebt ingevuld op app.milmap.nl.
+                {{ $lang['disclaimer'] }}
               </p>
             </td>
           </tr>
