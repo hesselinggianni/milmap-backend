@@ -83,9 +83,26 @@ class MissionController extends Controller
             'logo' => 'nullable|string|max:5000000',
             'game_mode' => 'nullable|in:standard,exercise',
             'exercise_site_id' => 'nullable|uuid|exists:exercise_sites,id',
+            // Lokale UUID van een offline aangemaakte missie (zie
+            // missionCloudSync.js). Puur voor idempotentie: als dezelfde
+            // gebruiker 'm al eerder heeft doorgestuurd, geven we die missie
+            // terug i.p.v. een tweede aan te maken.
+            'client_id' => 'nullable|uuid',
         ]);
 
-        $mission = Mission::create([
+        // Sync opnieuw geprobeerd nadat de vorige poging half slaagde (server
+        // aangemaakt, lokaal opruimen mislukt)? Dan bestaat de missie al.
+        if (! empty($data['client_id'])) {
+            $existing = Mission::where('id', $data['client_id'])
+                ->where('owner_id', Auth::id())
+                ->first();
+
+            if ($existing) {
+                return response()->json(['data' => $this->present($existing, Auth::id())], 200);
+            }
+        }
+
+        $mission = new Mission([
             'owner_id' => Auth::id(),
             'name' => $data['name'],
             'description' => $data['description'] ?? null,
@@ -98,6 +115,17 @@ class MissionController extends Controller
             'game_mode' => $data['game_mode'] ?? 'standard',
             'exercise_site_id' => $data['exercise_site_id'] ?? null,
         ]);
+
+        // Buiten de mass-assignment om: 'id' staat (terecht) niet in $fillable,
+        // maar bij een offline aangemaakte missie willen we bewust dezelfde
+        // UUID aanhouden als lokaal, zodat verwijzingen blijven kloppen en een
+        // herhaalde sync hierboven herkend wordt. Leeg laten = HasUuids
+        // genereert zelf een UUID (het normale pad).
+        if (! empty($data['client_id'])) {
+            $mission->id = $data['client_id'];
+        }
+
+        $mission->save();
 
         return response()->json(['data' => $this->present($mission, Auth::id())], 201);
     }
