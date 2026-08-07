@@ -91,6 +91,11 @@ Route::prefix('v1')->middleware(['api'])->group(function () {
     // ── Client-side error reporting (no auth required) ───────────
     Route::post('/client-errors', [ClientErrorController::class, 'store'])
         ->middleware('throttle:30,1');
+    // ── App-versie-check (no auth): native app vraagt dit bij opstart om te
+    //    bepalen of er een nieuwere store-versie is en desgewenst een
+    //    update-melding te tonen (App Store / Play Store).
+    Route::get('/app-version', [\App\Http\Controllers\AppVersionController::class, 'show'])
+        ->middleware('throttle:30,1');
     // ── First-party site-analytics vanaf milmap.nl (no auth) ─────
     Route::post('/site-events', [\App\Http\Controllers\SiteEventController::class, 'store'])
         ->middleware('throttle:120,1');
@@ -311,6 +316,12 @@ Route::prefix('v1')->middleware(['api'])->group(function () {
         Route::get('/user/sessions', [SessionController::class, 'index']);
         Route::post('/user/sessions/revoke-others', [SessionController::class, 'destroyOthers']);
         Route::delete('/user/sessions/{id}', [SessionController::class, 'destroy']);
+
+        // Opgenomen GPS-activiteiten (hardlopen/fietsen/wandelen), zoals Strava.
+        Route::get('/activities', [\App\Http\Controllers\ActivityController::class, 'index']);
+        Route::post('/activities', [\App\Http\Controllers\ActivityController::class, 'store']);
+        Route::get('/activities/{id}', [\App\Http\Controllers\ActivityController::class, 'show']);
+        Route::delete('/activities/{id}', [\App\Http\Controllers\ActivityController::class, 'destroy']);
 
         // Literal route MUST come before /users/{id} or "search" is captured as an id.
         Route::get('/users/search', [MapCollaboratorController::class, 'searchUsers']);
