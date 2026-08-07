@@ -93,6 +93,15 @@ class ActivityController extends Controller
             'points.*.t' => ['nullable', 'numeric'],
             'points.*.ele' => ['nullable', 'numeric'],
             'points.*.speed' => ['nullable', 'numeric', 'min:0'],
+        ], [
+            // Zonder eigen teksten stuurde Laravel de rauwe sleutel terug
+            // ("validation.min.array") en toonde de app die letterlijk. Dit is
+            // veruit de meest voorkomende weigering: een opname zonder
+            // GPS-ontvangst levert 0 of 1 punt op.
+            'points.required' => 'Deze opname bevat geen GPS-punten. Zet locatietoegang aan en zorg voor ontvangst voordat je start.',
+            'points.min' => 'Deze opname bevat te weinig GPS-punten om op te slaan (minimaal 2 nodig).',
+            'points.max' => 'Deze opname bevat te veel punten om in één keer op te slaan.',
+            'type.in' => 'Onbekende verplaatsingswijze.',
         ]);
     }
 
