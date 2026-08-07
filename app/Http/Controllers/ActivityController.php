@@ -47,7 +47,30 @@ class ActivityController extends Controller
      */
     public function store(Request $request)
     {
-        $data = $request->validate([
+        // Laravel logt een 422 niet: de app kreeg dus wél een foutmelding
+        // ("opslaan mislukt") terwijl er nergens iets terug te vinden was
+        // waaróm. Hier vangen we de validatiefout af, loggen we precies welk
+        // veld werd geweigerd (plus de vorm van de payload — niet de punten
+        // zelf, dat zijn er duizenden) en gooien we 'm daarna gewoon door.
+        try {
+            $data = $this->validateActivity($request);
+        } catch (\Illuminate\Validation\ValidationException $e) {
+            \Illuminate\Support\Facades\Log::warning('[activity] opslaan geweigerd', [
+                'user_id' => Auth::id(),
+                'errors'  => $e->errors(),
+                'type'    => $request->input('type'),
+                'points'  => is_array($request->input('points')) ? count($request->input('points')) : null,
+                'keys'    => array_keys($request->all()),
+            ]);
+            throw $e;
+        }
+
+        return $this->persistActivity($request, $data);
+    }
+
+    private function validateActivity(Request $request): array
+    {
+        return $request->validate([
             // 'drive' hoort er ook bij: de app biedt vier verplaatsingswijzen
             // aan (zie NavigationView.vue's travelModes), maar deze regel
             // kende er maar drie — een navigatie in de auto liep daardoor
@@ -71,7 +94,10 @@ class ActivityController extends Controller
             'points.*.ele' => ['nullable', 'numeric'],
             'points.*.speed' => ['nullable', 'numeric', 'min:0'],
         ]);
+    }
 
+    private function persistActivity(Request $request, array $data)
+    {
         $activity = Activity::create([
             ...$data,
             'user_id' => Auth::id(),
