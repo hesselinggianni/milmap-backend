@@ -18,14 +18,27 @@ class ClientErrorController extends Controller
             'stack'   => 'nullable|string|max:8000',
             'info'    => 'nullable|string|max:500',
             'url'     => 'nullable|string|max:500',
+            // Zonder deze context is een melding uit de app nauwelijks te
+            // herleiden: op welk toestel, welke build, en bij een mislukte
+            // API-aanroep welk endpoint met welke status/antwoord.
+            'platform'    => 'nullable|string|max:20',
+            'app_version' => 'nullable|string|max:30',
+            'status'      => 'nullable|integer',
+            'method'      => 'nullable|string|max:10',
+            'endpoint'    => 'nullable|string|max:500',
+            'response'    => 'nullable|string|max:2000',
         ]);
 
         // Also log to laravel.log for visibility
         Log::warning('[client-error] ' . $data['message'], [
-            'type'   => $data['type'],
-            'source' => $data['source'] ?? null,
-            'line'   => $data['lineno'] ?? null,
-            'url'    => $data['url'] ?? null,
+            'type'     => $data['type'],
+            'source'   => $data['source'] ?? null,
+            'line'     => $data['lineno'] ?? null,
+            'url'      => $data['url'] ?? null,
+            'platform' => $data['platform'] ?? null,
+            'version'  => $data['app_version'] ?? null,
+            'status'   => $data['status'] ?? null,
+            'endpoint' => $data['endpoint'] ?? null,
         ]);
 
         // Append to rolling JSON log
