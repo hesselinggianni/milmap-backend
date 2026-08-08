@@ -222,9 +222,19 @@ class LeadController extends Controller
         // (funnel_step is dan NULL).
         if ($step = $request->query('step')) {
             $step = (int) $step;
-            $step === 1
-                ? $q->where(fn ($w) => $w->whereNull('funnel_step')->orWhere('funnel_step', 1))
-                : $q->where('funnel_step', $step);
+
+            if ($step === 6) {
+                // Stap 6 is geen funnel_step maar "heeft een account afgerond";
+                // zie adminFunnel voor waarom die twee losstaan.
+                $q->whereNotNull('converted_at');
+            } elseif ($step === 1) {
+                // Geconverteerde leads horen niet bij een afhaakpunt: zij zijn
+                // juist doorgelopen, ook al bleef funnel_step leeg.
+                $q->whereNull('converted_at')
+                    ->where(fn ($w) => $w->whereNull('funnel_step')->orWhere('funnel_step', 1));
+            } else {
+                $q->whereNull('converted_at')->where('funnel_step', $step);
+            }
         }
 
         $page = $q->orderByDesc('id')->paginate($per);
@@ -265,9 +275,19 @@ class LeadController extends Controller
      */
     public function adminFunnel()
     {
-        $STAPPEN = 5;
+        // Stap 6 = registratie daadwerkelijk afgerond. Die staat los van
+        // funnel_step: iemand kan zich rechtstreeks registreren zonder de
+        // onboarding-stappen te doorlopen, en in de praktijk gebeurt dat ook —
+        // alle geconverteerde leads hadden funnel_step NULL, waardoor ze in de
+        // trechter meetelden als "afgehaakt bij stap 1" terwijl ze juist klant
+        // werden. Vandaar: converted_at wint altijd van funnel_step.
+        $STAPPEN = 6;
+        $STAP_ACCOUNT_AF = 6;
 
-        $perStap = Lead::selectRaw('COALESCE(funnel_step, 1) as stap, COUNT(*) as aantal')
+        $perStap = Lead::selectRaw(
+            'CASE WHEN converted_at IS NOT NULL THEN ? ELSE COALESCE(funnel_step, 1) END as stap, COUNT(*) as aantal',
+            [$STAP_ACCOUNT_AF]
+        )
             ->groupBy('stap')
             ->pluck('aantal', 'stap');
 
@@ -282,13 +302,16 @@ class LeadController extends Controller
             for ($j = $i; $j <= $STAPPEN; $j++) {
                 $bereikt += (int) ($perStap[$j] ?? 0);
             }
-            $gestrand = (int) ($perStap[$i] ?? 0);
+            // Bij de laatste stap is "blijven steken" betekenisloos: wie hier
+            // staat heeft het juist afgemaakt.
+            $gestrand = $i === $STAP_ACCOUNT_AF ? 0 : (int) ($perStap[$i] ?? 0);
             $stappen[] = [
                 'step'          => $i,
                 'reached'       => $bereikt,
                 'dropped'       => $gestrand,
                 'reached_pct'   => $totaal > 0 ? round($bereikt / $totaal * 100, 1) : 0.0,
                 'drop_pct'      => $bereikt > 0 ? round($gestrand / $bereikt * 100, 1) : 0.0,
+                'is_completion' => $i === $STAP_ACCOUNT_AF,
             ];
         }
 
