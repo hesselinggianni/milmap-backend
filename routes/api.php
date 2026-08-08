@@ -113,6 +113,18 @@ Route::prefix('v1')->middleware(['api'])->group(function () {
     Route::post('/logout', [LogoutController::class, 'destroy'])->middleware('auth:sanctum');
     Route::post('/logout-all', [LogoutController::class, 'logoutFromAllDevices'])->middleware('auth:sanctum');
 
+    // Account verwijderen door de gebruiker zelf (Apple-reviewvereiste: wie
+    // zich in de app kan registreren, moet zich daar ook kunnen verwijderen).
+    // Drietraps — code per mail, wachtwoord, bevestigingswoord — en daarna 90
+    // dagen bedenktijd. Paden komen exact overeen met AuthServices.js.
+    Route::middleware('auth:sanctum')->group(function () {
+        Route::post('/user/account/deletion/request-code', [\App\Http\Controllers\AccountDeletionController::class, 'requestCode'])
+            ->middleware('throttle:5,10');
+        Route::post('/user/account/deletion',              [\App\Http\Controllers\AccountDeletionController::class, 'schedule'])
+            ->middleware('throttle:10,10');
+        Route::post('/user/account/deletion/cancel',       [\App\Http\Controllers\AccountDeletionController::class, 'cancel']);
+    });
+
     // ── E-mailverificatie ────────────────────────────────────────────
     // De link uit de mail (publiek; de signed URL is de authenticatie). Resend
     // vereist een ingelogde gebruiker, maar staat bewust BUITEN de verificatie-

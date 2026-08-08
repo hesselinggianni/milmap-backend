@@ -78,3 +78,7 @@ Schedule::command('partners:payout')
     ->withoutOverlapping()
     ->runInBackground()
     ->appendOutputTo(storage_path('logs/partner-payouts.log'));
+
+// Accounts waarvan de 90-daagse bedenktijd verstreken is definitief
+// verwijderen (zie AccountDeletionController).
+Schedule::command('accounts:purge')->dailyAt('04:20');

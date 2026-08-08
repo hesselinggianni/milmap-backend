@@ -64,6 +64,18 @@ class LoginController extends Controller
             ]);
         }
 
+        // Weer ingelogd binnen de bedenktijd = spijt. Het verwijderverzoek
+        // vervalt dan; dat is de hele reden dat er 90 dagen tussen zit (zie
+        // AccountDeletionController). Bewust hier en niet in een middleware:
+        // het moet precies bij een geslaagde inlog gebeuren.
+        if ($user->deletion_purge_at) {
+            $user->forceFill([
+                'deletion_requested_at' => null,
+                'deletion_purge_at'     => null,
+            ])->save();
+            \Illuminate\Support\Facades\Log::info('[account] verwijderverzoek geannuleerd door inloggen', ['user_id' => $user->id]);
+        }
+
         // Scope regular-login tokens to the 'user' ability so they can never
         // satisfy tokenCan('admin') — admin routes require a token minted via
         // the admin login flow (see AdminAuth middleware).
