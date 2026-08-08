@@ -113,6 +113,13 @@ Route::prefix('v1')->middleware(['api'])->group(function () {
     Route::post('/logout', [LogoutController::class, 'destroy'])->middleware('auth:sanctum');
     Route::post('/logout-all', [LogoutController::class, 'logoutFromAllDevices'])->middleware('auth:sanctum');
 
+    // Draagt de ingelogde app-sessie over naar de systeembrowser (externe
+    // checkout, zie externalBilling.js) — zie HandoffController voor de reden.
+    Route::post('/auth/handoff', [\App\Http\Controllers\Auth\HandoffController::class, 'create'])
+        ->middleware('auth:sanctum');
+    Route::post('/auth/handoff/exchange', [\App\Http\Controllers\Auth\HandoffController::class, 'exchange'])
+        ->middleware('throttle:20,1');
+
     // Account verwijderen door de gebruiker zelf (Apple-reviewvereiste: wie
     // zich in de app kan registreren, moet zich daar ook kunnen verwijderen).
     // Drietraps — code per mail, wachtwoord, bevestigingswoord — en daarna 90
