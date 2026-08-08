@@ -52,8 +52,22 @@
     </tr>
     @if(!empty($referrer))
     <tr>
-      <td style="padding:11px 16px;font-size:12.5px;color:#94a3b8;font-weight:500;">Herkomst</td>
-      <td style="padding:11px 16px;font-size:13px;color:#f8fafc;word-break:break-all;">{{ $referrer }}</td>
+      <td style="padding:11px 16px;font-size:12.5px;color:#94a3b8;{{ (!empty($useCase) || !empty($interests)) ? 'border-bottom:1px solid #1a2433;' : '' }}font-weight:500;">Herkomst</td>
+      <td style="padding:11px 16px;font-size:13px;color:#f8fafc;{{ (!empty($useCase) || !empty($interests)) ? 'border-bottom:1px solid #1a2433;' : '' }}word-break:break-all;">{{ $referrer }}</td>
+    </tr>
+    @endif
+    {{-- Antwoorden uit de start-funnel. Ontbreken bij een directe registratie
+         of een uitnodiging; dan tonen we de rijen helemaal niet. --}}
+    @if(!empty($useCase))
+    <tr>
+      <td style="padding:11px 16px;font-size:12.5px;color:#94a3b8;{{ !empty($interests) ? 'border-bottom:1px solid #1a2433;' : '' }}font-weight:500;">Gebruiksdoel</td>
+      <td style="padding:11px 16px;font-size:13px;color:#f8fafc;{{ !empty($interests) ? 'border-bottom:1px solid #1a2433;' : '' }}">{{ $useCase }}</td>
+    </tr>
+    @endif
+    @if(!empty($interests))
+    <tr>
+      <td style="padding:11px 16px;font-size:12.5px;color:#94a3b8;font-weight:500;">Interesse in</td>
+      <td style="padding:11px 16px;font-size:13px;color:#f8fafc;">{{ implode(', ', $interests) }}</td>
     </tr>
     @endif
   </table>

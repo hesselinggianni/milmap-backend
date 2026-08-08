@@ -21,7 +21,7 @@
 
   <!-- Preheader (verborgen) -->
   <div style="display:none;max-height:0;overflow:hidden;opacity:0;">
-    Je MilMap-app staat klaar om te downloaden — en je krijgt 50% korting op je eerste jaar.
+    Je MilMap-app staat klaar om te downloaden — en je krijgt 20% korting op je eerste jaar.
   </div>
 
   <table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0" style="background-color:#f5f5f7;">
@@ -146,7 +146,7 @@
                             Jouw persoonlijke code
                           </p>
                           <p style="margin:0 0 14px;font-size:22px;font-weight:700;letter-spacing:-0.01em;color:{{ $ink }};">
-                            50% korting op je eerste jaar
+                            20% korting op je eerste jaar
                           </p>
 
                           <table role="presentation" cellpadding="0" cellspacing="0" border="0" align="center">

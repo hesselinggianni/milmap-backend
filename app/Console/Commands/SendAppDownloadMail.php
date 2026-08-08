@@ -9,7 +9,7 @@ use Illuminate\Support\Facades\Mail;
 
 /**
  * Stuur de app-download-mail: App Store/Play-knoppen, een app-frame, "Download
- * nu" en een unieke Stripe-promotiecode (50% op het jaarabonnement, 1x, 1 jaar
+ * nu" en een unieke Stripe-promotiecode (20% op het jaarabonnement, 1x, 1 jaar
  * geldig).
  *
  *   php artisan milmap:app-download jan@example.com --name="Jan"
@@ -22,7 +22,7 @@ class SendAppDownloadMail extends Command
                             {--name= : Voornaam voor de aanhef}
                             {--no-coupon : Verstuur zonder Stripe-kortingscode}';
 
-    protected $description = 'Verstuur de app-download-mail met een unieke 50%-jaarcoupon (Stripe).';
+    protected $description = 'Verstuur de app-download-mail met een unieke 20%-jaarcoupon (Stripe).';
 
     public function handle(LaunchCouponService $coupons): int
     {
@@ -33,7 +33,7 @@ class SendAppDownloadMail extends Command
 
         if (! $this->option('no-coupon')) {
             try {
-                $result = $coupons->createYearlyHalfOffCode($email);
+                $result = $coupons->createYearlyDiscountCode($email);
                 $code = $result['code'];
                 $expiresLabel = $result['expires_at']->locale('nl')->isoFormat('D MMMM YYYY');
                 $this->info("Unieke code aangemaakt: {$code} (geldig t/m {$expiresLabel})");

@@ -43,6 +43,13 @@ return [
         ],
     ],
 
+    // First-party analytics (app_events + site_events): IP-adressen die nooit
+    // meetellen, naast loopback (bv. het IP van waaruit het team zelf de
+    // productie-app test). Kommagescheiden lijst, leeg = niemand uitgesloten.
+    'analytics' => [
+        'excluded_ips' => env('ANALYTICS_EXCLUDED_IPS', ''),
+    ],
+
     // Gedeeld geheim waarmee de headless deploy-app de /deploy/* endpoints
     // benadert (header: X-Deploy-Token). Niet gezet → endpoints weigeren alles.
     'deploy' => [

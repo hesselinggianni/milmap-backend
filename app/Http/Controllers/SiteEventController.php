@@ -39,6 +39,12 @@ class SiteEventController extends Controller
             return response()->noContent();
         }
 
+        // Handmatig uitgesloten IP's (ANALYTICS_EXCLUDED_IPS, bv. het team-IP
+        // dat milmap.nl zelf bezoekt) tellen nooit mee.
+        if (\App\Support\AnalyticsGuard::isExcluded($request)) {
+            return response()->noContent();
+        }
+
         $data = $request->validate([
             'event'        => 'required|string|max:40',
             'path'         => 'required|string|max:300',

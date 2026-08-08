@@ -34,11 +34,11 @@ class AppEventController extends Controller
             return response()->noContent();
         }
 
-        // Lokale ontwikkeling (backend + app op dezelfde machine) telt nooit
-        // mee — vangnet naast de client-side uitsluiting van dev/localhost in
-        // services/analytics.js (trackingEnabled). Op productie zit nginx
-        // ervoor en is het request-IP nooit loopback.
-        if (in_array($request->ip(), ['127.0.0.1', '::1'], true)) {
+        // Lokale ontwikkeling (loopback) én handmatig uitgesloten IP's
+        // (ANALYTICS_EXCLUDED_IPS, bv. het team-IP dat productie test) tellen
+        // nooit mee — vangnet naast de client-side uitsluiting van
+        // dev/localhost in services/analytics.js (trackingEnabled).
+        if (\App\Support\AnalyticsGuard::isExcluded($request)) {
             return response()->noContent();
         }
 
@@ -49,6 +49,7 @@ class AppEventController extends Controller
             'events.*.label'      => 'nullable|string|max:120',
             'events.*.platform'   => 'nullable|string|in:web,ios,android,desktop',
             'events.*.authed'     => 'nullable|boolean',
+            'events.*.is_demo'    => 'nullable|boolean',
             'events.*.locale'     => 'nullable|string|max:5',
             'events.*.meta'       => 'nullable|array',
             'events.*.utm_source'   => 'nullable|string|max:120',
@@ -65,6 +66,12 @@ class AppEventController extends Controller
 
         $rows = [];
         foreach ($data['events'] as $e) {
+            // Extra vangnet naast setTrackingUser() in analytics.js (dat de
+            // buffer al leegt zodra is_demo bekend is): mocht er tóch een
+            // demo-event doorheen glippen, dan slaan we 'm hier niet op.
+            if (!empty($e['is_demo'])) {
+                continue;
+            }
             $rows[] = [
                 'type'         => $e['type'],
                 'name'         => $this->normalizeName($e['type'], $e['name']),

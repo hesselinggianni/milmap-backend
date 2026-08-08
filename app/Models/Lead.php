@@ -10,11 +10,14 @@ class Lead extends Model
 
     protected $fillable = [
         'email', 'source', 'utm_source', 'ip_address', 'user_agent', 'platform', 'language', 'notified_at', 'converted_at',
+        'use_case', 'interests', 'funnel_step',
     ];
 
     protected $casts = [
         'notified_at'  => 'datetime',
         'converted_at' => 'datetime',
+        'interests'    => 'array',
+        'funnel_step'  => 'integer',
     ];
 
     /**

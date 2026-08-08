@@ -4,6 +4,7 @@ namespace App\Models;
 
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
+use Illuminate\Database\Eloquent\Relations\HasMany;
 
 /**
  * Eén opgenomen GPS-activiteit (hardlopen/fietsen/wandelen) van een gebruiker.
@@ -16,6 +17,7 @@ class Activity extends Model
         'user_id',
         'type',
         'title',
+        'notes',
         'started_at',
         'ended_at',
         'distance_m',

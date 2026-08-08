@@ -27,7 +27,14 @@ class OtaUpdateController extends Controller
     {
         $platform = strtolower((string) $request->input('platform', 'all'));
         $channel  = (string) $request->input('channel', 'production');
-        $current  = (string) $request->input('version_name', '');
+        // LET OP: `version_name` is de vaste NATIVE marketing-versie (bv. "1.8"),
+        // die blijft ongewijzigd tussen OTA-releases in — vergelijk dus NOOIT
+        // daartegen (dat maakt een nieuwe OTA-bundel met dezelfde marketing-
+        // versie onzichtbaar: "geen update" terwijl er wél een nieuwe bundel is).
+        // `version_build` is de versie-string van de OP DIT MOMENT actieve
+        // web-bundel (native baseline totdat een OTA-update is toegepast) —
+        // dát is het juiste vergelijkingsveld.
+        $current  = (string) $request->input('version_build', $request->input('version_name', ''));
 
         $build = OtaBuild::query()
             ->where('active', true)

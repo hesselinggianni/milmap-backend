@@ -40,6 +40,15 @@ class LeadController extends Controller
             // toch een Duitse mail krijgen. Alleen de taalcode zelf (2
             // letters); regio's (en-US) worden vóór verzenden al afgekapt.
             'locale'     => ['nullable', 'string', 'regex:/^[a-z]{2}$/'],
+            // Antwoorden uit de start-funnel. Komen NA de eerste call binnen
+            // (de lead wordt al bij het e-mailadres aangemaakt, stap 1), dus
+            // ze moeten ook een bestaande lead kunnen bijwerken.
+            'use_case'    => ['nullable', 'string', 'max:120'],
+            'interests'   => ['nullable', 'array', 'max:20'],
+            'interests.*' => ['string', 'max:120'],
+            // Hoogst bereikte stap in de trechter (1..4): laat zien waar
+            // iemand afhaakt.
+            'funnel_step' => ['nullable', 'integer', 'min:1', 'max:4'],
         ]);
 
         $email = mb_strtolower(trim($data['email']));
@@ -55,6 +64,25 @@ class LeadController extends Controller
                 'language'   => $data['locale'] ?? null,
             ],
         );
+
+        // Funnel-antwoorden bijwerken, ook (juist) op een lead die er al was.
+        // Alleen overschrijven wat daadwerkelijk is meegestuurd — een latere
+        // call zonder antwoorden mag eerder gegeven antwoorden niet wissen.
+        $update = [];
+        if (array_key_exists('use_case', $data) && $data['use_case'] !== null) {
+            $update['use_case'] = $data['use_case'];
+        }
+        if (array_key_exists('interests', $data) && $data['interests'] !== null) {
+            $update['interests'] = array_values($data['interests']);
+        }
+        // Alleen omhoog: terugbladeren in de trechter mag de score niet
+        // verlagen, anders meet je de laatste stap i.p.v. hoe ver iemand kwam.
+        if (! empty($data['funnel_step']) && $data['funnel_step'] > (int) $lead->funnel_step) {
+            $update['funnel_step'] = (int) $data['funnel_step'];
+        }
+        if ($update) {
+            $lead->fill($update)->save();
+        }
 
         // Nieuwe leads ook in de Sales-pijplijn zetten (fase "Lead") zodat
         // sales ze direct kan opvolgen vanuit admin → Sales / CRM.
