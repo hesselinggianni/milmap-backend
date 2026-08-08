@@ -25,6 +25,39 @@ use Illuminate\Validation\Rule;
 class LeadController extends Controller
 {
     /**
+     * Talen waarin de lead-mails bestaan (zie LeadFinishAccountMail::STRINGS).
+     * Een andere taal opslaan heeft geen zin: die lead wordt tóch in het
+     * Engels gemaild, en dan liegt het taalveld in de admin.
+     */
+    private const MAIL_TALEN = ['nl', 'en', 'de', 'es', 'fr'];
+
+    /**
+     * In welke taal spreken we deze bezoeker aan?
+     *  1. wat de client meestuurt — de app-/apparaattaal (zie leadLocale.js)
+     *     of de browsertaal op de site (detectVisitorLocale.ts);
+     *  2. anders de Accept-Language-header, op volgorde van voorkeur — vangt
+     *     oudere app-builds en clients die niets meesturen op;
+     *  3. anders Engels. Nooit stilzwijgend Nederlands: dat leest voor een
+     *     buitenlandse lead als een mail die niet voor hem bedoeld is.
+     */
+    private static function taalVanBezoeker(Request $request, ?string $meegestuurd): string
+    {
+        $code = strtolower(substr((string) $meegestuurd, 0, 2));
+        if (in_array($code, self::MAIL_TALEN, true)) {
+            return $code;
+        }
+
+        foreach ($request->getLanguages() as $taal) {
+            $basis = strtolower(substr(str_replace('_', '-', (string) $taal), 0, 2));
+            if (in_array($basis, self::MAIL_TALEN, true)) {
+                return $basis;
+            }
+        }
+
+        return 'en';
+    }
+
+    /**
      * POST /api/v1/leads — publiek (throttled). Idempotent: bestaande e-mail
      * krijgt 200 ok zonder error, zodat een dubbele tap niet vervelend voelt.
      */
@@ -61,7 +94,7 @@ class LeadController extends Controller
                 'ip_address' => $request->ip(),
                 'user_agent' => substr((string) $request->userAgent(), 0, 255),
                 'platform'   => self::detectPlatform((string) $request->userAgent()),
-                'language'   => $data['locale'] ?? null,
+                'language'   => self::taalVanBezoeker($request, $data['locale'] ?? null),
             ],
         );
 
@@ -79,6 +112,12 @@ class LeadController extends Controller
         // verlagen, anders meet je de laatste stap i.p.v. hoe ver iemand kwam.
         if (! empty($data['funnel_step']) && $data['funnel_step'] > (int) $lead->funnel_step) {
             $update['funnel_step'] = (int) $data['funnel_step'];
+        }
+        // Lead van vóór deze feature (of van een oude app-build die nog geen
+        // taal meestuurde): alsnog invullen zodra we 'm zien. Een al bekende
+        // taal blijft staan — die is vastgelegd toen de bezoeker er was.
+        if (! in_array($lead->language, self::MAIL_TALEN, true)) {
+            $update['language'] = self::taalVanBezoeker($request, $data['locale'] ?? null);
         }
         if ($update) {
             $lead->fill($update)->save();
