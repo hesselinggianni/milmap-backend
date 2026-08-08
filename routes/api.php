@@ -321,7 +321,10 @@ Route::prefix('v1')->middleware(['api'])->group(function () {
         Route::get('/activities', [\App\Http\Controllers\ActivityController::class, 'index']);
         Route::post('/activities', [\App\Http\Controllers\ActivityController::class, 'store']);
         Route::get('/activities/{id}', [\App\Http\Controllers\ActivityController::class, 'show']);
+        Route::put('/activities/{id}', [\App\Http\Controllers\ActivityController::class, 'update']);
         Route::delete('/activities/{id}', [\App\Http\Controllers\ActivityController::class, 'destroy']);
+        Route::post('/activities/{id}/photos', [\App\Http\Controllers\ActivityController::class, 'uploadPhoto']);
+        Route::delete('/activities/{id}/photos/{photoId}', [\App\Http\Controllers\ActivityController::class, 'deletePhoto']);
 
         // Literal route MUST come before /users/{id} or "search" is captured as an id.
         Route::get('/users/search', [MapCollaboratorController::class, 'searchUsers']);

@@ -49,4 +49,9 @@ class Activity extends Model
     {
         return $this->belongsTo(User::class);
     }
+
+    public function photos(): HasMany
+    {
+        return $this->hasMany(ActivityPhoto::class);
+    }
 }

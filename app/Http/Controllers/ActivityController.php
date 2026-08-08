@@ -31,12 +31,14 @@ class ActivityController extends Controller
     }
 
     /**
-     * Eén activiteit incl. volledig punten-track.
+     * Eén activiteit incl. volledig punten-track + foto's.
      * GET /api/v1/activities/{id}
      */
     public function show($id)
     {
-        $activity = Activity::where('user_id', Auth::id())->findOrFail($id);
+        $activity = Activity::where('user_id', Auth::id())
+            ->with('photos')
+            ->findOrFail($id);
 
         return response()->json(['activity' => $activity]);
     }
@@ -77,6 +79,7 @@ class ActivityController extends Controller
             // altijd op een 422 en werd nooit opgeslagen.
             'type' => ['required', 'string', 'in:run,ride,walk,drive'],
             'title' => ['nullable', 'string', 'max:255'],
+            'notes' => ['nullable', 'string', 'max:4000'],
             'started_at' => ['required', 'date'],
             'ended_at' => ['nullable', 'date'],
             'distance_m' => ['required', 'numeric', 'min:0'],
@@ -113,6 +116,74 @@ class ActivityController extends Controller
         ]);
 
         return response()->json(['activity' => $activity->makeHidden('points')], 201);
+    }
+
+    /**
+     * Titel/omschrijving achteraf wijzigen (bv. na het bekijken van de kaart
+     * alsnog een naam geven). Punten/stats blijven ongemoeid — alleen deze
+     * twee velden zijn hier bedoeld te wijzigen.
+     * PUT /api/v1/activities/{id}
+     */
+    public function update(Request $request, $id)
+    {
+        $activity = Activity::where('user_id', Auth::id())->findOrFail($id);
+
+        $data = $request->validate([
+            'title' => ['nullable', 'string', 'max:255'],
+            'notes' => ['nullable', 'string', 'max:4000'],
+        ]);
+
+        $activity->update($data);
+
+        return response()->json(['activity' => $activity->makeHidden('points')]);
+    }
+
+    /**
+     * Upload een foto bij een opgeslagen activiteit (max 6 per activiteit).
+     * POST /api/v1/activities/{id}/photos
+     */
+    public function uploadPhoto(Request $request, $id)
+    {
+        $activity = Activity::where('user_id', Auth::id())->findOrFail($id);
+
+        if (!$request->hasFile('image')) {
+            return response()->json(['message' => 'Geen afbeelding geupload'], 400);
+        }
+
+        if ($activity->photos()->count() >= 6) {
+            return response()->json(['message' => 'Maximaal 6 foto\'s per activiteit'], 422);
+        }
+
+        try {
+            $uploadService = new \App\Services\ImageUploadService();
+            $result = $uploadService->storeForActivity($request->file('image'), $activity->id);
+
+            $photo = $activity->photos()->create([
+                'url' => $result['url'],
+                'filename' => $result['filename'],
+            ]);
+
+            return response()->json(['photo' => $photo], 201);
+        } catch (\Exception $e) {
+            $statusCode = (int) $e->getCode() ?: 422;
+            return response()->json(['message' => $e->getMessage()], $statusCode);
+        }
+    }
+
+    /**
+     * Verwijder een foto van een eigen activiteit.
+     * DELETE /api/v1/activities/{id}/photos/{photoId}
+     */
+    public function deletePhoto($id, $photoId)
+    {
+        $activity = Activity::where('user_id', Auth::id())->findOrFail($id);
+        $photo = $activity->photos()->findOrFail($photoId);
+
+        $uploadService = new \App\Services\ImageUploadService();
+        $uploadService->deleteForActivity($activity->id, $photo->filename);
+        $photo->delete();
+
+        return response()->json(['deleted' => true]);
     }
 
     /**

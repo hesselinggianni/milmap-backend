@@ -74,6 +74,48 @@ class ImageUploadService
     }
 
     /**
+     * Upload a photo attached to a saved activity (opgenomen route).
+     *
+     * @param UploadedFile $file
+     * @param int|string $activityId
+     * @return array ['url' => string, 'filename' => string]
+     * @throws \Exception
+     */
+    public function storeForActivity(UploadedFile $file, $activityId): array
+    {
+        $this->validateFile($file);
+
+        $extension = strtolower($file->getClientOriginalExtension());
+        $filename = now()->format('YmdHis') . '-' . Str::random(8) . '.' . $extension;
+
+        $path = "activities/{$activityId}/{$filename}";
+        Storage::disk('public')->put($path, $file->getContent());
+
+        return [
+            'filename' => $filename,
+            'url' => Storage::disk('public')->url($path),
+        ];
+    }
+
+    /**
+     * Delete a photo attached to an activity.
+     *
+     * @param int|string $activityId
+     * @param string $filename
+     * @return bool
+     */
+    public function deleteForActivity($activityId, string $filename): bool
+    {
+        $path = "activities/{$activityId}/{$filename}";
+
+        if (Storage::disk('public')->exists($path)) {
+            return Storage::disk('public')->delete($path);
+        }
+
+        return true;
+    }
+
+    /**
      * Validate uploaded file
      *
      * @param UploadedFile $file
