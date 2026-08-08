@@ -97,6 +97,7 @@ return array(
     'GrahamCampbell\\ResultType\\' => array($vendorDir . '/graham-campbell/result-type/src'),
     'Fruitcake\\Cors\\' => array($vendorDir . '/fruitcake/php-cors/src'),
     'FontLib\\' => array($vendorDir . '/phenx/php-font-lib/src/FontLib'),
+    'Firebase\\JWT\\' => array($vendorDir . '/firebase/php-jwt/src'),
     'Faker\\' => array($vendorDir . '/fakerphp/faker/src/Faker'),
     'Evenement\\' => array($vendorDir . '/evenement/evenement/src'),
     'Egulias\\EmailValidator\\' => array($vendorDir . '/egulias/email-validator/src'),

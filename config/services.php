@@ -77,4 +77,16 @@ return [
         'key' => env('PAGESPEED_API_KEY'),
     ],
 
+
+    // Inloggen met Apple. bundle_id = de App ID van de iOS-app (audience van
+    // tokens uit de app), service_id = de Services ID voor het web. Sleutel en
+    // team zijn nodig zodra we ook server-to-server met Apple praten
+    // (token-intrekking bij accountverwijdering).
+    'apple' => [
+        'bundle_id'  => env('APPLE_BUNDLE_ID', 'nl.milmap.app'),
+        'service_id' => env('APPLE_SERVICE_ID'),
+        'team_id'    => env('APPLE_TEAM_ID'),
+        'key_id'     => env('APPLE_KEY_ID'),
+        'private_key' => env('APPLE_PRIVATE_KEY'),
+    ],
 ];
