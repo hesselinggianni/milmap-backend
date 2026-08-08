@@ -89,4 +89,14 @@ return [
         'key_id'     => env('APPLE_KEY_ID'),
         'private_key' => env('APPLE_PRIVATE_KEY'),
     ],
+
+    // Inloggen met Google. Elk platform (web/iOS/Android) heeft in Google
+    // Cloud Console een EIGEN OAuth-client-id — een ID-token draagt als
+    // audience precies het client-id waarmee het is aangevraagd. We
+    // accepteren een token dus als de audience een van deze drie is.
+    'google' => [
+        'web_client_id'     => env('GOOGLE_WEB_CLIENT_ID'),
+        'ios_client_id'     => env('GOOGLE_IOS_CLIENT_ID'),
+        'android_client_id' => env('GOOGLE_ANDROID_CLIENT_ID'),
+    ],
 ];

@@ -114,6 +114,9 @@ Route::prefix('v1')->middleware(['api'])->group(function () {
     // ingelogd. Beperkt: de verificatie doet een externe call naar Apple.
     Route::post('/auth/apple', [\App\Http\Controllers\Auth\AppleAuthController::class, 'login'])
         ->middleware('throttle:20,1');
+    // Inloggen/registreren met Google — zelfde opzet als Apple hierboven.
+    Route::post('/auth/google', [\App\Http\Controllers\Auth\GoogleAuthController::class, 'login'])
+        ->middleware('throttle:20,1');
 
     Route::post('/logout', [LogoutController::class, 'destroy'])->middleware('auth:sanctum');
     Route::post('/logout-all', [LogoutController::class, 'logoutFromAllDevices'])->middleware('auth:sanctum');
