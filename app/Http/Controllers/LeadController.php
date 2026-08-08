@@ -46,9 +46,9 @@ class LeadController extends Controller
             'use_case'    => ['nullable', 'string', 'max:120'],
             'interests'   => ['nullable', 'array', 'max:20'],
             'interests.*' => ['string', 'max:120'],
-            // Hoogst bereikte stap in de trechter (1..4): laat zien waar
-            // iemand afhaakt.
-            'funnel_step' => ['nullable', 'integer', 'min:1', 'max:4'],
+            // Hoogst bereikte stap in de trechter (1..5): laat zien waar
+            // iemand afhaakt. Stap 5 is het aanmaken van het account.
+            'funnel_step' => ['nullable', 'integer', 'min:1', 'max:5'],
         ]);
 
         $email = mb_strtolower(trim($data['email']));
@@ -197,6 +197,7 @@ class LeadController extends Controller
             'source'   => 'nullable|string|max:64',
             'platform' => 'nullable|in:ios,android,web',
             'pending'  => 'nullable|in:0,1',
+            'step'     => 'nullable|integer|min:1|max:5',
             'page'     => 'nullable|integer|min:1',
             'per'      => 'nullable|integer|min:1|max:200',
         ]);
@@ -216,6 +217,15 @@ class LeadController extends Controller
         if ($request->query('pending') === '1') {
             $q->whereNull('notified_at');
         }
+        // Filteren op afhaakpunt: "laat me iedereen zien die niet verder kwam
+        // dan stap 2". Stap 1 vangt ook de leads van vóór deze meting op
+        // (funnel_step is dan NULL).
+        if ($step = $request->query('step')) {
+            $step = (int) $step;
+            $step === 1
+                ? $q->where(fn ($w) => $w->whereNull('funnel_step')->orWhere('funnel_step', 1))
+                : $q->where('funnel_step', $step);
+        }
 
         $page = $q->orderByDesc('id')->paginate($per);
 
@@ -230,6 +240,11 @@ class LeadController extends Controller
                 'language'    => $l->language,
                 'notified_at' => optional($l->notified_at)->toIso8601String(),
                 'created_at'  => optional($l->created_at)->toIso8601String(),
+                // Onboarding: hoe ver kwam deze lead, en wat gaf hij op.
+                'funnel_step' => $l->funnel_step ? (int) $l->funnel_step : 1,
+                'use_case'    => $l->use_case,
+                'interests'   => $l->interests ?: [],
+                'converted_at' => optional($l->converted_at)->toIso8601String(),
             ])->values(),
             'meta' => [
                 'total' => $page->total(),
@@ -237,6 +252,70 @@ class LeadController extends Controller
                 'per'   => $page->perPage(),
                 'pages' => $page->lastPage(),
             ],
+        ]);
+    }
+
+    /**
+     * GET /api/v1/admin/leads/funnel — hoeveel leads bleven op welke stap
+     * steken, plus de meest genoemde gebruiksdoelen en interesses.
+     *
+     * `funnel_step` is de HOOGST bereikte stap. Leads van vóór deze meting
+     * hebben NULL en tellen als stap 1 — ze kwamen immers minstens tot het
+     * invullen van hun e-mailadres.
+     */
+    public function adminFunnel()
+    {
+        $STAPPEN = 5;
+
+        $perStap = Lead::selectRaw('COALESCE(funnel_step, 1) as stap, COUNT(*) as aantal')
+            ->groupBy('stap')
+            ->pluck('aantal', 'stap');
+
+        $totaal = (int) $perStap->sum();
+
+        // Twee getallen per stap: hoeveel mensen die stap BEREIKTEN (cumulatief
+        // van boven af) en hoeveel er precies daar zijn blijven steken. Het
+        // eerste vertelt je het bereik, het tweede waar je verliest.
+        $stappen = [];
+        for ($i = 1; $i <= $STAPPEN; $i++) {
+            $bereikt = 0;
+            for ($j = $i; $j <= $STAPPEN; $j++) {
+                $bereikt += (int) ($perStap[$j] ?? 0);
+            }
+            $gestrand = (int) ($perStap[$i] ?? 0);
+            $stappen[] = [
+                'step'          => $i,
+                'reached'       => $bereikt,
+                'dropped'       => $gestrand,
+                'reached_pct'   => $totaal > 0 ? round($bereikt / $totaal * 100, 1) : 0.0,
+                'drop_pct'      => $bereikt > 0 ? round($gestrand / $bereikt * 100, 1) : 0.0,
+            ];
+        }
+
+        $doelen = Lead::whereNotNull('use_case')
+            ->selectRaw('use_case, COUNT(*) as aantal')
+            ->groupBy('use_case')
+            ->orderByDesc('aantal')
+            ->get()
+            ->map(fn ($r) => ['label' => $r->use_case, 'count' => (int) $r->aantal]);
+
+        // Interesses staan als JSON-array per lead; in PHP tellen i.p.v. in SQL
+        // houdt dit databank-onafhankelijk (geen JSON_TABLE nodig).
+        $telling = [];
+        foreach (Lead::whereNotNull('interests')->pluck('interests') as $lijst) {
+            foreach ((array) $lijst as $item) {
+                $telling[$item] = ($telling[$item] ?? 0) + 1;
+            }
+        }
+        arsort($telling);
+        $interesses = collect($telling)->map(fn ($n, $label) => ['label' => $label, 'count' => $n])->values();
+
+        return response()->json([
+            'total'      => $totaal,
+            'converted'  => Lead::whereNotNull('converted_at')->count(),
+            'steps'      => $stappen,
+            'use_cases'  => $doelen,
+            'interests'  => $interesses,
         ]);
     }
 

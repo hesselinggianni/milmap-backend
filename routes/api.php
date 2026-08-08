@@ -806,6 +806,9 @@ Route::prefix('v1')->middleware(['api'])->group(function () {
 
             // ── Leads (marketing signups via milmap.nl/app) ─────────────
             Route::get   ('/admin/leads',                  [LeadController::class, 'adminIndex']);
+            // Vóór /admin/leads/{id} zou ook goed gaan (geen conflict), maar
+            // hier gegroepeerd bij de lijst omdat het dezelfde data samenvat.
+            Route::get   ('/admin/leads/funnel',           [LeadController::class, 'adminFunnel']);
             Route::post  ('/admin/leads/{id}/mark-notified', [LeadController::class, 'adminMarkNotified']);
             Route::post  ('/admin/leads/{id}/send-download-mail', [LeadController::class, 'adminSendDownloadMail']);
             Route::delete('/admin/leads/{id}',              [LeadController::class, 'adminDestroy']);
