@@ -71,6 +71,9 @@ class MapWaypointController extends Controller
             'label'    => 'nullable|string|max:200',
             'color'    => 'nullable|string|max:20',
             'icon'     => 'nullable|string|max:30',
+            // Militair waypoint-type (start/end/rally/erv/hlz/ccp/op/checkpoint) —
+            // vrij string-veld, zie migratie 2026_08_08_140000.
+            'type'     => 'nullable|string|max:30',
         ]);
 
         $waypoint = MapWaypoint::updateOrCreate(
@@ -83,6 +86,7 @@ class MapWaypointController extends Controller
                 'label'   => $data['label'] ?? null,
                 'color'   => $data['color'] ?? '#2b7fff',
                 'icon'    => $data['icon'] ?? 'pin',
+                'type'    => $data['type'] ?? null,
             ]
         );
 
@@ -114,6 +118,7 @@ class MapWaypointController extends Controller
             'label' => 'nullable|string|max:200',
             'color' => 'nullable|string|max:20',
             'icon'  => 'nullable|string|max:30',
+            'type'  => 'nullable|string|max:30',
         ]);
 
         $waypoint->update($data);

@@ -11,7 +11,7 @@ class MapWaypoint extends Model
 
     protected $fillable = [
         'map_id', 'user_id', 'local_id',
-        'lon', 'lat', 'mgrs', 'label', 'color', 'icon',
+        'lon', 'lat', 'mgrs', 'label', 'color', 'icon', 'type',
     ];
 
     protected $casts = [
@@ -47,6 +47,7 @@ class MapWaypoint extends Model
             'label'    => $this->label,
             'color'    => $this->color,
             'icon'     => $this->icon,
+            'type'     => $this->type,
             'images'   => $this->relationLoaded('images')
                 ? $this->images->map->toApiArray()->values()->all()
                 : [],
