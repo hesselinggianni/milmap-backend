@@ -269,6 +269,12 @@ Route::prefix('v1')->middleware(['api'])->group(function () {
     Route::get('/bio-links', [\App\Http\Controllers\BioLinkController::class, 'index'])
         ->middleware('throttle:120,1');
 
+    // Kant-en-klare iOS-opdrachten voor de galerij in de app (Meer → Siri &
+    // Opdrachten). Publiek: het zijn openbare iCloud-links. Beheer onder
+    // /admin/shortcut-templates.
+    Route::get('/shortcut-templates', [\App\Http\Controllers\ShortcutTemplateController::class, 'index'])
+        ->middleware('throttle:60,1');
+
     // ── Campagne-mail: publieke afmeld- + tracking-routes ───────────────
     // Bewust hier (api.php) i.p.v. web.php: de SPA-catch-all (/{any}) in web.php
     // zou anders elke GET opslokken. Token komt uit mail_sends.token.
@@ -793,6 +799,11 @@ Route::prefix('v1')->middleware(['api'])->group(function () {
             Route::post  ('/admin/bio-links',           [\App\Http\Controllers\AdminBioLinkController::class, 'upsert']);
             Route::post  ('/admin/bio-links/reorder',   [\App\Http\Controllers\AdminBioLinkController::class, 'reorder']);
             Route::delete('/admin/bio-links/{id}',      [\App\Http\Controllers\AdminBioLinkController::class, 'destroy']);
+
+            Route::get   ('/admin/shortcut-templates',         [\App\Http\Controllers\AdminShortcutTemplateController::class, 'index']);
+            Route::post  ('/admin/shortcut-templates',         [\App\Http\Controllers\AdminShortcutTemplateController::class, 'upsert']);
+            Route::post  ('/admin/shortcut-templates/reorder', [\App\Http\Controllers\AdminShortcutTemplateController::class, 'reorder']);
+            Route::delete('/admin/shortcut-templates/{id}',    [\App\Http\Controllers\AdminShortcutTemplateController::class, 'destroy']);
 
             // In-app notificatie-feed voor de admin-app (nieuwe mail / support /
             // feature requests). Onder de admin-prefix zodat de frontend-
