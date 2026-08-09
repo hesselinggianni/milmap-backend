@@ -21,6 +21,59 @@ class MapController extends Controller
     }
 
     /**
+     * De vorm van elke kaart: alleen de coördinaten van de waypoints, voor het
+     * kaartje in de iOS-widget.
+     *
+     * Waarom een eigen endpoint en niet gewoon myMaps uitbreiden: die lijst
+     * voedt ook de kaarten-sheet in de app, en die zou dan bij iedereen zwaarder
+     * worden voor een functie die alleen de widget gebruikt.
+     *
+     * Bewust alleen id, label en positie — een widget van vier centimeter doet
+     * niets met kleuren, iconen of notities, en alles wat hier extra in zit gaat
+     * mee over de lijn én de App Group in.
+     */
+    public function widgetShapes()
+    {
+        // Meer kaarten dan iemand in een widget kan kiezen heeft geen zin; de
+        // meest recente zijn de kaarten waar je mee werkt.
+        $mapIds = Map::where('owner_id', Auth::id())
+            ->latest()
+            ->limit(self::WIDGET_MAX_MAPS)
+            ->pluck('id');
+
+        if ($mapIds->isEmpty()) {
+            return response()->json(['maps' => []]);
+        }
+
+        // Eén query voor alles, daarna in PHP groeperen en aftoppen. Per kaart
+        // apart bevragen zou N queries kosten voor een lijst die per definitie
+        // klein moet blijven.
+        $punten = \App\Models\MapWaypoint::whereIn('map_id', $mapIds)
+            ->orderBy('id')
+            ->get(['map_id', 'label', 'lat', 'lon'])
+            ->groupBy('map_id');
+
+        $uit = $mapIds->map(function ($id) use ($punten) {
+            $lijst = ($punten[$id] ?? collect())
+                ->take(self::WIDGET_MAX_POINTS)
+                ->map(fn ($w) => [
+                    'lat'  => (float) $w->lat,
+                    'lon'  => (float) $w->lon,
+                    'naam' => $w->label ?: null,
+                ])
+                ->values();
+
+            return ['id' => (string) $id, 'points' => $lijst];
+        });
+
+        return response()->json(['maps' => $uit]);
+    }
+
+    /** Hoeveel kaarten en punten er hoogstens meegaan naar de widget. */
+    private const WIDGET_MAX_MAPS = 25;
+    private const WIDGET_MAX_POINTS = 80;
+
+    /**
      * Extra alias voor frontend
      */
     public function myMaps()

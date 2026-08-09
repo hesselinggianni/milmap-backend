@@ -46,6 +46,14 @@ class Map extends Model
     }
 
     /**
+     * Losse waypoints op deze kaart (niet die van een routekaart).
+     */
+    public function waypoints()
+    {
+        return $this->hasMany(MapWaypoint::class, 'map_id');
+    }
+
+    /**
      * Get all collaborators for this map.
      */
     public function collaborators()

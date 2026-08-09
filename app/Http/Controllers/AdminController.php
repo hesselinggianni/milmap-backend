@@ -657,14 +657,38 @@ class AdminController extends Controller
      * DELETE /api/v1/admin/client-errors
      * Clear the captured front-end error log.
      */
-    public function clearClientErrors()
+    public function clearClientErrors(Request $request)
     {
         $file = storage_path('logs/frontend-errors.json');
-        if (file_exists($file)) {
-            @file_put_contents($file, json_encode([]));
+        if (! file_exists($file)) {
+            return response()->json(['ok' => true, 'verwijderd' => 0]);
         }
 
-        return response()->json(['ok' => true]);
+        // Optioneel filteren op soort. Sta je in de admin op "alleen api_error"
+        // te kijken, dan hoort Wissen ook alléén die weg te halen — anders
+        // gooi je met één klik ook alles weg wat je niet zag staan.
+        $soort = $request->query('type');
+
+        if (! $soort) {
+            @file_put_contents($file, json_encode([]));
+
+            return response()->json(['ok' => true]);
+        }
+
+        $raw = @file_get_contents($file);
+        $errors = $raw ? (json_decode($raw, true) ?: []) : [];
+
+        $over = array_values(array_filter(
+            $errors,
+            fn ($e) => ($e['type'] ?? '') !== $soort
+        ));
+
+        @file_put_contents($file, json_encode($over, JSON_PRETTY_PRINT));
+
+        return response()->json([
+            'ok'          => true,
+            'verwijderd'  => count($errors) - count($over),
+        ]);
     }
 
     /**

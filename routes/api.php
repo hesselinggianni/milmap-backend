@@ -459,6 +459,8 @@ Route::prefix('v1')->middleware(['api'])->group(function () {
 
         Route::get('/maps', [MapController::class, 'index']);
         Route::get('/maps/me', [MapController::class, 'myMaps']);
+        // Alleen de coördinaten per kaart, voor het kaartje in de iOS-widget.
+        Route::get('/maps/widget-shapes', [MapController::class, 'widgetShapes']);
         // Let op: {lonlat} is een legacy coördinaat-segment dat door show() wordt
         // genegeerd. Zonder constraint slokt deze greedy route álle GET
         // sub-resources op (/maps/{id}/shares, /collaborators, /waypoints …) en
