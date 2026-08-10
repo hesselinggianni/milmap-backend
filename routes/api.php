@@ -89,7 +89,11 @@ Route::prefix('v1')->middleware(['api'])->group(function () {
     Route::post('/appsumo/redeem', [\App\Http\Controllers\AppsumoController::class, 'redeem'])
         ->middleware('throttle:10,1');
     // ── Client-side error reporting (no auth required) ───────────
+    // withoutMiddleware('throttle:api'): mag nooit wegvallen door de globale
+    // limiet — anders verdwijnen juist de meldingen die je nodig hebt om een
+    // 429-golf te diagnosticeren. Eigen throttle blijft staan als eigen cap.
     Route::post('/client-errors', [ClientErrorController::class, 'store'])
+        ->withoutMiddleware('throttle:api')
         ->middleware('throttle:30,1');
     // ── App-versie-check (no auth): native app vraagt dit bij opstart om te
     //    bepalen of er een nieuwere store-versie is en desgewenst een
