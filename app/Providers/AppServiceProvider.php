@@ -97,10 +97,14 @@ class AppServiceProvider extends ServiceProvider
 
         RateLimiter::for('api', function (Request $request) {
             // Lokaal ruimer: de app-boot doet ~10 calls, waardoor een paar
-            // pagina-navigaties binnen een minuut anders al 429 geven.
+            // pagina-navigaties binnen een minuut anders al 429 geven. Productie
+            // stond op 60/min, maar een enkele pagina-load vuurt al 15-20
+            // parallelle calls af — bij een paar navigaties/reloads binnen een
+            // minuut liep dat al vast (inclusief /client-errors, waardoor
+            // foutmeldingen niet eens meer in de admin belandden).
             return app()->environment('local', 'development')
                 ? Limit::perMinute(600)
-                : Limit::perMinute(60);
+                : Limit::perMinute(300);
         });
     }
 }
