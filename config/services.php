@@ -99,4 +99,16 @@ return [
         'ios_client_id'     => env('GOOGLE_IOS_CLIENT_ID'),
         'android_client_id' => env('GOOGLE_ANDROID_CLIENT_ID'),
     ],
+
+    // Garmin Connect Developer Program — OAuth 2.0 + PKCE. client_id/secret
+    // kunnen ook via het admin-scherm (Setting garmin_client_id/secret)
+    // worden gezet, die winnen dan van deze env-waarden. Zie
+    // App\Services\GarminService voor de endpoint-URL's (nog te VERIFYen
+    // zodra er portaaltoegang tot Garmin's developer-docs is).
+    'garmin' => [
+        'client_id'      => env('GARMIN_CLIENT_ID'),
+        'client_secret'  => env('GARMIN_CLIENT_SECRET'),
+        'redirect_uri'   => env('GARMIN_REDIRECT_URI', env('APP_URL') . '/api/v1/auth/garmin/callback'),
+        'webhook_secret' => env('GARMIN_WEBHOOK_SECRET'),
+    ],
 ];

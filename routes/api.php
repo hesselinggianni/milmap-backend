@@ -118,6 +118,19 @@ Route::prefix('v1')->middleware(['api'])->group(function () {
     Route::post('/auth/google', [\App\Http\Controllers\Auth\GoogleAuthController::class, 'login'])
         ->middleware('throttle:20,1');
 
+    // Garmin Connect koppelen (OAuth 2.0 + PKCE) — publiek, want dit zijn
+    // top-level browserredirects (geen Authorization-header mogelijk); de
+    // identiteit komt mee via het handoff-token, zie GarminAuthController.
+    Route::get('/auth/garmin/redirect', [\App\Http\Controllers\Auth\GarminAuthController::class, 'redirect'])
+        ->middleware('throttle:20,1');
+    Route::get('/auth/garmin/callback', [\App\Http\Controllers\Auth\GarminAuthController::class, 'callback'])
+        ->middleware('throttle:20,1');
+    // Garmin Ping-webhook (nieuwe activiteit beschikbaar) — publiek, geverifieerd
+    // is hier bewust niet de payload maar het GarminAccount-lookup + het feit dat
+    // alle echte data via een eigen, geauthenticeerde call wordt opgehaald.
+    Route::post('/webhooks/garmin/ping', [\App\Http\Controllers\GarminWebhookController::class, 'ping'])
+        ->middleware('throttle:120,1');
+
     Route::post('/logout', [LogoutController::class, 'destroy'])->middleware('auth:sanctum');
     Route::post('/logout-all', [LogoutController::class, 'logoutFromAllDevices'])->middleware('auth:sanctum');
 
@@ -359,6 +372,11 @@ Route::prefix('v1')->middleware(['api'])->group(function () {
         Route::post('/activities/{id}/photos', [\App\Http\Controllers\ActivityController::class, 'uploadPhoto']);
         Route::delete('/activities/{id}/photos/{photoId}', [\App\Http\Controllers\ActivityController::class, 'deletePhoto']);
 
+        // Garmin Connect — gekoppeld account tonen/ontkoppelen + route pushen.
+        Route::get('/garmin/account', [\App\Http\Controllers\GarminAccountController::class, 'show']);
+        Route::delete('/garmin/account', [\App\Http\Controllers\GarminAccountController::class, 'destroy']);
+        Route::post('/routemaps/{id}/push-garmin', [RouteMapController::class, 'pushGarmin']);
+
         // Literal route MUST come before /users/{id} or "search" is captured as an id.
         Route::get('/users/search', [MapCollaboratorController::class, 'searchUsers']);
 
@@ -377,6 +395,15 @@ Route::prefix('v1')->middleware(['api'])->group(function () {
         Route::post('/invitations/{token}/accept', [MapCollaboratorController::class, 'acceptInvitation']);
         Route::delete('/invitations/{id}', [InvitationController::class, 'revoke']);
         Route::get('/activity/timeline', [InvitationController::class, 'timeline']);
+
+        // ── Weerswaarschuwingen (premium-poort) ────────────────────────
+        // Doet zelf niets: de controle draait client-side (Open-Meteo + lokale
+        // meldingen). Dit endpoint bestaat alleen zodat het ináschakelen langs
+        // RequiresPremium:weather loopt — POST telt als 'create', dus zonder
+        // proef/abonnement komt er een 402 en opent de app de upgrade-prompt.
+        Route::middleware(RequiresPremium::class . ':weather')->group(function () {
+            Route::post('/weather-alerts/access', fn () => response()->noContent());
+        });
 
         // ── Teams (curated rosters → invite a whole group at once) ─────
         // Team aanmaken/beheren + gedeelde teamkaarten = premiumfunctie. Lezen
@@ -959,6 +986,10 @@ Route::prefix('v1')->middleware(['api'])->group(function () {
             Route::post('/admin/pagespeed/config',         [\App\Http\Controllers\AdminPageSpeedController::class, 'saveConfig']);
             Route::post('/admin/pagespeed/run',            [\App\Http\Controllers\AdminPageSpeedController::class, 'run']);
             Route::post('/admin/pagespeed/generate-tasks', [\App\Http\Controllers\AdminPageSpeedController::class, 'generateTasks']);
+
+            // ── Garmin Connect Developer Program — platform-brede credentials ──
+            Route::get ('/admin/garmin/config', [\App\Http\Controllers\AdminGarminController::class, 'config']);
+            Route::post('/admin/garmin/config', [\App\Http\Controllers\AdminGarminController::class, 'saveConfig']);
 
             Route::get('/admin/users/{userId}', [AdminController::class, 'getUser']);
             Route::delete('/admin/users/{userId}', [AdminController::class, 'deleteUser']);

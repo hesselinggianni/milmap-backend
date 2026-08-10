@@ -258,6 +258,33 @@ class RouteMapController extends Controller
 
     /*
     |--------------------------------------------------------------------------
+    | GARMIN PUSH
+    |--------------------------------------------------------------------------
+    */
+
+    /**
+     * POST /api/v1/routemaps/{id}/push-garmin
+     * Pusht deze routekaart als "course" naar het gekoppelde Garmin-account
+     * (queued — zie App\Jobs\PushRouteMapToGarmin).
+     */
+    public function pushGarmin(string $id)
+    {
+        $routeMap = RouteMap::findOrFail($id);
+        $this->authorize('update', $routeMap->map);
+
+        if (! auth()->user()->garminAccount) {
+            return response()->json(['message' => 'Garmin niet gekoppeld'], 422);
+        }
+
+        $routeMap->update(['garmin_push_status' => 'pending', 'garmin_push_error' => null]);
+
+        \App\Jobs\PushRouteMapToGarmin::dispatch($routeMap->id, auth()->id());
+
+        return response()->json(['status' => 'pending'], 202);
+    }
+
+    /*
+    |--------------------------------------------------------------------------
     | LINK MISSION
     |--------------------------------------------------------------------------
     */

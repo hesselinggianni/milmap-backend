@@ -47,6 +47,14 @@ class RouteMap extends Model
         'sterkte',
         'kaartblad',
         'vtv_vta',
+
+        // Garmin-push-status (server-side gezet door PushRouteMapToGarmin,
+        // niet via de gewone update()-endpoint — die valideert een expliciete
+        // whitelist die deze velden niet bevat).
+        'garmin_course_id',
+        'garmin_push_status',
+        'garmin_pushed_at',
+        'garmin_push_error',
     ];
 
     protected $casts = [
@@ -63,9 +71,11 @@ class RouteMap extends Model
 
         'pause_time' => 'integer',
         'total_time' => 'integer',
-    
+
         'total_distance' => 'float',
         'total_elevation' => 'float',
+
+        'garmin_pushed_at' => 'datetime',
     ];
 
     /*

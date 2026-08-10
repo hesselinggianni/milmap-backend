@@ -29,6 +29,12 @@ class Activity extends Model
         'avg_power_w',
         'calories',
         'points',
+
+        // Herkomst — 'native' (in-app opgenomen) of 'garmin' (via de Ping-
+        // webhook geïmporteerd, zie App\Jobs\ImportGarminActivity).
+        'source',
+        'garmin_activity_id',
+        'garmin_device_name',
     ];
 
     protected $casts = [

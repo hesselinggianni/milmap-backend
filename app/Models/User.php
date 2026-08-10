@@ -201,6 +201,12 @@ class User extends Authenticatable
             ->withTimestamps();
     }
 
+    /** Gekoppeld Garmin Connect-account (indien aanwezig), zie GarminAuthController. */
+    public function garminAccount()
+    {
+        return $this->hasOne(GarminAccount::class);
+    }
+
     // ── Subscription helpers ────────────────────────────────────────
 
     /**
