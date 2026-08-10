@@ -19,7 +19,7 @@ return new class extends Migration
             $table->string('state', 64)->unique();
             $table->string('code_verifier', 128);
             $table->string('platform', 16);
-            $table->timestamp('expires_at');
+            $table->timestamp('expires_at')->useCurrent();
             $table->timestamp('used_at')->nullable();
             $table->timestamps();
         });

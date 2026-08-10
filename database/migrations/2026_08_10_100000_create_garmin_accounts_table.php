@@ -20,10 +20,10 @@ return new class extends Migration
             $table->string('garmin_user_id')->unique();
             $table->text('access_token');
             $table->text('refresh_token');
-            $table->timestamp('expires_at');
+            $table->timestamp('expires_at')->useCurrent();
             $table->string('scope')->nullable();
             $table->json('devices')->nullable();
-            $table->timestamp('connected_at');
+            $table->timestamp('connected_at')->useCurrent();
             $table->timestamp('last_synced_at')->nullable();
             $table->timestamps();
         });
