@@ -194,6 +194,19 @@ Route::prefix('v1')->middleware(['api'])->group(function () {
         ->withoutMiddleware('throttle:api')
         ->middleware('throttle:600,1');
 
+    // Cachende proxy voor publieke OSM-diensten (Nominatim, Overpass). Deze
+    // werden rechtstreeks vanuit de app aangeroepen, waardoor de POSITIE van de
+    // gebruiker plus zijn IP naar een derde partij ging — zie GeoProxyController.
+    // Publiek (ook een gedeelde kaart zonder account gebruikt reverse geocoding),
+    // met een eigen throttle die ruimer is dan een losse gebruiker nodig heeft
+    // maar krap genoeg om geen open doorgeefluik te zijn.
+    Route::get('/geo/reverse', [\App\Http\Controllers\GeoProxyController::class, 'reverse'])
+        ->withoutMiddleware('throttle:api')
+        ->middleware('throttle:120,1');
+    Route::post('/geo/overpass', [\App\Http\Controllers\GeoProxyController::class, 'overpass'])
+        ->withoutMiddleware('throttle:api')
+        ->middleware('throttle:30,1');
+
     // Status-page domains — public; the Nuxt status page (milmap.nl/status)
     // fetches the enabled domains here. Managed via the admin routes below.
     Route::get('/status/domains', [StatusPageController::class, 'publicIndex'])
