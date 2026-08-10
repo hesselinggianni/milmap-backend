@@ -24,11 +24,25 @@ class MissionBriefing extends Model
         'light_conditions',
     ];
 
+    // Het feitelijke bevel: vijand, eigen troepen, oogmerk, casevac/medevac.
+    // Versleuteld at rest. De json-kolommen zijn hiervoor naar LONGTEXT
+    // omgezet — MySQL valideert json en weigert een versleutelde string.
+    // Zie 2026_08_10_200000_encrypt_sensitive_operational_data.
+    // Let op: hierdoor is full-text zoeken op briefinginhoud niet mogelijk.
     protected $casts = [
-        'timeline'         => 'array',
-        'pace_plan'        => 'array',
-        'weather'          => 'array',
-        'light_conditions' => 'array',
+        'timeline'         => 'encrypted:array',
+        'pace_plan'        => 'encrypted:array',
+        'weather'          => 'encrypted:array',
+        'light_conditions' => 'encrypted:array',
+
+        'enemy_forces'            => 'encrypted',
+        'friendly_forces'         => 'encrypted',
+        'civilian_considerations' => 'encrypted',
+        'ground_conditions'       => 'encrypted',
+        'commander_intent'        => 'encrypted',
+        'action_on_procedures'    => 'encrypted',
+        'casevac'                 => 'encrypted',
+        'medevac'                 => 'encrypted',
     ];
 
     public function mission()

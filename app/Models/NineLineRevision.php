@@ -23,7 +23,8 @@ class NineLineRevision extends Model
     protected function casts(): array
     {
         return [
-            'changes' => 'array',
+            // Bevat de oude MEDEVAC-inhoud → zelfde bescherming als NineLine.
+            'changes' => 'encrypted:array',
         ];
     }
 

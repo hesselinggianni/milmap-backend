@@ -19,8 +19,15 @@ class MissionRadioChannel extends Model
         'sort_order',
     ];
 
+    // Frequentie, roepnaam en cryptofill zijn COMSEC — versleuteld at rest.
+    // De kolommen zijn daarvoor verbreed naar TEXT (varchar(32/64) was te
+    // krap voor een versleutelde waarde); zie de migratie
+    // 2026_08_10_200000_encrypt_sensitive_operational_data.
     protected $casts = [
         'is_primary' => 'boolean',
+        'frequency'  => 'encrypted',
+        'callsign'   => 'encrypted',
+        'encryption' => 'encrypted',
     ];
 
     public function mission()

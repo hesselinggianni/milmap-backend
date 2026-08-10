@@ -17,9 +17,13 @@ class MissionRisk extends Model
         'sort_order',
     ];
 
+    // likelihood/impact blijven leesbaar: die worden numeriek gebruikt in
+    // getRiskScoreAttribute() en om op te sorteren. Alleen de tekst gaat op slot.
     protected $casts = [
-        'likelihood' => 'integer',
-        'impact'     => 'integer',
+        'likelihood'  => 'integer',
+        'impact'      => 'integer',
+        'description' => 'encrypted',
+        'mitigation'  => 'encrypted',
     ];
 
     public function getRiskScoreAttribute(): int

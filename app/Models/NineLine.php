@@ -29,7 +29,12 @@ class NineLine extends Model
     protected function casts(): array
     {
         return [
-            'lines'       => 'array',
+            // MEDEVAC-inhoud (letsel, aantal slachtoffers) = gezondheidsdata,
+            // bijzondere categorie onder AVG art. 9. Versleuteld at rest; de
+            // kolom is daarom LONGTEXT i.p.v. json (MySQL valideert json en
+            // weigert een versleutelde string). Zie de migratie
+            // 2026_08_10_200000_encrypt_sensitive_operational_data.
+            'lines'       => 'encrypted:array',
             'exercise'    => 'boolean',
             'archived_at' => 'datetime',
         ];
