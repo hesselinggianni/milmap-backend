@@ -102,6 +102,24 @@ class MissionController extends Controller
             }
         }
 
+        // Gratis (uitgeproefde) accounts mogen FREE_MISSION_LIMIT (1) missie
+        // aanmaken vóór een abonnement nodig is — zelfde patroon als de
+        // kaart-limiet in MapController@store. Tijdens de proefperiode of met
+        // een abonnement is dit onbeperkt. Ná de idempotentie-check hierboven,
+        // zodat een herhaalde offline-sync van een bestaande missie niet botst.
+        $user = $request->user();
+        if ($user && ! ($user->is_admin ?? false) && ! $user->hasPremiumAccess()) {
+            $ownedMissions = Mission::where('owner_id', $user->id)->count();
+            if ($ownedMissions >= \App\Models\User::FREE_MISSION_LIMIT) {
+                return response()->json([
+                    'message' => 'Je gratis account kan ' . \App\Models\User::FREE_MISSION_LIMIT
+                        . ' missie aanmaken. Neem een abonnement voor onbeperkte missies.',
+                    'code'    => 'subscription_required',
+                    'feature' => 'missions',
+                ], 402);
+            }
+        }
+
         $mission = new Mission([
             'owner_id' => Auth::id(),
             'name' => $data['name'],

@@ -593,10 +593,11 @@ Route::prefix('v1')->middleware(['api'])->group(function () {
         Route::delete('/missions/invitations/{id}', [MissionCollaboratorController::class, 'decline']);
 
         Route::get('/missions', [MissionController::class, 'index']);
-        // Missie aanmaken = premiumfunctie (proef of abonnement). Bestaande
+        // Missie aanmaken: gratis accounts mogen er 1 (FREE_MISSION_LIMIT,
+        // afgedwongen in MissionController@store à la de kaart-limiet — dus
+        // bewust GEEN RequiresPremium:missions meer op deze route). Bestaande
         // missies bekijken/beheren blijft mogelijk voor uitgenodigde deelnemers.
-        Route::post('/missions', [MissionController::class, 'store'])
-            ->middleware(RequiresPremium::class . ':missions');
+        Route::post('/missions', [MissionController::class, 'store']);
         Route::get('/missions/{id}', [MissionController::class, 'show']);
         Route::put('/missions/{id}', [MissionController::class, 'update']);
         Route::post('/missions/{id}/dispatch-warning-order', [MissionController::class, 'dispatchWarningOrder']);

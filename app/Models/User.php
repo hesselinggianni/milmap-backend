@@ -348,6 +348,9 @@ class User extends Authenticatable
     /** Max aantal kaarten voor een gratis account (buiten proef/abonnement). */
     public const FREE_MAP_LIMIT = 5;
 
+    /** Max aantal eigen missies voor een gratis account (buiten proef/abonnement). */
+    public const FREE_MISSION_LIMIT = 1;
+
     /**
      * De premiumfuncties die na de proefperiode een abonnement vereisen. De
      * frontend leest deze lijst uit premiumState() om de UI op slot te zetten;
@@ -480,6 +483,7 @@ class User extends Authenticatable
             'trial_days_left' => $this->trialDaysLeft(),
             'subscribed'      => $this->subscribed(),
             'map_limit'       => $this->hasPremiumAccess() ? null : self::FREE_MAP_LIMIT,
+            'mission_limit'   => $this->hasPremiumAccess() ? null : self::FREE_MISSION_LIMIT,
             'features'        => $this->entitlements(),
             'team'            => $team,   // null tenzij je meelift op een team
         ];
