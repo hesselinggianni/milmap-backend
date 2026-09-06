@@ -36,6 +36,14 @@ return [
         'token' => env('MAPBOX_TOKEN'),
     ],
 
+    // Bathymetrie WMS-bronnen voor de waterdiepte-laag (BathymetryTileController).
+    // Beide diensten zijn publiek en tokenloos; base-URL's zijn overridebaar
+    // per omgeving zonder code-wijziging.
+    'bathymetry' => [
+        'emodnet_base' => env('EMODNET_WMS_BASE', 'https://ows.emodnet-bathymetry.eu/wms'),
+        'gebco_base' => env('GEBCO_WMS_BASE', 'https://www.gebco.net/data_and_products/gebco_web_services/web_map_service/mapserv'),
+    ],
+
     'slack' => [
         'notifications' => [
             'bot_user_oauth_token' => env('SLACK_BOT_USER_OAUTH_TOKEN'),

@@ -194,6 +194,11 @@ Route::prefix('v1')->middleware(['api'])->group(function () {
         ->withoutMiddleware('throttle:api')
         ->middleware('throttle:600,1');
 
+    Route::get('/tiles/bathymetry/{z}/{x}/{y}', [\App\Http\Controllers\BathymetryTileController::class, 'show'])
+        ->whereNumber(['z', 'x', 'y'])
+        ->withoutMiddleware('throttle:api')
+        ->middleware('throttle:600,1');
+
     // Cachende proxy voor publieke OSM-diensten (Nominatim, Overpass). Deze
     // werden rechtstreeks vanuit de app aangeroepen, waardoor de POSITIE van de
     // gebruiker plus zijn IP naar een derde partij ging — zie GeoProxyController.
