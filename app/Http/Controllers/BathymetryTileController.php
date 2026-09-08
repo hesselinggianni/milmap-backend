@@ -2,6 +2,7 @@
 
 namespace App\Http\Controllers;
 
+use Illuminate\Support\Facades\Cache;
 use Illuminate\Support\Facades\File;
 use Illuminate\Support\Facades\Http;
 use Throwable;
@@ -53,40 +54,66 @@ class BathymetryTileController extends Controller
             return response()->noContent(404);
         }
 
-        [$bboxMerc, $bboxDeg] = $this->tileBounds($z, $x, $y);
-        $source = $this->pickSource($bboxDeg);
+        // Meerdere gebruikers die tegelijk dezelfde ongecachte tile openen (bv.
+        // iedereen die op hetzelfde moment inzoomt op dezelfde regio) mogen niet
+        // allemaal apart de upstream WMS bellen — dat is de grootste bron van
+        // trage/vastlopende laadtijden. Eén request per tile haalt 'm op, de rest
+        // wacht kort en leest daarna gewoon de zojuist geschreven cache.
+        $lock = Cache::lock("bathy-tile:{$z}:{$x}:{$y}", 15);
+
+        if (! $lock->block(10)) {
+            // Kon de lock niet krijgen (zwaar belast) — serveer wat er is, of geef
+            // een nette 404 zodat de kaart de tile overslaat i.p.v. te blijven hangen.
+            return is_file($png) ? $this->tileResponse($png) : response()->noContent(404);
+        }
 
         try {
-            $resp = Http::timeout(12)->get($source['base'], [
-                'SERVICE' => 'WMS',
-                'VERSION' => '1.3.0',
-                'REQUEST' => 'GetMap',
-                'LAYERS' => $source['layers'],
-                'STYLES' => $source['styles'],
-                'CRS' => 'EPSG:3857',
-                'BBOX' => implode(',', $bboxMerc),
-                'WIDTH' => self::TILE_SIZE,
-                'HEIGHT' => self::TILE_SIZE,
-                'FORMAT' => 'image/png',
-                'TRANSPARENT' => 'TRUE',
-            ]);
-        } catch (Throwable) {
-            return is_file($png) ? $this->tileResponse($png) : response()->noContent(502);
-        }
+            // Dubbele check: terwijl we op de lock wachtten kan een andere request
+            // de tile al hebben opgehaald en gecachet.
+            if ($fresh($png, self::CACHE_TTL_DAYS)) {
+                return $this->tileResponse($png);
+            }
+            if ($fresh($miss, 1)) {
+                return response()->noContent(404);
+            }
 
-        $contentType = $resp->header('Content-Type');
-        if ($resp->successful() && str_starts_with((string) $contentType, 'image/') && $resp->body() !== '') {
+            [$bboxMerc, $bboxDeg] = $this->tileBounds($z, $x, $y);
+            $source = $this->pickSource($bboxDeg);
+
+            try {
+                $resp = Http::timeout(5)->retry(2, 250)->get($source['base'], [
+                    'SERVICE' => 'WMS',
+                    'VERSION' => '1.3.0',
+                    'REQUEST' => 'GetMap',
+                    'LAYERS' => $source['layers'],
+                    'STYLES' => $source['styles'],
+                    'CRS' => 'EPSG:3857',
+                    'BBOX' => implode(',', $bboxMerc),
+                    'WIDTH' => self::TILE_SIZE,
+                    'HEIGHT' => self::TILE_SIZE,
+                    'FORMAT' => 'image/png',
+                    'TRANSPARENT' => 'TRUE',
+                ]);
+            } catch (Throwable) {
+                return is_file($png) ? $this->tileResponse($png) : response()->noContent(502);
+            }
+
+            $contentType = $resp->header('Content-Type');
+            if ($resp->successful() && str_starts_with((string) $contentType, 'image/') && $resp->body() !== '') {
+                File::ensureDirectoryExists($dir);
+                File::put($png, $resp->body());
+                @unlink($miss);
+                return $this->tileResponse($png);
+            }
+
+            // WMS geeft bij een ongeldige request een XML-foutdocument terug i.p.v.
+            // een HTTP-foutcode — dat vangen we hierboven af via de Content-Type-check.
             File::ensureDirectoryExists($dir);
-            File::put($png, $resp->body());
-            @unlink($miss);
-            return $this->tileResponse($png);
+            File::put($miss, '');
+            return response()->noContent(404);
+        } finally {
+            $lock->release();
         }
-
-        // WMS geeft bij een ongeldige request een XML-foutdocument terug i.p.v.
-        // een HTTP-foutcode — dat vangen we hierboven af via de Content-Type-check.
-        File::ensureDirectoryExists($dir);
-        File::put($miss, '');
-        return response()->noContent(404);
     }
 
     /**
