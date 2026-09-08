@@ -1030,6 +1030,8 @@ Route::prefix('v1')->middleware(['api'])->group(function () {
             Route::post('/admin/users/{userId}/verify-email', [AdminController::class, 'verifyUserEmail']);
             // Handmatige 1-op-1 mail vanuit de Mails-tab op de gebruikersdetailpagina.
             Route::post('/admin/users/{userId}/send-mail', [AdminController::class, 'sendUserMail']);
+            // Van/reply-to-adressen voor de compose-preview (geen hardcoded waarden in de frontend).
+            Route::get('/admin/mail-meta', [AdminController::class, 'mailMeta']);
             // Demo-account aan/uit: telt dan niet mee in statistieken/analytics.
             Route::post('/admin/users/{userId}/set-demo', [AdminController::class, 'setDemo']);
 

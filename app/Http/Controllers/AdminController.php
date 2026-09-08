@@ -644,6 +644,20 @@ class AdminController extends Controller
      * open-/kliktracking), waardoor de mail vanzelf in diezelfde Mails-tab
      * verschijnt.
      */
+    /**
+     * GET /api/v1/admin/mail-meta
+     * Van- en reply-to-adres voor handmatige mails, zodat de compose-preview
+     * in de admin-UI dit niet hoeft te hardcoden.
+     */
+    public function mailMeta()
+    {
+        return response()->json([
+            'from_address'  => config('mail.from.address'),
+            'from_name'     => config('mail.from.name'),
+            'reply_to'      => config('mail.admin_mail', config('mail.from.address')),
+        ]);
+    }
+
     public function sendUserMail(Request $request, $userId)
     {
         $data = $request->validate([
