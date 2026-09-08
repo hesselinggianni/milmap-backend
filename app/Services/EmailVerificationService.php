@@ -6,6 +6,7 @@ use App\Mail\VerifyEmail;
 use App\Models\User;
 use Illuminate\Support\Facades\Log;
 use Illuminate\Support\Facades\Mail;
+use Illuminate\Support\Facades\Password;
 use Illuminate\Support\Facades\URL;
 
 /**
@@ -44,11 +45,27 @@ class EmailVerificationService
         }
 
         try {
+            // Passwordless account (registratie met alleen e-mail): geef meteen
+            // een link mee om alsnog een wachtwoord in te stellen. Optioneel —
+            // inloggen kan ook zonder, via een code per mail.
+            $setPasswordUrl = $user->password === null
+                ? self::setPasswordUrl($user)
+                : null;
+
             Mail::to($user->email)->send(
-                new VerifyEmail($user, self::verificationUrl($user))
+                new VerifyEmail($user, self::verificationUrl($user), $setPasswordUrl)
             );
         } catch (\Throwable $e) {
             Log::warning('[verify] kon verificatiemail niet versturen: ' . $e->getMessage());
         }
+    }
+
+    /** Zelfde mechanisme als een reguliere wachtwoord-reset (Password::createToken). */
+    protected static function setPasswordUrl(User $user): string
+    {
+        $token = Password::createToken($user);
+        $appUrl = config('app.app_url', 'https://app.milmap.nl');
+
+        return "{$appUrl}/password-reset?token={$token}&email=" . urlencode($user->email);
     }
 }

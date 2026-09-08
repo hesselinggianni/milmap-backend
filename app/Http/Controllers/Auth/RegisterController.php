@@ -41,10 +41,13 @@ class RegisterController extends Controller
            }
 
            
-        // Validate input data
-        $validator = Validator::make($request->all(), [       
+        // Validate input data. Wachtwoord is optioneel: passwordless registratie
+        // (alleen e-mail) is toegestaan — inloggen kan dan via een code per
+        // mail, of de gebruiker stelt later alsnog een wachtwoord in via de
+        // link in de welkomstmail.
+        $validator = Validator::make($request->all(), [
             'email' => 'required|string|email|max:255|unique:users,email',
-            'password' => 'required|string|min:8|confirmed',
+            'password' => 'nullable|string|min:8|confirmed',
         ]);
 
         if ($validator->fails()) {
@@ -67,7 +70,7 @@ class RegisterController extends Controller
         // User::hasPremiumAccess() + RequiresPremium-middleware).
         $user = User::create([
             'email' => $request->email,
-            'password' => Hash::make($request->password),
+            'password' => $request->filled('password') ? Hash::make($request->password) : null,
             'referred_by_id' => $referredById,
             'first_name' => $request->input('first_name'),
             'last_name'  => $request->input('last_name'),

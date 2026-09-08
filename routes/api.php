@@ -114,6 +114,14 @@ Route::prefix('v1')->middleware(['api'])->group(function () {
     // account-enumeratie af te remmen.
     Route::post('/check-email', [LoginController::class, 'checkEmail'])
         ->middleware('throttle:20,1');
+    // Passwordless login: code per mail. Rate limit op /request via de
+    // login_codes-tabel zelf (zie LoginCodeController); /verify moet ook een
+    // routethrottle hebben — 6-cijferige code binnen 15 min. is anders binnen
+    // het geldigheidsvenster brute-forceable.
+    Route::post('/login/code/request', [\App\Http\Controllers\Auth\LoginCodeController::class, 'requestCode'])
+        ->middleware('throttle:10,1');
+    Route::post('/login/code/verify', [\App\Http\Controllers\Auth\LoginCodeController::class, 'verifyCode'])
+        ->middleware('throttle:10,1');
     // Inloggen/registreren met Apple ID — publiek, want je bent nog niet
     // ingelogd. Beperkt: de verificatie doet een externe call naar Apple.
     Route::post('/auth/apple', [\App\Http\Controllers\Auth\AppleAuthController::class, 'login'])

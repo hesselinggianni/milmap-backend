@@ -18,11 +18,13 @@ class VerifyEmail extends Mailable
 
     public User $user;
     public string $verificationUrl;
+    public ?string $setPasswordUrl;
 
-    public function __construct(User $user, string $verificationUrl)
+    public function __construct(User $user, string $verificationUrl, ?string $setPasswordUrl = null)
     {
         $this->user = $user;
         $this->verificationUrl = $verificationUrl;
+        $this->setPasswordUrl = $setPasswordUrl;
     }
 
     public function build()
@@ -33,6 +35,7 @@ class VerifyEmail extends Mailable
             ->with([
                 'firstName'       => $this->user->first_name,
                 'verificationUrl' => $this->verificationUrl,
+                'setPasswordUrl'  => $this->setPasswordUrl,
             ]);
     }
 }

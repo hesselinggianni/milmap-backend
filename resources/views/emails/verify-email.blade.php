@@ -56,6 +56,23 @@
     <span style="color:#2b7fff;">{{ $verificationUrl }}</span>
   </p>
 
+  @if($setPasswordUrl)
+  <div style="height:1px;background:#1e293b;margin:0 0 20px;"></div>
+
+  <p style="margin:0 0 4px;font-size:14px;font-weight:600;color:#f8fafc;">
+    Wil je met een wachtwoord kunnen inloggen?
+  </p>
+  <p style="margin:0 0 14px;font-size:13px;line-height:1.7;color:#94a3b8;">
+    Je account heeft nog geen wachtwoord — dat hoeft ook niet, je kunt altijd een inlogcode per
+    e-mail aanvragen. Wil je liever een wachtwoord instellen, klik dan hieronder.
+  </p>
+  <p style="margin:0 0 20px;">
+    <a href="{{ $setPasswordUrl }}" style="font-size:13px;color:#2b7fff;text-decoration:underline;">
+      Wachtwoord instellen →
+    </a>
+  </p>
+  @endif
+
   <div style="height:1px;background:#1e293b;margin:0 0 20px;"></div>
 
   <p style="margin:0 0 8px;font-size:13px;line-height:1.7;color:#94a3b8;">
