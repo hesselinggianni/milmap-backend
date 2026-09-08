@@ -1028,6 +1028,8 @@ Route::prefix('v1')->middleware(['api'])->group(function () {
             // Gratis (premium-)toegang toekennen/verlengen + handmatig e-mail verifiëren.
             Route::post('/admin/users/{userId}/grant-access', [AdminController::class, 'grantAccess']);
             Route::post('/admin/users/{userId}/verify-email', [AdminController::class, 'verifyUserEmail']);
+            // Handmatige 1-op-1 mail vanuit de Mails-tab op de gebruikersdetailpagina.
+            Route::post('/admin/users/{userId}/send-mail', [AdminController::class, 'sendUserMail']);
             // Demo-account aan/uit: telt dan niet mee in statistieken/analytics.
             Route::post('/admin/users/{userId}/set-demo', [AdminController::class, 'setDemo']);
 

@@ -633,6 +633,56 @@ class AdminController extends Controller
     }
 
     /**
+     * POST /api/v1/admin/users/{userId}/send-mail
+     * Eenmalige, persoonlijke mail vanuit de admin naar één gebruiker (Mails-tab
+     * op de gebruikersdetailpagina). Bewust GEEN campagne: geen template, geen
+     * categorie en dus ook geen opt-out-afhandeling — dit is het equivalent van
+     * een handmatig support-antwoord, dat de beheerder gericht verstuurt.
+     *
+     * Loggen hoeft hier niet: de MessageSending/MessageSent-listeners in
+     * AppServiceProvider schrijven élke uitgaande mail naar sent_emails (incl.
+     * open-/kliktracking), waardoor de mail vanzelf in diezelfde Mails-tab
+     * verschijnt.
+     */
+    public function sendUserMail(Request $request, $userId)
+    {
+        $data = $request->validate([
+            'subject' => 'required|string|max:200',
+            'body'    => 'required|string|max:10000',
+        ]);
+
+        try {
+            $user = User::findOrFail($userId);
+        } catch (\Illuminate\Database\Eloquent\ModelNotFoundException $e) {
+            return response()->json(['message' => 'Gebruiker niet gevonden', 'error' => 'not_found'], 404);
+        }
+
+        if (! $user->email) {
+            return response()->json(['message' => 'Deze gebruiker heeft geen e-mailadres.'], 422);
+        }
+
+        try {
+            // Platte tekst uit het formulier: e() tegen HTML-injectie, nl2br zodat
+            // de regelafbrekingen van de beheerder overeind blijven in de mail.
+            $html = '<div style="font-family:sans-serif;font-size:14px;line-height:1.6;color:#0f172a">'
+                . nl2br(e($data['body'])) . '</div>';
+
+            Mail::html($html, function ($m) use ($user, $data) {
+                $m->to($user->email, $user->name ?: null)
+                  ->subject($data['subject'])
+                  ->replyTo(config('mail.admin_mail', config('mail.from.address')));
+            });
+        } catch (\Throwable $e) {
+            Log::error('[admin] handmatige mail naar gebruiker mislukt: ' . $e->getMessage());
+            return response()->json(['message' => 'E-mail versturen mislukt: ' . $e->getMessage()], 500);
+        }
+
+        Log::info("[admin] handmatige mail verstuurd naar user {$user->id} ({$user->email}) door admin " . (Auth::id() ?? '?'));
+
+        return response()->json(['message' => 'E-mail verstuurd naar ' . $user->email], 200);
+    }
+
+    /**
      * GET /api/v1/admin/client-errors
      * Recent front-end errors captured from the browser (rolling JSON log),
      * so an admin can review them and forward them to Claude for a fix.
