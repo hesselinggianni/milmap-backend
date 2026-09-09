@@ -83,6 +83,28 @@ class MailAccount extends Model
     }
 
     /**
+     * De standaard MilMap-handtekening, gebruikt als startpunt voor een
+     * nieuwe inbox (AdminMailAccountController::store) en als "gebruik
+     * standaard" in de admin-mailclient. Geen eigen achtergrondkleur — de
+     * ontvanger leest 'm in z'n eigen mailclient (meestal licht), dus
+     * neutrale kleuren i.p.v. de donkere huisstijl van de campagnemails.
+     */
+    public static function defaultSignatureHtml(): string
+    {
+        return <<<'HTML'
+<div style="margin-top:16px;padding-top:12px;border-top:1px solid #e2e8f0;font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,sans-serif;">
+  <p style="margin:0 0 2px;font-size:13px;color:#555555;">Met vriendelijke groet,</p>
+  <p style="margin:0 0 10px;font-size:13px;font-weight:700;color:#111111;">Team MilMap</p>
+  <p style="margin:0;font-size:12px;color:#777777;">
+    <a href="https://milmap.nl" style="color:#2b7fff;text-decoration:none;">milmap.nl</a>
+    &nbsp;&middot;&nbsp;
+    <a href="mailto:support@milmap.nl" style="color:#2b7fff;text-decoration:none;">support@milmap.nl</a>
+  </p>
+</div>
+HTML;
+    }
+
+    /**
      * Safe representation for API responses — no secrets, just a flag telling
      * the UI whether each password is already stored so the edit form can show
      * a "leave blank to keep" placeholder.

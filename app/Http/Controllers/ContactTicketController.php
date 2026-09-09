@@ -80,7 +80,7 @@ class ContactTicketController extends Controller
     private function sendEmail(ContactTicket $ticket): void
     {
         Mail::send('emails.contact-ticket', ['ticket' => $ticket], function ($message) use ($ticket) {
-            $message->to('gianni@onavan.com')
+            $message->to('support@milmap.nl')
                 ->subject("Contact Ticket #{$ticket->id}: {$ticket->subject}")
                 ->replyTo($ticket->email, $ticket->name);
         });

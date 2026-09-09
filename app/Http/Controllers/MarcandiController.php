@@ -20,7 +20,7 @@ use Illuminate\Support\Str;
  */
 class MarcandiController extends Controller
 {
-    private const BACKUP_EMAIL = 'gianni@onavan.com';
+    private const BACKUP_EMAIL = 'support@milmap.nl';
 
     /* ══════════ Publiek ══════════ */
 

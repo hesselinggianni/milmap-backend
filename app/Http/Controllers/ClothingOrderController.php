@@ -37,7 +37,7 @@ class ClothingOrderController extends Controller
     ];
 
     /** E-mailadres dat een backup van elke bestelling ontvangt. */
-    private const BACKUP_EMAIL = 'gianni@onavan.com';
+    private const BACKUP_EMAIL = 'support@milmap.nl';
 
     /** Catalogus voor de bestelpagina. */
     public function products()

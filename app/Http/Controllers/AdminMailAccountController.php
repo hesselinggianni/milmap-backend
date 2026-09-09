@@ -35,6 +35,13 @@ class AdminMailAccountController extends Controller
         $data = $this->validatePayload($request, true);
         $data['user_id'] = Auth::id();
 
+        // Elke nieuwe inbox start met de standaard MilMap-handtekening zodat
+        // uitgaande mail vanaf dag één gebrand is — de admin hoeft er niets
+        // voor te doen, maar kan 'm in het formulier alsnog leegmaken/aanpassen.
+        if (! filled($data['signature_html'] ?? null)) {
+            $data['signature_html'] = MailAccount::defaultSignatureHtml();
+        }
+
         $account = MailAccount::create($data);
 
         return response()->json(['account' => $account->toClientArray()], 201);

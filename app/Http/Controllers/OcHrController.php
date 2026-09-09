@@ -15,7 +15,7 @@ use Illuminate\Support\Facades\Mail;
  */
 class OcHrController extends Controller
 {
-    private const BACKUP_EMAIL = 'gianni@onavan.com';
+    private const BACKUP_EMAIL = 'support@milmap.nl';
 
     /** Verzoek indienen (publiek). */
     public function store(Request $request)

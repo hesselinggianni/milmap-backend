@@ -78,9 +78,13 @@ class LoginController extends Controller
 
         // Vertelt de client of het wachtwoordveld getoond moet worden, of dat
         // dit een passwordless account is dat alleen met een inlogcode kan.
+        // Let op: elk account heeft altijd een `password`-hash (zie
+        // RegisterController/GoogleAuthController/AppleAuthController) — die
+        // kale aanwezigheid zegt dus niets. `password_set_at` is het echte
+        // signaal: alleen gezet zodra de gebruiker zelf een wachtwoord koos.
         return response()->json([
             'exists' => (bool) $exists,
-            'has_password' => (bool) ($exists && $user->password),
+            'has_password' => (bool) ($exists && $user->password_set_at),
         ]);
     }
 

@@ -58,6 +58,9 @@ class UserService
         if (isset($data['password'])) {
             $user->password = Hash::make($data['password']);
         }
+        if (isset($data['password_set_at'])) {
+            $user->password_set_at = $data['password_set_at'];
+        }
         if (isset($data['language'])) {
             $user->language = $data['language'];
         }

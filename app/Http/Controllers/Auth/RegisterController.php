@@ -14,6 +14,7 @@ use App\Models\ChatInvite;
 use App\Models\Conversation;
 use App\Services\InvitationService;
 use Illuminate\Support\Facades\Log;
+use Illuminate\Support\Str;
 
 class RegisterController extends Controller
 {
@@ -68,9 +69,22 @@ class RegisterController extends Controller
         // toegang: `trial_ends_at` op nu+7 dagen. Daarna valt het terug op het
         // gratis Starter-niveau tot er een abonnement wordt genomen (zie
         // User::hasPremiumAccess() + RequiresPremium-middleware).
+        $userProvidedPassword = $request->filled('password');
+
         $user = User::create([
             'email' => $request->email,
-            'password' => $request->filled('password') ? Hash::make($request->password) : null,
+            // Elk account krijgt altijd een wachtwoord-hash — de `password`-
+            // kolom is nooit NULL. Gaf de gebruiker zelf geen wachtwoord op
+            // (het gebruikelijke passwordless-pad), dan is dit een veilige,
+            // unieke, willekeurige hash die niemand kent — zelfde patroon als
+            // GoogleAuthController/AppleAuthController. Inloggen kan dan
+            // alleen via de e-mailcode of Apple/Google, tot de gebruiker zelf
+            // een wachtwoord instelt (zie UserController::changePassword).
+            'password' => $userProvidedPassword ? Hash::make($request->password) : Hash::make(Str::random(48)),
+            // Alleen gezet als de gebruiker het wachtwoord zelf koos — dat is
+            // het signaal dat `has_password`/de "instellen"-vs-"wijzigen"-UI
+            // op vertrouwt, niet de kale aanwezigheid van een hash.
+            'password_set_at' => $userProvidedPassword ? now() : null,
             'referred_by_id' => $referredById,
             'first_name' => $request->input('first_name'),
             'last_name'  => $request->input('last_name'),

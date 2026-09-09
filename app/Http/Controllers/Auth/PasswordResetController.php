@@ -58,8 +58,11 @@ class PasswordResetController extends Controller
         $status = Password::reset(
             $request->only('email', 'password', 'password_confirmation', 'token'),
             function (User $user, string $password) {
+                // Na een geslaagde reset kent de gebruiker het wachtwoord —
+                // zelfde signaal als zelf instellen via account/beveiliging.
                 $user->forceFill([
                     'password' => Hash::make($password),
+                    'password_set_at' => now(),
                 ])->save();
 
                 // Wachtwoord is al gewijzigd; een mislukte bevestigingsmail mag

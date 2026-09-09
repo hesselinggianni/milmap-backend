@@ -245,7 +245,7 @@ class FeatureRequestController extends Controller
 
     private function sendEmail(array $data)
     {
-        $adminEmail = 'gianni@onavan.com';
+        $adminEmail = 'support@milmap.nl';
 
         Mail::send('emails.feature-request', ['data' => $data], function ($message) use ($adminEmail, $data) {
             $message->to($adminEmail)

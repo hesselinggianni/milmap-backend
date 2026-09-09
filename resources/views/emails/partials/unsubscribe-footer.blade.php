@@ -6,6 +6,8 @@
   @endif
 @endisset
 
+@include('emails.partials.signature')
+
 @isset($unsubscribeUrl)
   @if($unsubscribeUrl)
     <p style="margin:28px 0 0;font-size:11px;color:#64748b;line-height:1.6;text-align:center;">

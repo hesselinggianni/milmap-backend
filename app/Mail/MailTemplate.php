@@ -28,7 +28,7 @@ class MailTemplate extends Mailable
      */
     public function envelope(): Envelope
     {
-        $fromEmail = $this->department['email'] ?? 'gianni@onavan.com';
+        $fromEmail = $this->department['email'] ?? 'support@milmap.nl';
         $fromName = $this->department['name'] ?? 'MilMAP - by Onavan';
 
       

@@ -306,8 +306,15 @@ class UserController extends Controller
 
     /**
      * PUT /api/v1/user/password
-     * Wijzigt het wachtwoord van de ingelogde gebruiker na verificatie
-     * van het huidige wachtwoord.
+     * Wijzigt het wachtwoord van de ingelogde gebruiker.
+     *
+     * Twee gevallen:
+     *  - `password_set_at` is al gezet: de gebruiker kent een wachtwoord en
+     *    moet dat als `current_password` bevestigen ("wijzigen").
+     *  - `password_set_at` is nog NULL: de huidige hash is de willekeurige,
+     *    onbekende hash van bij registratie/social-login — er ís niets om te
+     *    bevestigen, dus slaan we die check over ("instellen"). Zie
+     *    RegisterController/GoogleAuthController/AppleAuthController.
      */
     public function changePassword(Request $request)
     {
@@ -316,12 +323,14 @@ class UserController extends Controller
             return response()->json(['message' => 'Unauthorized'], 401);
         }
 
+        $isFirstTimeSet = !$user->password_set_at;
+
         $validated = $request->validate([
-            'current_password' => ['required', 'string'],
+            'current_password' => [$isFirstTimeSet ? 'nullable' : 'required', 'string'],
             'password'         => ['required', 'string', 'min:8', 'confirmed'],
         ]);
 
-        if (!\Illuminate\Support\Facades\Hash::check($validated['current_password'], $user->password)) {
+        if (!$isFirstTimeSet && !\Illuminate\Support\Facades\Hash::check($validated['current_password'], $user->password)) {
             return response()->json([
                 'success' => false,
                 'message' => 'Huidig wachtwoord is onjuist.',
@@ -329,7 +338,10 @@ class UserController extends Controller
             ], 422);
         }
 
-        $this->userService->updateUser($user->id, ['password' => $validated['password']]);
+        $this->userService->updateUser($user->id, [
+            'password' => $validated['password'],
+            'password_set_at' => now(),
+        ]);
 
         return response()->json([
             'success' => true,
