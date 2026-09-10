@@ -323,9 +323,18 @@ Route::prefix('v1')->middleware(['api'])->group(function () {
     // zou anders elke GET opslokken. Token komt uit mail_sends.token.
     // ── Tijdelijke kledingbestel-lijst (trainingspak / shirts) ──────────
     // Volledig publiek, los van users — bedoeld om later weer te verwijderen.
-    Route::get   ('/clothing/products', [ClothingOrderController::class, 'products']);
+    Route::get   ('/clothing/products',   [ClothingOrderController::class, 'products']);
+    Route::get   ('/clothing/categories', [ClothingOrderController::class, 'categories']);
     Route::get   ('/clothing/orders',   [ClothingOrderController::class, 'index']);
     Route::post  ('/clothing/orders',   [ClothingOrderController::class, 'store'])->middleware('throttle:30,1');
+
+    // Admin productbeheer (controller checkt zelf is_admin via Sanctum, zelfde
+    // patroon als index() hierboven — geen aparte middleware nodig).
+    Route::get   ('/clothing/admin/products',        [ClothingOrderController::class, 'adminProducts']);
+    Route::post  ('/clothing/admin/products',         [ClothingOrderController::class, 'adminStoreProduct']);
+    Route::post  ('/clothing/admin/products/{id}',    [ClothingOrderController::class, 'adminUpdateProduct']);
+    Route::delete('/clothing/admin/products/{id}',    [ClothingOrderController::class, 'adminDestroyProduct']);
+    Route::post  ('/clothing/admin/categories',       [ClothingOrderController::class, 'adminStoreCategory']);
     // Wijzigen via e-mail-link (geheim edit_token in de URL).
     Route::post  ('/clothing/request-edit',         [ClothingOrderController::class, 'requestEdit'])->middleware('throttle:6,1');
     Route::get   ('/clothing/orders/by-token/{token}', [ClothingOrderController::class, 'showByToken']);

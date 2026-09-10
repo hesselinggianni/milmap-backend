@@ -2,10 +2,13 @@
 
 namespace App\Http\Controllers;
 
+use App\Models\ClothingCategory;
 use App\Models\ClothingOrder;
+use App\Models\ClothingProduct;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Auth;
 use Illuminate\Support\Facades\Mail;
+use Illuminate\Support\Facades\Storage;
 use Illuminate\Support\Str;
 use Illuminate\Validation\Rule;
 
@@ -21,28 +24,144 @@ use Illuminate\Validation\Rule;
  */
 class ClothingOrderController extends Controller
 {
-    /**
-     * Productcatalogus uit de invullijst (26-1). Kleur volgt uit de producttitel
-     * (desert / militair groen); de overige items zijn zwart.
-     */
-    public const PRODUCTS = [
-        ['key' => 'tshirt_desert',   'name' => 'T-shirt desert',      'price' => 20,  'color' => 'Desert',          'swatch' => '#c8a96a', 'sizes' => ['S','M','L','XL','XXL','3XL','4XL']],
-        ['key' => 'tshirt_milgr',    'name' => 'T-shirt mil. gr.',    'price' => 20,  'color' => 'Militair groen',  'swatch' => '#4b5320', 'sizes' => ['S','M','L','XL','XXL','3XL','4XL']],
-        ['key' => 'tshirt_milgr_h',  'name' => 'T-shirt militair groen licht', 'price' => 20, 'color' => 'Militair groen', 'swatch' => '#4b5320', 'sizes' => ['S','M','L','XL','XXL','3XL','4XL']],
-        ['key' => 'tshirt_sport',    'name' => 'T-shirt sport',       'price' => 20,  'color' => 'Zwart',           'swatch' => '#1a1a1a', 'sizes' => ['S','M','L','XL','XXL','3XL','4XL']],
-        ['key' => 'hemd_sport',      'name' => 'Hemd sport',          'price' => 20,  'color' => 'Zwart',           'swatch' => '#1a1a1a', 'sizes' => ['S','M','L','XL','XXL','3XL','4XL']],
-        ['key' => 'hoodie',          'name' => 'Hoodie',              'price' => 35,  'color' => 'Zwart',           'swatch' => '#1a1a1a', 'sizes' => ['S','M','L','XL','XXL','3XL','4XL']],
-        ['key' => 'sweatshirt',      'name' => 'Sweatshirt',          'price' => 35,  'color' => 'Zwart',           'swatch' => '#1a1a1a', 'sizes' => ['S','M','L','XL','XXL','3XL','4XL']],
-        ['key' => 'trainingspak',    'name' => 'Trainingspak',        'price' => 110, 'color' => 'Zwart',           'swatch' => '#1a1a1a', 'sizes' => ['S','M','L','XL','XXL']],
-    ];
-
     /** E-mailadres dat een backup van elke bestelling ontvangt. */
     private const BACKUP_EMAIL = 'support@milmap.nl';
 
-    /** Catalogus voor de bestelpagina. */
+    /** Actieve producten-catalogus voor de bestelpagina. */
     public function products()
     {
-        return response()->json(['products' => self::PRODUCTS]);
+        $products = ClothingProduct::with('category')
+            ->where('active', true)
+            ->orderBy('sort_order')
+            ->get()
+            ->map(fn (ClothingProduct $p) => $p->toCatalogArray());
+
+        return response()->json(['products' => $products]);
+    }
+
+    /** Categorieën — voor de shop-navigatie en het admin-formulier. */
+    public function categories()
+    {
+        $categories = ClothingCategory::orderBy('sort_order')->get(['id', 'key', 'label', 'sort_order']);
+        return response()->json(['categories' => $categories]);
+    }
+
+    /* ── Admin: producten- en categoriebeheer ────────────────────────
+       Zelfde admin-check als index(): Sanctum-token met is_admin + 'admin'-ability. */
+
+    public function adminProducts(Request $request)
+    {
+        $this->requireAdmin($request);
+
+        $products = ClothingProduct::with('category')->orderBy('sort_order')->get()->map(fn (ClothingProduct $p) => [
+            'id'          => $p->id,
+            'key'         => $p->key,
+            'name'        => $p->name,
+            'color'       => $p->color,
+            'swatch'      => $p->swatch,
+            'price'       => (float) $p->price,
+            'sizes'       => $p->sizes,
+            'active'      => $p->active,
+            'category_id' => $p->category_id,
+            'category'    => $p->category?->only(['id', 'key', 'label']),
+            'image'       => $p->image_path ? asset('storage/' . $p->image_path) : null,
+        ]);
+
+        return response()->json(['products' => $products]);
+    }
+
+    public function adminStoreCategory(Request $request)
+    {
+        $this->requireAdmin($request);
+
+        $data = $request->validate([
+            'key'   => ['required', 'string', 'max:60', 'alpha_dash', 'unique:clothing_categories,key'],
+            'label' => ['required', 'string', 'max:100'],
+        ]);
+
+        $data['sort_order'] = (int) ClothingCategory::max('sort_order') + 1;
+        $category = ClothingCategory::create($data);
+
+        return response()->json(['category' => $category], 201);
+    }
+
+    public function adminStoreProduct(Request $request)
+    {
+        $this->requireAdmin($request);
+        $data = $this->validateProductPayload($request);
+
+        if ($request->hasFile('image')) {
+            $data['image_path'] = $request->file('image')->store('clothing', 'public');
+        }
+        $data['sort_order'] = (int) ClothingProduct::max('sort_order') + 1;
+
+        $product = ClothingProduct::create($data);
+
+        return response()->json(['product' => $product->fresh('category')], 201);
+    }
+
+    public function adminUpdateProduct(Request $request, int $id)
+    {
+        $this->requireAdmin($request);
+        $product = ClothingProduct::findOrFail($id);
+        $data = $this->validateProductPayload($request, $product->id);
+
+        if ($request->hasFile('image')) {
+            if ($product->image_path) {
+                Storage::disk('public')->delete($product->image_path);
+            }
+            $data['image_path'] = $request->file('image')->store('clothing', 'public');
+        }
+
+        $product->update($data);
+
+        return response()->json(['product' => $product->fresh('category')]);
+    }
+
+    public function adminDestroyProduct(Request $request, int $id)
+    {
+        $this->requireAdmin($request);
+        $product = ClothingProduct::findOrFail($id);
+        if ($product->image_path) {
+            Storage::disk('public')->delete($product->image_path);
+        }
+        $product->delete();
+
+        return response()->json(['message' => 'Product verwijderd.']);
+    }
+
+    private function validateProductPayload(Request $request, ?int $ignoreId = null): array
+    {
+        $keyRule = Rule::unique('clothing_products', 'key');
+        if ($ignoreId) {
+            $keyRule->ignore($ignoreId);
+        }
+
+        $data = $request->validate([
+            'category_id' => ['required', 'integer', 'exists:clothing_categories,id'],
+            'key'         => ['required', 'string', 'max:60', 'alpha_dash', $keyRule],
+            'name'        => ['required', 'string', 'max:150'],
+            'color'       => ['nullable', 'string', 'max:60'],
+            'swatch'      => ['required', 'string', 'max:9'],
+            'price'       => ['required', 'numeric', 'min:0'],
+            'sizes'       => ['required', 'array', 'min:1'],
+            'sizes.*'     => ['required', 'string', 'max:10'],
+            'active'      => ['nullable', 'boolean'],
+            'image'       => ['nullable', 'image', 'max:4096'],
+        ]);
+
+        unset($data['image']);
+        $data['active'] = $request->boolean('active', true);
+
+        return $data;
+    }
+
+    /** Gooit een 403 als de aanvraag niet van een ingelogde MilMap-admin komt. */
+    private function requireAdmin(Request $request): void
+    {
+        if (!$this->isAdmin($request)) {
+            abort(403, 'Alleen voor beheerders.');
+        }
     }
 
     /**
@@ -209,14 +328,14 @@ class ClothingOrderController extends Controller
 
     private function validatePayload(Request $request): array
     {
-        $catalog = collect(self::PRODUCTS)->keyBy('key');
+        $keys = ClothingProduct::where('active', true)->pluck('key');
 
         return $request->validate([
             'name'         => ['required', 'string', 'max:150'],
             'email'        => ['nullable', 'email', 'max:190'],
             'note'         => ['nullable', 'string', 'max:500'],
             'items'        => ['required', 'array', 'min:1'],
-            'items.*.key'  => ['required', 'string', Rule::in($catalog->keys())],
+            'items.*.key'  => ['required', 'string', Rule::in($keys)],
             'items.*.size' => ['required', 'string', 'max:10'],
             'items.*.qty'  => ['required', 'integer', 'min:1', 'max:99'],
         ]);
@@ -225,23 +344,23 @@ class ClothingOrderController extends Controller
     /** Bouwt de items-lijst + totalen op uit gevalideerde input. */
     private function buildItems(array $rows): array
     {
-        $catalog    = collect(self::PRODUCTS)->keyBy('key');
+        $catalog    = ClothingProduct::where('active', true)->get()->keyBy('key');
         $items      = [];
         $totalQty   = 0;
         $totalPrice = 0.0;
 
         foreach ($rows as $row) {
             $product = $catalog->get($row['key']);
-            if (!in_array($row['size'], $product['sizes'], true)) {
-                abort(422, "Ongeldige maat '{$row['size']}' voor {$product['name']}.");
+            if (!$product || !in_array($row['size'], $product->sizes, true)) {
+                abort(422, "Ongeldige maat '{$row['size']}' voor {$row['key']}.");
             }
 
             $qty   = (int) $row['qty'];
-            $price = (float) $product['price'];
+            $price = (float) $product->price;
             $items[] = [
-                'key'     => $product['key'],
-                'product' => $product['name'],
-                'color'   => $product['color'] ?? null,
+                'key'     => $product->key,
+                'product' => $product->name,
+                'color'   => $product->color,
                 'size'    => $row['size'],
                 'qty'     => $qty,
                 'price'   => $price,
