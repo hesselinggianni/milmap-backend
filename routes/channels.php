@@ -3,6 +3,7 @@
 use App\Models\Conversation;
 use App\Models\Map;
 use App\Models\Mission;
+use App\Models\WaypointFloorplan;
 use Illuminate\Support\Facades\Broadcast;
 
 /*
@@ -110,6 +111,49 @@ Broadcast::channel('mission.{missionId}', function ($user, $missionId) {
     }
 
     if (! $mission->hasAccess($user->id)) {
+        return false;
+    }
+
+    return [
+        'id'   => $user->id,
+        'name' => trim(($user->first_name ?? '') . ' ' . ($user->last_name ?? '')) ?: $user->email,
+    ];
+});
+
+/**
+ * Floorplan collaboration channel (presence)
+ * - Live CAD-tekenen op een plattegrond binnen een waypoint (gebouw).
+ * - Toegang volgt de kaart waar het waypoint bij hoort: eigenaar of accepted
+ *   collaborator van die map (zelfde regel als map.{mapId}).
+ */
+Broadcast::channel('floorplan.{floorplanId}', function ($user, $floorplanId) {
+    if (! $user) {
+        return false;
+    }
+
+    $floorplan = WaypointFloorplan::with('waypoint')->find($floorplanId);
+    if (! $floorplan || ! $floorplan->waypoint) {
+        return false;
+    }
+
+    $map = Map::find($floorplan->waypoint->map_id);
+    if (! $map) {
+        return false;
+    }
+
+    if ($map->owner_id === $user->id) {
+        return [
+            'id'   => $user->id,
+            'name' => trim(($user->first_name ?? '') . ' ' . ($user->last_name ?? '')) ?: $user->email,
+        ];
+    }
+
+    $hasAccess = $map->collaborators()
+        ->where('user_id', $user->id)
+        ->where('status', 'accepted')
+        ->exists();
+
+    if (! $hasAccess) {
         return false;
     }
 

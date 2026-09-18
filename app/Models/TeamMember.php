@@ -15,8 +15,9 @@ class TeamMember extends Model
     public const STATUS_PENDING = 'pending';
     public const STATUS_ACTIVE  = 'active';
 
-    public const ROLE_MEMBER = 'member';
-    public const ROLE_GUEST  = 'guest';
+    public const ROLE_MEMBER   = 'member';
+    public const ROLE_GUEST    = 'guest';
+    public const ROLE_TEAMLEAD = 'teamlead';
 
     protected $fillable = [
         'team_id',
@@ -45,6 +46,12 @@ class TeamMember extends Model
     public function isGuest(): bool
     {
         return $this->role === self::ROLE_GUEST;
+    }
+
+    /** Teamlead: mag namens de owner teamleden beheren (toevoegen/rollen/rechten/verwijderen). */
+    public function isTeamlead(): bool
+    {
+        return $this->role === self::ROLE_TEAMLEAD;
     }
 
     public function user(): BelongsTo

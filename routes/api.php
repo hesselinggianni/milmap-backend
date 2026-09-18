@@ -11,6 +11,7 @@ use App\Http\Controllers\Auth\EmailVerificationController;
 
 use App\Http\Controllers\UserController;
 use App\Http\Controllers\MapController;
+use App\Http\Controllers\MapLinkController;
 use App\Http\Controllers\SearchHistoryController;
 use App\Http\Controllers\LocationController;
 use App\Http\Controllers\UserLocationController;
@@ -30,6 +31,8 @@ use App\Http\Controllers\OtaUpdateController;
 use App\Http\Controllers\BillingController;
 use App\Http\Controllers\MapCollaboratorController;
 use App\Http\Controllers\MapWaypointController;
+use App\Http\Controllers\WaypointFloorplanController;
+use App\Http\Controllers\FloorplanElementController;
 use App\Http\Controllers\RouteGenerationController;
 use App\Http\Controllers\ChatKeyController;
 use App\Http\Controllers\ChatPairingController;
@@ -340,6 +343,16 @@ Route::prefix('v1')->middleware(['api'])->group(function () {
     Route::get   ('/clothing/orders/by-token/{token}', [ClothingOrderController::class, 'showByToken']);
     Route::put   ('/clothing/orders/by-token/{token}', [ClothingOrderController::class, 'updateByToken'])->middleware('throttle:30,1');
 
+    // ── MilMap Store (milmap-store): locatie-herinneringskaarten ────────
+    // Bestellen kan zonder account (digitale download); ingelogd (zelfde
+    // MilMap-account als de app) wordt de bestelling gekoppeld en zichtbaar
+    // op /account/orders. Bezorging (print) alleen NL/BE, in de controller.
+    Route::post('/store/orders', [\App\Http\Controllers\StoreOrderController::class, 'store'])
+        ->middleware('throttle:20,1');
+    Route::middleware('auth:sanctum')->group(function () {
+        Route::get('/store/orders', [\App\Http\Controllers\StoreOrderController::class, 'index']);
+    });
+
     // ── Marcandi bestel-tool (marcandi.milmap.nl) ──────────────────────
     // Publiek: shops bekijken + bestellen. Beheer/overzicht/export achter
     // milmap-admin-auth (in de controller afgedwongen via Auth::guard('sanctum')).
@@ -545,6 +558,10 @@ Route::prefix('v1')->middleware(['api'])->group(function () {
         Route::delete('/search-history/{id}', [SearchHistoryController::class, 'destroy']);
         Route::delete('/search-history', [SearchHistoryController::class, 'clear']);
 
+        // Verkorte Google/Apple-kaartlinks uitklappen (CORS-vrij via de server).
+        Route::post('/map-links/resolve', [MapLinkController::class, 'resolve'])
+            ->middleware('throttle:30,1');
+
       
         Route::get('/routemaps', [RouteMapController::class, 'index']);
         Route::post('/routemaps', [RouteMapController::class, 'store']);
@@ -591,6 +608,7 @@ Route::prefix('v1')->middleware(['api'])->group(function () {
         // Map sharing routes
         Route::get('/maps/{mapId}/shares', [MapShareController::class, 'index']);
         Route::post('/maps/{mapId}/shares', [MapShareController::class, 'store']);
+        Route::put('/maps/{mapId}/shares/{shareId}', [MapShareController::class, 'update']);
         Route::delete('/maps/{mapId}/shares/{shareId}', [MapShareController::class, 'destroy']);
 
         // Map collaborators routes
@@ -607,6 +625,16 @@ Route::prefix('v1')->middleware(['api'])->group(function () {
         // Waypoint-foto's
         Route::post('/maps/{mapId}/waypoints/{localId}/images', [MapWaypointController::class, 'uploadImage']);
         Route::delete('/maps/{mapId}/waypoints/{localId}/images/{imageId}', [MapWaypointController::class, 'deleteImage']);
+
+        // Waypoint-plattegronden (CAD-tekentool, live via Reverb op floorplan.{id})
+        Route::get('/maps/{mapId}/waypoints/{localId}/floorplans', [WaypointFloorplanController::class, 'index']);
+        Route::post('/maps/{mapId}/waypoints/{localId}/floorplans', [WaypointFloorplanController::class, 'store']);
+        Route::get('/floorplans/{floorplanId}', [WaypointFloorplanController::class, 'show']);
+        Route::put('/floorplans/{floorplanId}', [WaypointFloorplanController::class, 'update']);
+        Route::delete('/floorplans/{floorplanId}', [WaypointFloorplanController::class, 'destroy']);
+        Route::post('/floorplans/{floorplanId}/elements', [FloorplanElementController::class, 'store']);
+        Route::put('/floorplans/{floorplanId}/elements/{elementId}', [FloorplanElementController::class, 'update']);
+        Route::delete('/floorplans/{floorplanId}/elements/{elementId}', [FloorplanElementController::class, 'destroy']);
 
         // ── Missions (owner + collaborators with roles) ──────────────────
         // Literal invitation routes first so they aren't captured by {id}.

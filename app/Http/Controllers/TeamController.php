@@ -23,12 +23,20 @@ class TeamController extends Controller
     }
 
     /**
-     * Teams owned by the authenticated user (with their members).
+     * Teams van de gebruiker: teams die hij zelf bezit, plus teams waar hij als
+     * teamlead in zit (kan leden beheren namens de owner).
      * GET /api/v1/teams
      */
     public function index()
     {
-        $teams = Team::where('owner_id', Auth::id())
+        $ownedIds = Team::where('owner_id', Auth::id())->pluck('id');
+
+        $teamleadIds = TeamMember::where('user_id', Auth::id())
+            ->where('role', TeamMember::ROLE_TEAMLEAD)
+            ->where('status', TeamMember::STATUS_ACTIVE)
+            ->pluck('team_id');
+
+        $teams = Team::whereIn('id', $ownedIds->merge($teamleadIds)->unique())
             ->with(['members.user:id,first_name,last_name,email'])
             ->latest()
             ->get()
@@ -86,7 +94,7 @@ class TeamController extends Controller
      */
     public function show($id)
     {
-        $team = $this->ownedTeam($id);
+        $team = $this->manageableTeam($id);
 
         return response()->json(['team' => $this->present($team)]);
     }
@@ -136,15 +144,21 @@ class TeamController extends Controller
      */
     public function addMember(Request $request, $id)
     {
-        $team = $this->ownedTeam($id);
+        $team = $this->manageableTeam($id);
 
         $request->validate([
             'email'   => 'nullable|email',
             'user_id' => 'nullable|integer|exists:users,id',
-            'role'    => ['nullable', Rule::in(['member', 'guest'])],
+            'role'    => ['nullable', Rule::in(['member', 'guest', 'teamlead'])],
         ]);
 
         $role = $request->input('role', TeamMember::ROLE_MEMBER);
+
+        // Alleen de owner mag nieuwe teamleads benoemen (voorkomt dat een
+        // teamlead zichzelf/anderen ongelimiteerd verder promoot).
+        if ($role === TeamMember::ROLE_TEAMLEAD && ! $team->isOwnedBy(Auth::id())) {
+            return response()->json(['error' => 'Alleen de teameigenaar mag een teamlead benoemen.'], 403);
+        }
 
         $email = null;
         $userId = null;
@@ -215,16 +229,21 @@ class TeamController extends Controller
      */
     public function updateMember(Request $request, $id, $memberId)
     {
-        $team   = $this->ownedTeam($id);
+        $team   = $this->manageableTeam($id);
         $member = TeamMember::where('team_id', $team->id)->findOrFail($memberId);
+        $isOwner = $team->isOwnedBy(Auth::id());
 
         $data = $request->validate([
-            'role'          => ['sometimes', Rule::in(['member', 'guest'])],
+            'role'          => ['sometimes', Rule::in(['member', 'guest', 'teamlead'])],
             'permissions'   => ['sometimes', 'nullable', 'array'],
             'permissions.*' => ['boolean'],
         ]);
 
         if (array_key_exists('role', $data)) {
+            // Alleen de owner mag de teamlead-rol toekennen of intrekken.
+            if (($data['role'] === TeamMember::ROLE_TEAMLEAD || $member->isTeamlead()) && ! $isOwner) {
+                return response()->json(['error' => 'Alleen de teameigenaar mag de teamlead-rol wijzigen.'], 403);
+            }
             $member->role = $data['role'];
         }
         if (array_key_exists('permissions', $data)) {
@@ -244,8 +263,14 @@ class TeamController extends Controller
      */
     public function removeMember($id, $memberId)
     {
-        $team   = $this->ownedTeam($id);
+        $team   = $this->manageableTeam($id);
         $member = TeamMember::where('team_id', $team->id)->findOrFail($memberId);
+
+        // Alleen de owner mag een teamlead verwijderen.
+        if ($member->isTeamlead() && ! $team->isOwnedBy(Auth::id())) {
+            return response()->json(['error' => 'Alleen de teameigenaar mag een teamlead verwijderen.'], 403);
+        }
+
         $wasActive = $member->isActive();
         $member->delete();
 
@@ -338,7 +363,7 @@ class TeamController extends Controller
      */
     public function invite(Request $request, $id)
     {
-        $team = $this->ownedTeam($id);
+        $team = $this->manageableTeam($id);
 
         $data = $request->validate([
             'invitable_type' => ['required', Rule::in(['mission', 'map'])],
@@ -412,6 +437,28 @@ class TeamController extends Controller
         return $team;
     }
 
+    /** Team waar de gebruiker owner van is, óf actieve teamlead in is. */
+    protected function manageableTeam($id): Team
+    {
+        $team = Team::with(['members.user:id,first_name,last_name,email'])->findOrFail($id);
+
+        if ($team->isOwnedBy(Auth::id())) {
+            return $team;
+        }
+
+        $isTeamlead = $team->members->contains(
+            fn (TeamMember $m) => (int) $m->user_id === Auth::id()
+                && $m->isTeamlead()
+                && $m->isActive()
+        );
+
+        if (! $isTeamlead) {
+            abort(403, 'Je hebt geen rechten om dit team te beheren.');
+        }
+
+        return $team;
+    }
+
     protected function canManageResource($resource, int $userId): bool
     {
         if ($resource instanceof Mission) {
@@ -445,6 +492,11 @@ class TeamController extends Controller
 
     protected function present(Team $team): array
     {
+        $isOwner = $team->isOwnedBy(Auth::id());
+        $isTeamlead = ! $isOwner && $team->members->contains(
+            fn (TeamMember $m) => (int) $m->user_id === Auth::id() && $m->isTeamlead() && $m->isActive()
+        );
+
         return [
             'id'            => $team->id,
             'name'          => $team->name,
@@ -454,6 +506,11 @@ class TeamController extends Controller
             'members'       => $team->members->map(fn ($m) => $this->presentMember($m))->values(),
             'seat_status'   => $this->seatInfo($team),
             'created_at'    => $team->created_at?->toIso8601String(),
+            'is_owner'      => $isOwner,
+            'is_teamlead'   => $isTeamlead,
+            // Owner en teamlead mogen beiden leden beheren; alleen owner mag
+            // team-instellingen wijzigen of het team verwijderen.
+            'can_manage_members' => $isOwner || $isTeamlead,
         ];
     }
 

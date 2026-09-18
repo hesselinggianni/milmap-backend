@@ -74,7 +74,7 @@ class UserLocationController extends Controller
         // Get all fresh locations for this map with user data
         $locations = UserLocation::where('map_id', $mapId)
             ->where('last_updated_at', '>', now()->subMinutes(2))
-            ->with('user:id,name,email,avatar_path')
+            ->with('user:id,first_name,last_name,email,avatar_path')
             ->get()
             ->map(fn($loc) => $this->formatLocation($loc));
 
@@ -102,7 +102,10 @@ class UserLocationController extends Controller
             return response()->json(['error' => 'Location not found'], 404);
         }
 
-        $userName = Auth::user()->name;
+        // Het broadcast-event vereist altijd een string. Oude accounts kunnen
+        // nog lege naam- én e-mailvelden hebben; voorkom dan een TypeError bij
+        // het stoppen van locatie delen.
+        $userName = trim((string) Auth::user()->full_name) ?: 'MilMap gebruiker';
         $location->delete();
 
         // Broadcast the removal
@@ -137,7 +140,7 @@ class UserLocationController extends Controller
     {
         return [
             'user_id' => $location->user_id,
-            'user_name' => $location->user->name,
+            'user_name' => $location->user->full_name,
             'avatar_url' => $location->user->avatar_url,
             'map_id' => $location->map_id,
             'latitude' => (float) $location->latitude,

@@ -38,7 +38,7 @@ class UserLocationUpdated implements ShouldBroadcast
     {
         return [
             'user_id' => $this->location->user_id,
-            'user_name' => $this->location->user->name,
+            'user_name' => $this->location->user->full_name,
             'map_id' => $this->location->map_id,
             'latitude' => $this->location->latitude,
             'longitude' => $this->location->longitude,
