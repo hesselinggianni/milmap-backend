@@ -52,8 +52,11 @@ class UserLocationController extends Controller
             ])
         );
 
-        // Broadcast the update
-        UserLocationUpdated::dispatch($location);
+        // Broadcast the update. Het delen zelf is al gelukt en staat in de
+        // database; valt de broadcaster weg, dan is dat geen reden om de
+        // client een 500 te geven — de andere deelnemers halen de posities
+        // sowieso elke paar seconden ook op via getLocations().
+        $this->broadcastSafely(fn () => UserLocationUpdated::dispatch($location));
 
         return response()->json([
             'success' => true,
@@ -76,7 +79,12 @@ class UserLocationController extends Controller
             ->where('last_updated_at', '>', now()->subMinutes(2))
             ->with('user:id,first_name,last_name,email,avatar_path')
             ->get()
-            ->map(fn($loc) => $this->formatLocation($loc));
+            // Een positie zonder gebruiker is een wees (account verwijderd
+            // terwijl de rij bleef staan). Die overslaan in plaats van erover
+            // struikelen in formatLocation(), anders valt de hele kaart om.
+            ->filter(fn($loc) => $loc->user !== null)
+            ->map(fn($loc) => $this->formatLocation($loc))
+            ->values();
 
         return response()->json([
             'success' => true,
@@ -108,8 +116,8 @@ class UserLocationController extends Controller
         $userName = trim((string) Auth::user()->full_name) ?: 'MilMap gebruiker';
         $location->delete();
 
-        // Broadcast the removal
-        UserLocationRemoved::dispatch($mapId, Auth::id(), $userName);
+        // Broadcast the removal — zie update(): best-effort, de rij is al weg.
+        $this->broadcastSafely(fn () => UserLocationRemoved::dispatch($mapId, Auth::id(), $userName));
 
         return response()->json([
             'success' => true,
@@ -134,14 +142,30 @@ class UserLocationController extends Controller
     }
 
     /**
+     * Een broadcast mag het verzoek niet laten klappen. De schrijfactie is op
+     * dit punt al voltooid; een onbereikbare of verkeerd geconfigureerde
+     * broadcaster hoort in het log terecht te komen, niet in een 500.
+     */
+    private function broadcastSafely(callable $dispatch): void
+    {
+        try {
+            $dispatch();
+        } catch (\Throwable $e) {
+            \Illuminate\Support\Facades\Log::warning('Broadcast van locatie mislukt', [
+                'error' => $e->getMessage(),
+            ]);
+        }
+    }
+
+    /**
      * Format location data for API response.
      */
     private function formatLocation(UserLocation $location): array
     {
         return [
             'user_id' => $location->user_id,
-            'user_name' => $location->user->full_name,
-            'avatar_url' => $location->user->avatar_url,
+            'user_name' => $location->user?->full_name ?? 'MilMap gebruiker',
+            'avatar_url' => $location->user?->avatar_url,
             'map_id' => $location->map_id,
             'latitude' => (float) $location->latitude,
             'longitude' => (float) $location->longitude,
@@ -150,7 +174,7 @@ class UserLocationController extends Controller
             'speed' => $location->speed ? (float) $location->speed : null,
             'route_map_id' => $location->route_map_id,
             'route_map_title' => $location->route_map_title,
-            'last_updated_at' => $location->last_updated_at->toIso8601String(),
+            'last_updated_at' => $location->last_updated_at?->toIso8601String(),
             'device_id' => $location->device_id,
         ];
     }
