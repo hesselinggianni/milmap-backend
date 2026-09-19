@@ -4,6 +4,8 @@ namespace App\Http\Controllers;
 
 use App\Models\Map;
 use App\Models\MapShare;
+use App\Models\MapWaypoint;
+use App\Models\Report;
 use App\Models\RouteMap;
 use App\Models\UserLocation;
 use Illuminate\Http\Request;
@@ -11,6 +13,61 @@ use Illuminate\Support\Facades\Auth;
 
 class MapShareController extends Controller
 {
+
+    /**
+     * Welke kaartdata een deellink mag tonen. De eigenaar kiest dit per link in
+     * de deel-dialoog; alles staat standaard aan zodat bestaande links (zonder
+     * `content`-blok) precies blijven tonen wat ze altijd toonden.
+     */
+    private const CONTENT_DEFAULTS = [
+        'routes'           => true,  // routelijnen + route-waypoints op de kaart
+        'route_table'      => true,  // tabel met alle punten
+        'route_attachment' => true,  // bijlage (belangrijke coördinaten, notities)
+        'waypoints'        => true,  // losse waypoints
+        'waypoint_notes'   => true,  // notitietekst bij een waypoint
+        'waypoint_photos'  => true,  // foto's bij een waypoint
+        'areas'            => true,  // gemarkeerde gebieden / meldingen
+        'area_details'     => true,  // SALUTE-velden + beschrijving van een gebied
+    ];
+
+    /**
+     * Normaliseer een door de client aangeleverd content-blok naar booleans.
+     * Onbekende sleutels vallen af; ontbrekende sleutels vallen terug op true.
+     */
+    private function normalizeContent($content): array
+    {
+        $content = is_array($content) ? $content : [];
+        $out = [];
+        foreach (self::CONTENT_DEFAULTS as $key => $default) {
+            $out[$key] = array_key_exists($key, $content)
+                ? filter_var($content[$key], FILTER_VALIDATE_BOOLEAN)
+                : $default;
+        }
+
+        // Sub-opties zijn betekenisloos zonder hun hoofdlaag.
+        if (! $out['waypoints']) {
+            $out['waypoint_notes'] = false;
+            $out['waypoint_photos'] = false;
+        }
+        if (! $out['areas']) {
+            $out['area_details'] = false;
+        }
+        if (! $out['routes']) {
+            $out['route_table'] = false;
+            $out['route_attachment'] = false;
+        }
+
+        return $out;
+    }
+
+    /**
+     * Het content-blok van een bestaande share, aangevuld met de defaults.
+     */
+    private function contentOf(MapShare $share): array
+    {
+        return $this->normalizeContent($share->settings['content'] ?? []);
+    }
+
     /**
      * List shares for a map
      */
@@ -42,6 +99,7 @@ class MapShareController extends Controller
             'title' => 'nullable|string|max:255',
             'expires_at' => 'nullable|date',
             'share_live_location' => 'nullable|boolean',
+            'content' => 'nullable|array',
         ]);
 
         $settings = $request->settings ?? [
@@ -52,6 +110,7 @@ class MapShareController extends Controller
         if ($request->has('share_live_location')) {
             $settings['shareLiveLocation'] = (bool) $request->boolean('share_live_location');
         }
+        $settings['content'] = $this->normalizeContent($request->input('content'));
 
         $share = MapShare::create([
             'map_id' => $map->id,
@@ -83,6 +142,7 @@ class MapShareController extends Controller
             'expires_at'           => 'sometimes|nullable|date',
             'settings'             => 'sometimes|nullable|array',
             'share_live_location'  => 'sometimes|boolean',
+            'content'              => 'sometimes|array',
         ]);
 
         if (array_key_exists('title', $data)) {
@@ -97,6 +157,9 @@ class MapShareController extends Controller
         $settings = array_merge($share->settings ?? [], $data['settings'] ?? []);
         if (array_key_exists('share_live_location', $data)) {
             $settings['shareLiveLocation'] = $data['share_live_location'];
+        }
+        if (array_key_exists('content', $data)) {
+            $settings['content'] = $this->normalizeContent($data['content']);
         }
         $share->settings = $settings;
 
@@ -143,7 +206,95 @@ class MapShareController extends Controller
             $routeMapsQuery->whereIn('id', $share->route_map_ids);
         }
 
-        $routeMaps = $routeMapsQuery->get();
+        $content = $this->contentOf($share);
+
+        $routeMaps = $content['routes'] ? $routeMapsQuery->get() : collect();
+
+        // Bijlage-blok alleen meesturen als die laag gedeeld mag worden: wat de
+        // ontvanger niet mag zien, hoort niet in de response te staan (verbergen
+        // in de UI is geen bescherming).
+        if (! $content['route_attachment']) {
+            $routeMaps->each(function (RouteMap $routeMap) {
+                $routeMap->bijlage = null;
+            });
+        }
+
+        // Losse waypoints van de kaart, met de sub-data die is uitgevinkt eruit
+        // gestript.
+        $waypoints = [];
+        if ($content['waypoints']) {
+            $waypoints = MapWaypoint::where('map_id', $map->id)
+                ->when($content['waypoint_photos'], fn ($q) => $q->with('images'))
+                ->get()
+                ->map(function (MapWaypoint $waypoint) use ($content) {
+                    $data = $waypoint->toClientArray();
+                    if (! $content['waypoint_notes']) {
+                        $data['note'] = null;
+                    }
+                    if (! $content['waypoint_photos']) {
+                        $data['images'] = [];
+                    }
+                    return $data;
+                })
+                ->values()
+                ->all();
+        }
+
+        // Gemarkeerde gebieden (meldingen). Zonder 'area_details' blijft alleen
+        // de geometrie + het type over, zodat het gebied wel op de kaart staat
+        // maar de inhoudelijke SALUTE-velden privé blijven.
+        $reports = [];
+        if ($content['areas']) {
+            $reports = Report::where('map_id', $map->id)
+                ->get()
+                ->map(function (Report $report) use ($content) {
+                    $base = [
+                        'id'         => $report->id,
+                        'category'   => $report->category,
+                        'type'       => $report->type,
+                        'subtype'    => $report->subtype,
+                        'latitude'   => (float) $report->latitude,
+                        'longitude'  => (float) $report->longitude,
+                        'status'     => $report->status,
+                        'created_at' => $report->created_at?->toIso8601String(),
+                        // De tekenlaag zit in metadata; alleen de geometrie is
+                        // nodig om het gebied te kunnen tonen.
+                        'metadata'   => array_filter(
+                            [
+                                'saluteGeometry' => $report->metadata['saluteGeometry'] ?? null,
+                                'salutePolygon'  => $report->metadata['salutePolygon'] ?? null,
+                                'approachRoute'  => $report->metadata['approachRoute'] ?? null,
+                                'title'          => $report->metadata['title'] ?? null,
+                                'reportColor'    => $report->metadata['reportColor'] ?? null,
+                                'reportSymbol'   => $report->metadata['reportSymbol'] ?? null,
+                            ],
+                            fn ($value) => $value !== null
+                        ),
+                    ];
+
+                    if (! $content['area_details']) {
+                        return $base;
+                    }
+
+                    return $base + [
+                        'urgency'          => $report->urgency,
+                        'timing'           => $report->timing,
+                        'size'             => $report->size,
+                        'count'            => $report->count,
+                        'activity'         => $report->activity,
+                        'equipment'        => $report->equipment,
+                        'risk'             => $report->risk,
+                        'hazardType'       => $report->hazardType,
+                        'avalancheLevel'   => $report->avalancheLevel,
+                        'roadCondition'    => $report->roadCondition,
+                        'weatherCondition' => $report->weatherCondition,
+                        'description'      => $report->description,
+                        'metadata'         => $report->metadata,
+                    ];
+                })
+                ->values()
+                ->all();
+        }
 
         // Live-locatie van de deler: alleen als de share-eigenaar dit voor déze
         // link heeft aangezet én z'n locatie op deze kaart nog vers is (binnen
@@ -198,9 +349,12 @@ class MapShareController extends Controller
                 'settings' => $share->settings,
                 'expires_at' => $share->expires_at,
                 'share_live_location' => ($share->settings['shareLiveLocation'] ?? false) === true,
+                'content' => $content,
             ],
             'map' => $map,
             'routeMaps' => $routeMaps,
+            'waypoints' => $waypoints,
+            'reports' => $reports,
             'live_location' => $liveLocation,
         ]);
     }
