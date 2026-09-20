@@ -343,6 +343,14 @@ Route::prefix('v1')->middleware(['api'])->group(function () {
     Route::get   ('/clothing/orders/by-token/{token}', [ClothingOrderController::class, 'showByToken']);
     Route::put   ('/clothing/orders/by-token/{token}', [ClothingOrderController::class, 'updateByToken'])->middleware('throttle:30,1');
 
+    // Gedeelde GPS-activiteit (tracklink uit de app): publiek, want de
+    // ontvanger heeft meestal geen MilMap-account. De signed URL (expires +
+    // signature) is de toegangscontrole; de controller leest geen ingelogde
+    // gebruiker. Stond eerst achter auth:sanctum, waardoor een gedeelde link
+    // om een login vroeg.
+    Route::get('/activities/{id}/shared', [\App\Http\Controllers\ActivityController::class, 'shared'])
+        ->middleware(['signed:relative', 'throttle:60,1'])->name('activities.shared');
+
     // ── MilMap Store (milmap-store): locatie-herinneringskaarten ────────
     // Bestellen kan zonder account (digitale download); ingelogd (zelfde
     // MilMap-account als de app) wordt de bestelling gekoppeld en zichtbaar
@@ -418,6 +426,7 @@ Route::prefix('v1')->middleware(['api'])->group(function () {
         // Opgenomen GPS-activiteiten (hardlopen/fietsen/wandelen), zoals Strava.
         Route::get('/activities', [\App\Http\Controllers\ActivityController::class, 'index']);
         Route::post('/activities', [\App\Http\Controllers\ActivityController::class, 'store']);
+        Route::post('/activities/{id}/share', [\App\Http\Controllers\ActivityController::class, 'share']);
         Route::get('/activities/{id}', [\App\Http\Controllers\ActivityController::class, 'show']);
         Route::put('/activities/{id}', [\App\Http\Controllers\ActivityController::class, 'update']);
         Route::delete('/activities/{id}', [\App\Http\Controllers\ActivityController::class, 'destroy']);

@@ -24,8 +24,20 @@ class ActivityController extends Controller
             ->where('user_id', Auth::id())
             ->orderByDesc('started_at')
             ->limit(100)
+            ->select([
+                'id', 'user_id', 'type', 'title', 'notes', 'notes_ciphertext', 'started_at', 'ended_at',
+                'distance_m', 'moving_time_s', 'elapsed_time_s', 'elevation_gain_m',
+                'avg_pace_s_per_km', 'avg_speed_kmh', 'avg_power_w', 'calories',
+                'source', 'garmin_activity_id', 'garmin_device_name', 'created_at', 'updated_at',
+            ])
+            // Start coordinates are stored separately before the track is encrypted.
+            ->addSelect(['start_lat', 'start_lon'])
             ->get()
-            ->makeHidden('points');
+            ->each(function (Activity $activity) {
+                foreach (['start_lat', 'start_lon'] as $field) {
+                    $activity->setAttribute($field, is_numeric($activity->$field) ? (float) $activity->$field : null);
+                }
+            });
 
         return response()->json(['activities' => $activities]);
     }
@@ -68,6 +80,22 @@ class ActivityController extends Controller
         }
 
         return $this->persistActivity($request, $data);
+    }
+
+    /** Only the owner can create a read-only link, valid for seven days. */
+    public function share($id)
+    {
+        $activity = Activity::where('user_id', Auth::id())->findOrFail($id);
+        $url = \Illuminate\Support\Facades\URL::temporarySignedRoute(
+            'activities.shared', now()->addDays(7), ['id' => $activity->id], false
+        );
+        return response()->json(['path' => $url]);
+    }
+
+    public function shared($id)
+    {
+        $activity = Activity::with('photos')->findOrFail($id);
+        return response()->json(['activity' => $activity->makeHidden(['user_id'])]);
     }
 
     private function validateActivity(Request $request): array

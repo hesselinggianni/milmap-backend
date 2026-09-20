@@ -21,6 +21,7 @@ class UserUpload extends Model
 
     protected $fillable = [
         'user_id',
+        'conversation_id',
         'kind',
         'disk',
         'path',
@@ -41,11 +42,12 @@ class UserUpload extends Model
      * Leg een upload vast. Faalt nooit hard — opslag-boekhouding mag een
      * geslaagde upload niet alsnog laten klappen.
      */
-    public static function record(int $userId, string $path, int $size, ?string $mime = null, string $kind = 'chat', string $disk = 'public'): void
+    public static function record(int $userId, string $path, int $size, ?string $mime = null, string $kind = 'chat', string $disk = 'public', ?string $conversationId = null): ?self
     {
         try {
-            static::create([
+            return static::create([
                 'user_id' => $userId,
+                'conversation_id' => $conversationId,
                 'kind'    => $kind,
                 'disk'    => $disk,
                 'path'    => $path,
@@ -54,6 +56,7 @@ class UserUpload extends Model
             ]);
         } catch (\Throwable $e) {
             // Best-effort grootboek; stil falen.
+            return null;
         }
     }
 }
