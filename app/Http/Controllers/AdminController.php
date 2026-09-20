@@ -14,6 +14,7 @@ use Illuminate\Support\Facades\Password;
 use Illuminate\Support\Facades\Log;
 use Illuminate\Support\Facades\Mail;
 use App\Mail\ResetPasswordMail;
+use App\Mail\AccountClosedMail;
 
 class AdminController extends Controller
 {
@@ -508,8 +509,36 @@ class AdminController extends Controller
 
             $user = User::findOrFail($userId);
 
+            // Gegevens vastleggen vóór de verwijdering: daarna is er niets meer
+            // om een bevestigingsmail mee te adresseren.
+            $email = $user->email;
+            $naam  = trim(($user->first_name ?? '') . ' ' . ($user->last_name ?? '')) ?: $email;
+            // Engels is de standaardtaal; alleen een account dat expliciet op
+            // Nederlands staat krijgt de Nederlandse tekst.
+            $taal  = strtolower(substr((string) ($user->language ?? ''), 0, 2)) === 'nl' ? 'nl' : 'en';
+
+            // Lopend abonnement opzeggen. Gebeurt hier expliciet omdat de
+            // databank dat niet kan opruimen: blijft het staan, dan betaalt de
+            // klant door voor een account dat niet meer bestaat. Zelfde aanpak
+            // als bij zelf-verwijderen (AccountDeletionController::cancelStripe).
+            $hadAbonnement = $this->cancelStripeSubscriptions($user);
+
             // Delete user (this cascades to maps and routemaps due to foreign key constraints)
             $user->delete();
+
+            // Bevestiging naar de gebruiker: account gesloten, abonnement
+            // stopgezet, en wat we nog bewaren bewaren we alleen voor de
+            // wettelijk verplichte administratie. Best-effort — een mail die
+            // niet aankomt mag de verwijdering niet ongedaan maken.
+            try {
+                Mail::to($email)->locale($taal)->send(new AccountClosedMail($naam, $hadAbonnement));
+            } catch (\Throwable $e) {
+                Log::error('[admin-delete-user] bevestigingsmail niet verstuurd', [
+                    'user_id' => $userId,
+                    'email'   => $email,
+                    'error'   => $e->getMessage(),
+                ]);
+            }
 
             return response()->json([
                 'message' => 'Gebruiker verwijderd',
@@ -530,6 +559,48 @@ class AdminController extends Controller
     }
 
     /**
+     * Zegt alle lopende Stripe-abonnementen van een gebruiker op en meldt of er
+     * er iets op te zeggen viel. Best-effort: mislukt een opzegging, dan loggen
+     * we dat zodat het handmatig rechtgezet kan worden — het mag het
+     * verwijderen van de gebruiker niet tegenhouden.
+     */
+    private function cancelStripeSubscriptions(User $user): bool
+    {
+        $ids = Subscription::where('user_id', $user->id)
+            ->whereNotNull('stripe_id')
+            ->where('stripe_status', '!=', 'canceled')
+            ->pluck('stripe_id');
+
+        if ($ids->isEmpty()) {
+            return false;
+        }
+
+        $secret = config('billing.stripe_secret');
+        if (! $secret) {
+            Log::warning('[admin-delete-user] geen Stripe-sleutel; abonnement niet opgezegd', [
+                'user_id' => $user->id,
+            ]);
+
+            return true;
+        }
+
+        $stripe = new \Stripe\StripeClient(['api_key' => $secret]);
+        foreach ($ids as $stripeId) {
+            try {
+                $stripe->subscriptions->cancel($stripeId, []);
+            } catch (\Throwable $e) {
+                Log::warning('[admin-delete-user] Stripe-abonnement opzeggen mislukt', [
+                    'user_id'      => $user->id,
+                    'subscription' => $stripeId,
+                    'error'        => $e->getMessage(),
+                ]);
+            }
+        }
+
+        return true;
+    }
+
+    /**
      * Send password reset link to user
      */
     public function resetUserPassword($userId)
@@ -547,7 +618,7 @@ class AdminController extends Controller
                 . '?token=' . $token
                 . '&email=' . urlencode($user->email);
 
-            Mail::to($user->email)->send(new ResetPasswordMail($resetUrl));
+            Mail::to($user)->send(new ResetPasswordMail($resetUrl));
 
             return response()->json([
                 'message' => 'Wachtwoord reset link verzonden naar ' . $user->email

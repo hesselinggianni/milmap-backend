@@ -1,5 +1,5 @@
 @extends('emails.layout')
-@section('title', 'Nieuw Contact Ticket — Milmap')
+@section('title', __('mail.contact_ticket.page_title'))
 @section('body')
 
   <table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0" style="margin-bottom:24px;">
@@ -16,9 +16,9 @@
       </td>
       <td style="vertical-align:middle;padding-left:14px;">
         <h1 style="margin:0 0 3px;font-size:20px;font-weight:700;color:#f8fafc;letter-spacing:-0.01em;line-height:1.2;">
-          Nieuw Contact Ticket #{{ $ticket->id }}
+          {{ __('mail.contact_ticket.title', ['id' => $ticket->id]) }}
         </h1>
-        <p style="margin:0;font-size:13px;color:#94a3b8;">Ingediend via milmap.nl</p>
+        <p style="margin:0;font-size:13px;color:#94a3b8;">{{ __('mail.contact_ticket.subtitle') }}</p>
       </td>
     </tr>
   </table>
@@ -34,7 +34,7 @@
 
   <!-- Onderwerp -->
   <p style="margin:0 0 6px;font-size:10px;font-weight:700;letter-spacing:0.1em;text-transform:uppercase;color:#7e8a9c;">
-    Onderwerp
+    {{ __('mail.contact_ticket.subject_label') }}
   </p>
   <p style="margin:0 0 20px;font-size:16px;font-weight:700;color:#f8fafc;">
     {{ $ticket->subject }}
@@ -42,7 +42,7 @@
 
   <!-- Afzender -->
   <p style="margin:0 0 6px;font-size:10px;font-weight:700;letter-spacing:0.1em;text-transform:uppercase;color:#7e8a9c;">
-    Van
+    {{ __('mail.contact_ticket.from') }}
   </p>
   <p style="margin:0 0 20px;font-size:14px;line-height:1.7;color:#cbd5e1;">
     <strong style="color:#f8fafc;">{{ $ticket->name }}</strong><br>
@@ -51,7 +51,7 @@
 
   <!-- Bericht -->
   <p style="margin:0 0 6px;font-size:10px;font-weight:700;letter-spacing:0.1em;text-transform:uppercase;color:#7e8a9c;">
-    Bericht
+    {{ __('mail.contact_ticket.message') }}
   </p>
   <div style="margin:0 0 24px;padding:14px 16px;background:#0d1320;border:1px solid #1e293b;
               border-radius:8px;font-size:14px;line-height:1.7;color:#cbd5e1;white-space:pre-line;">
@@ -64,7 +64,7 @@
     <tr>
       <td colspan="2" style="padding:10px 16px;background:#0d1320;border-bottom:1px solid #1e293b;
                  font-size:10px;font-weight:700;letter-spacing:0.1em;text-transform:uppercase;color:#7e8a9c;">
-        Ticket details
+        {{ __('mail.contact_ticket.details_title') }}
       </td>
     </tr>
     <tr>
@@ -72,11 +72,11 @@
       <td style="padding:11px 16px;font-size:13px;color:#f8fafc;border-bottom:1px solid #1a2433;font-weight:700;">#{{ $ticket->id }}</td>
     </tr>
     <tr>
-      <td style="padding:11px 16px;font-size:12.5px;color:#94a3b8;border-bottom:1px solid #1a2433;font-weight:500;">Status</td>
-      <td style="padding:11px 16px;font-size:13px;color:#16a34a;border-bottom:1px solid #1a2433;font-weight:600;">Open</td>
+      <td style="padding:11px 16px;font-size:12.5px;color:#94a3b8;border-bottom:1px solid #1a2433;font-weight:500;">{{ __('mail.contact_ticket.status') }}</td>
+      <td style="padding:11px 16px;font-size:13px;color:#16a34a;border-bottom:1px solid #1a2433;font-weight:600;">{{ __('mail.contact_ticket.status_open') }}</td>
     </tr>
     <tr>
-      <td style="padding:11px 16px;font-size:12.5px;color:#94a3b8;font-weight:500;">Ontvangen</td>
+      <td style="padding:11px 16px;font-size:12.5px;color:#94a3b8;font-weight:500;">{{ __('mail.contact_ticket.received') }}</td>
       <td style="padding:11px 16px;font-size:13px;color:#f8fafc;">{{ $ticket->created_at->setTimezone('Europe/Amsterdam')->format('d-m-Y \o\m H:i:s') }}</td>
     </tr>
   </table>

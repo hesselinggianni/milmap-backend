@@ -1,5 +1,5 @@
 @extends('emails.layout')
-@section('title', '{{ $emailData["subject"] ?? "Melding" }} — Milmap')
+@section('title', ($emailData['subject'] ?? __('mail.notification.fallback_subject')) . ' — Milmap')
 @section('body')
 
   <table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0" style="margin-bottom:24px;">
@@ -17,9 +17,9 @@
       </td>
       <td style="vertical-align:middle;padding-left:14px;">
         <h1 style="margin:0 0 3px;font-size:20px;font-weight:700;color:#f8fafc;letter-spacing:-0.01em;line-height:1.2;">
-          {{ $emailData['subject'] ?? 'Melding' }}
+          {{ $emailData['subject'] ?? __('mail.notification.fallback_subject') }}
         </h1>
-        <p style="margin:0;font-size:13px;color:#94a3b8;">Milmap Platform Notificatie</p>
+        <p style="margin:0;font-size:13px;color:#94a3b8;">{{ __('mail.notification.subtitle') }}</p>
       </td>
     </tr>
   </table>
@@ -27,7 +27,7 @@
   <div style="height:1px;background:#1e293b;margin:0 0 24px;"></div>
 
   <p style="margin:0 0 6px;font-size:10px;font-weight:700;letter-spacing:0.1em;text-transform:uppercase;color:#7e8a9c;">
-    Bericht
+    {{ __('mail.notification.eyebrow') }}
   </p>
   <p style="margin:0;font-size:14px;line-height:1.7;color:#cbd5e1;">
     {{ $content }}

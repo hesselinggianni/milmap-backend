@@ -80,7 +80,7 @@ class PartnerController extends Controller
         // Bevestiging naar de partner + notificatie naar de admin. Best-effort:
         // een mailstoring mag de aanmelding nooit breken.
         try {
-            Mail::to($user->email)->send(new PartnerApplicationReceivedMail($partner, $setupUrl));
+            Mail::to($user)->send(new PartnerApplicationReceivedMail($partner, $setupUrl));
         } catch (\Throwable $e) {
             Log::warning('[partner] bevestigingsmail mislukt: ' . $e->getMessage());
         }

@@ -25,7 +25,7 @@ class PartnerAgreementCodeMail extends Mailable
 
     public function build()
     {
-        return $this->subject('Bevestig je partnerovereenkomst — code ' . $this->code)
+        return $this->subject(__('mail.partner_agreement_code.subject', ['code' => $this->code]))
                     ->view('emails.partner-agreement-code');
     }
 }

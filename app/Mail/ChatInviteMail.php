@@ -26,7 +26,7 @@ class ChatInviteMail extends Mailable
     public function envelope(): Envelope
     {
         return new Envelope(
-            subject: "{$this->inviterName} wil met je chatten op Milmap",
+            subject: __('mail.chat_invite.subject', ['name' => $this->inviterName]),
         );
     }
 

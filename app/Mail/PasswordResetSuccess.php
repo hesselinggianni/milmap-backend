@@ -19,7 +19,7 @@ class PasswordResetSuccess extends Mailable
 
     public function build()
     {
-        return $this->subject('Wachtwoord succesvol gewijzigd — Milmap')
+        return $this->subject(__('mail.reset_password_success.subject'))
                     ->view('emails.reset-password-success')
                     ->with(['name' => $this->user->name]);
     }

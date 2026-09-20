@@ -22,7 +22,7 @@ class PartnerApplicationReceivedMail extends Mailable
 
     public function build()
     {
-        return $this->subject('Je partneraanmelding bij Milmap is ontvangen')
+        return $this->subject(__('mail.partner_application_received.subject'))
                     ->view('emails.partner-application-received');
     }
 }

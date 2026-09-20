@@ -1,5 +1,5 @@
 @extends('emails.layout')
-@section('title', 'Nieuwe inlog gedetecteerd — Milmap')
+@section('title', __('mail.login_notification.subject'))
 @section('body')
 
   <table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0" style="margin-bottom:24px;">
@@ -18,9 +18,9 @@
       </td>
       <td style="vertical-align:middle;padding-left:14px;">
         <h1 style="margin:0 0 3px;font-size:20px;font-weight:700;color:#f8fafc;letter-spacing:-0.01em;line-height:1.2;">
-          Nieuwe inlog gedetecteerd
+          {{ __('mail.login_notification.title') }}
         </h1>
-        <p style="margin:0;font-size:13px;color:#94a3b8;">Er is ingelogd op uw Milmap account</p>
+        <p style="margin:0;font-size:13px;color:#94a3b8;">{{ __('mail.login_notification.subtitle') }}</p>
       </td>
     </tr>
   </table>
@@ -28,10 +28,12 @@
   <div style="height:1px;background:#1e293b;margin:0 0 24px;"></div>
 
   <p style="margin:0 0 6px;font-size:10px;font-weight:700;letter-spacing:0.1em;text-transform:uppercase;color:#7e8a9c;">
-    Account
+    {{ __('mail.login_notification.eyebrow') }}
   </p>
   <p style="margin:0 0 24px;font-size:14px;line-height:1.7;color:#cbd5e1;">
-    Hallo <strong style="color:#f8fafc;">{{ $name }}</strong>, er is zojuist ingelogd op uw account met de onderstaande gegevens.
+    {!! __('mail.login_notification.intro', [
+        'name' => '<strong style="color:#f8fafc;">' . e($name) . '</strong>',
+    ]) !!}
   </p>
 
   <!-- Inloggegevens tabel -->
@@ -41,12 +43,12 @@
       <td colspan="2"
           style="padding:10px 16px;background:#0d1320;border-bottom:1px solid #1e293b;
                  font-size:10px;font-weight:700;letter-spacing:0.1em;text-transform:uppercase;color:#7e8a9c;">
-        Inloggegevens
+        {{ __('mail.login_notification.table_title') }}
       </td>
     </tr>
     <tr>
       <td style="padding:11px 16px;width:38%;font-size:12.5px;color:#94a3b8;border-bottom:1px solid #1a2433;font-weight:500;">
-        Tijdstip
+        {{ __('mail.login_notification.time') }}
       </td>
       <td style="padding:11px 16px;font-size:13px;color:#f8fafc;border-bottom:1px solid #1a2433;">
         {{ $loginTime }}
@@ -54,7 +56,7 @@
     </tr>
     <tr>
       <td style="padding:11px 16px;font-size:12.5px;color:#94a3b8;border-bottom:1px solid #1a2433;font-weight:500;">
-        IP-adres
+        {{ __('mail.login_notification.ip') }}
       </td>
       <td style="padding:11px 16px;font-size:13px;color:#f8fafc;border-bottom:1px solid #1a2433;font-family:monospace;">
         {{ $ipAddress }}
@@ -62,7 +64,7 @@
     </tr>
     <tr>
       <td style="padding:11px 16px;font-size:12.5px;color:#94a3b8;border-bottom:1px solid #1a2433;font-weight:500;">
-        Locatie
+        {{ __('mail.login_notification.location') }}
       </td>
       <td style="padding:11px 16px;font-size:13px;color:#f8fafc;border-bottom:1px solid #1a2433;">
         {{ $location }}
@@ -70,7 +72,7 @@
     </tr>
     <tr>
       <td style="padding:11px 16px;font-size:12.5px;color:#94a3b8;font-weight:500;">
-        Apparaat
+        {{ __('mail.login_notification.device') }}
       </td>
       <td style="padding:11px 16px;font-size:13px;color:#f8fafc;">
         {{ $device }}
@@ -91,7 +93,7 @@
               </svg>
             </td>
             <td style="font-size:13px;color:#fcd34d;line-height:1.5;">
-              Herkent u deze inlog niet? Wijzig dan onmiddellijk uw wachtwoord en neem contact op met uw beheerder.
+              {{ __('mail.login_notification.warning') }}
             </td>
           </tr>
         </table>

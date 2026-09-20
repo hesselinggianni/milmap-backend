@@ -20,7 +20,7 @@ class PartnerApprovedMail extends Mailable
 
     public function build()
     {
-        return $this->subject('Je bent nu Milmap-partner — hier is je referral-link')
+        return $this->subject(__('mail.partner_approved.subject'))
                     ->view('emails.partner-approved');
     }
 }

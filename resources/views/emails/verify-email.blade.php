@@ -1,5 +1,5 @@
 @extends('emails.layout')
-@section('title', 'Bevestig je e-mailadres — Milmap')
+@section('title', __('mail.verify_email.subject'))
 @section('body')
 
   {{-- Header row --}}
@@ -18,9 +18,9 @@
       </td>
       <td style="vertical-align:middle;padding-left:14px;">
         <h1 style="margin:0 0 3px;font-size:20px;font-weight:700;color:#f8fafc;letter-spacing:-0.01em;line-height:1.2;">
-          Bevestig je e-mailadres
+          {{ __('mail.verify_email.title') }}
         </h1>
-        <p style="margin:0;font-size:13px;color:#94a3b8;">Eén klik en je bent klaar</p>
+        <p style="margin:0;font-size:13px;color:#94a3b8;">{{ __('mail.verify_email.subtitle') }}</p>
       </td>
     </tr>
   </table>
@@ -29,14 +29,15 @@
 
   @if($firstName)
   <p style="margin:0 0 16px;font-size:15px;color:#f8fafc;font-weight:600;">
-    Hoi {{ $firstName }},
+    {{ __('mail.verify_email.greeting', ['name' => $firstName]) }}
   </p>
   @endif
 
   <p style="margin:0 0 20px;font-size:14px;line-height:1.7;color:#cbd5e1;">
-    Welkom bij <strong style="color:#f8fafc;">Milmap</strong>. Bevestig je e-mailadres door op de knop
-    hieronder te klikken. Zo weten we zeker dat dit adres echt van jou is. De link is
-    <strong style="color:#f8fafc;">7 dagen</strong> geldig.
+    {!! __('mail.verify_email.intro', [
+        'brand'    => '<strong style="color:#f8fafc;">Milmap</strong>',
+        'duration' => '<strong style="color:#f8fafc;">' . __('mail.verify_email.duration') . '</strong>',
+    ]) !!}
   </p>
 
   <table role="presentation" cellpadding="0" cellspacing="0" border="0" style="margin-bottom:24px;">
@@ -45,14 +46,14 @@
         <a href="{{ $verificationUrl }}"
            style="display:inline-block;height:48px;padding:0 28px;line-height:48px;
                   font-size:14px;font-weight:700;color:#ffffff;text-decoration:none;border-radius:8px;">
-          E-mailadres bevestigen →
+          {{ __('mail.verify_email.cta') }}
         </a>
       </td>
     </tr>
   </table>
 
   <p style="margin:0 0 24px;font-size:12px;color:#7e8a9c;word-break:break-all;line-height:1.6;">
-    Werkt de knop niet? Kopieer deze URL:<br>
+    {{ __('mail.verify_email.fallback') }}<br>
     <span style="color:#2b7fff;">{{ $verificationUrl }}</span>
   </p>
 
@@ -60,15 +61,14 @@
   <div style="height:1px;background:#1e293b;margin:0 0 20px;"></div>
 
   <p style="margin:0 0 4px;font-size:14px;font-weight:600;color:#f8fafc;">
-    Wil je met een wachtwoord kunnen inloggen?
+    {{ __('mail.verify_email.password_title') }}
   </p>
   <p style="margin:0 0 14px;font-size:13px;line-height:1.7;color:#94a3b8;">
-    Je account heeft nog geen wachtwoord — dat hoeft ook niet, je kunt altijd een inlogcode per
-    e-mail aanvragen. Wil je liever een wachtwoord instellen, klik dan hieronder.
+    {{ __('mail.verify_email.password_body') }}
   </p>
   <p style="margin:0 0 20px;">
     <a href="{{ $setPasswordUrl }}" style="font-size:13px;color:#2b7fff;text-decoration:underline;">
-      Wachtwoord instellen →
+      {{ __('mail.verify_email.password_cta') }}
     </a>
   </p>
   @endif
@@ -76,12 +76,10 @@
   <div style="height:1px;background:#1e293b;margin:0 0 20px;"></div>
 
   <p style="margin:0 0 8px;font-size:13px;line-height:1.7;color:#94a3b8;">
-    Je kunt Milmap de eerste 24 uur na aanmelden gewoon gebruiken. Bevestig je je e-mailadres niet,
-    dan vragen we je daarna eerst te bevestigen voordat je verder kunt. Accounts die na 90 dagen
-    niet zijn bevestigd, worden automatisch gearchiveerd.
+    {{ __('mail.verify_email.grace') }}
   </p>
   <p style="margin:0;font-size:13px;line-height:1.7;color:#7e8a9c;">
-    Heb je je niet aangemeld bij Milmap? Dan kun je deze e-mail negeren.
+    {{ __('mail.verify_email.footer') }}
   </p>
 
 @endsection

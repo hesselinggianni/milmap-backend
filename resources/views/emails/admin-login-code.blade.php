@@ -1,13 +1,13 @@
 @extends('emails.layout')
 
-@section('title', 'Admin Login Code - Milmap')
+@section('title', __('mail.admin_login_code.subject'))
 
 @section('body')
   <h2 style="margin:0 0 8px;font-size:20px;font-weight:700;color:#f8fafc;">
-    🔐 Admin Login Code
+    {{ __('mail.admin_login_code.title') }}
   </h2>
   <p style="margin:0 0 24px;font-size:14px;color:#cbd5e1;line-height:1.6;">
-    Je hebt een inlogcode aangevraagd voor het Milmap admin dashboard. Gebruik de code hieronder om in te loggen:
+    {{ __('mail.admin_login_code.intro') }}
   </p>
 
   <!-- Code box -->
@@ -31,17 +31,17 @@
     <tr>
       <td style="background-color:#1a2433;border-left:4px solid #2b7fff;border-radius:4px;padding:14px 16px;">
         <p style="margin:0 0 4px;font-size:13px;font-weight:600;color:#f8fafc;">
-          ⏱️ Deze code vervalt over {{ $expiryMinutes }} minuten
+          {{ __('mail.admin_login_code.expiry', ['minutes' => $expiryMinutes]) }}
         </p>
         <p style="margin:0;font-size:13px;color:#cbd5e1;line-height:1.5;">
-          Voer deze code in op het login-scherm. De code kan maar één keer gebruikt worden.
+          {{ __('mail.admin_login_code.expiry_note') }}
         </p>
       </td>
     </tr>
   </table>
 
   <p style="margin:0 0 20px;font-size:14px;color:#cbd5e1;line-height:1.6;">
-    Als je deze code niet aangevraagd hebt, negeer deze email dan.
+    {{ __('mail.admin_login_code.ignore') }}
   </p>
 
   <!-- Warning box -->
@@ -49,10 +49,10 @@
     <tr>
       <td style="background-color:#241a06;border-left:4px solid #2b7fff;border-radius:4px;padding:14px 16px;">
         <p style="margin:0 0 4px;font-size:13px;font-weight:700;color:#fcd34d;">
-          ⚠️ VEILIGHEID
+          {{ __('mail.admin_login_code.security_label') }}
         </p>
         <p style="margin:0;font-size:13px;color:#fcd34d;line-height:1.5;">
-          Deel deze code met niemand. Milmap medewerkers zullen je nooit om deze code vragen.
+          {{ __('mail.admin_login_code.security_body') }}
         </p>
       </td>
     </tr>

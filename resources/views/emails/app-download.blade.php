@@ -9,19 +9,19 @@
     $name    = $recipientName ? e($recipientName) : null;
 @endphp
 <!DOCTYPE html>
-<html lang="nl">
+<html lang="{{ app()->getLocale() }}">
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <meta name="color-scheme" content="light">
   <meta name="supported-color-schemes" content="light">
-  <title>Je MilMap-app staat klaar</title>
+  <title>{{ __('mail.app_download.page_title') }}</title>
 </head>
 <body style="margin:0;padding:0;background-color:#f5f5f7;-webkit-font-smoothing:antialiased;font-family:-apple-system,BlinkMacSystemFont,'SF Pro Display','Segoe UI',Roboto,Helvetica,Arial,sans-serif;color:{{ $ink }};">
 
   <!-- Preheader (verborgen) -->
   <div style="display:none;max-height:0;overflow:hidden;opacity:0;">
-    Je MilMap-app staat klaar om te downloaden — en je krijgt 20% korting op je eerste jaar.
+    {{ __('mail.app_download.preheader') }}
   </div>
 
   <table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0" style="background-color:#f5f5f7;">
@@ -53,15 +53,14 @@
                 <tr>
                   <td align="center" style="padding:40px 32px 8px;">
                     <p style="margin:0 0 10px;font-size:12px;font-weight:600;letter-spacing:0.08em;text-transform:uppercase;color:{{ $blue }};">
-                      De app is er
+                      {{ __('mail.app_download.eyebrow') }}
                     </p>
                     <h1 style="margin:0 0 12px;font-size:28px;line-height:1.15;font-weight:700;letter-spacing:-0.02em;color:{{ $ink }};">
-                      MilMap, nu op je telefoon
+                      {{ __('mail.app_download.title') }}
                     </h1>
                     <p style="margin:0;font-size:16px;line-height:1.5;color:{{ $muted }};max-width:360px;">
-                      @if($name){{ $name }}, jij krijgt 'm als eerste — plan, navigeer en werk samen, zelfs offline in het veld.
-                      @else
-                      Jij krijgt 'm als eerste — plan, navigeer en werk samen, zelfs offline in het veld.
+                      @if($name){{ __('mail.app_download.intro_named', ['name' => $name]) }}
+                      @else{{ __('mail.app_download.intro') }}
                       @endif
                     </p>
                   </td>
@@ -123,7 +122,7 @@
                 <tr>
                   <td align="center" style="padding:2px 24px 8px;">
                     <a href="{{ $webAppUrl }}" target="_blank" style="font-size:13px;color:{{ $blue }};text-decoration:none;font-weight:600;">
-                      Of open direct in je browser &rarr;
+                      {{ __('mail.app_download.web_link') }}
                     </a>
                   </td>
                 </tr>
@@ -143,10 +142,10 @@
                       <tr>
                         <td align="center" style="padding:24px 22px;">
                           <p style="margin:0 0 4px;font-size:11px;font-weight:700;letter-spacing:0.08em;text-transform:uppercase;color:{{ $blue }};">
-                            Jouw persoonlijke code
+                            {{ __('mail.app_download.coupon_label') }}
                           </p>
                           <p style="margin:0 0 14px;font-size:22px;font-weight:700;letter-spacing:-0.01em;color:{{ $ink }};">
-                            20% korting op je eerste jaar
+                            {{ __('mail.app_download.coupon_title') }}
                           </p>
 
                           <table role="presentation" cellpadding="0" cellspacing="0" border="0" align="center">
@@ -162,15 +161,15 @@
                               <td style="background-color:{{ $blue }};border-radius:12px;">
                                 <a href="{{ $webAppUrl }}/checkout?coupon={{ urlencode($couponCode) }}" target="_blank"
                                    style="display:inline-block;padding:13px 30px;font-size:15px;font-weight:600;color:#ffffff;text-decoration:none;">
-                                  Activeer mijn korting
+                                  {{ __('mail.app_download.coupon_cta') }}
                                 </a>
                               </td>
                             </tr>
                           </table>
 
                           <p style="margin:16px 0 0;font-size:12px;line-height:1.5;color:{{ $muted }};">
-                            Eénmalig te gebruiken &middot; alleen op een jaarabonnement.
-                            @if($couponExpiresLabel) Geldig t/m {{ $couponExpiresLabel }}. @endif
+                            {{ __('mail.app_download.coupon_terms') }}
+                            @if($couponExpiresLabel) {{ __('mail.app_download.coupon_valid', ['date' => $couponExpiresLabel]) }} @endif
                           </p>
                         </td>
                       </tr>
@@ -184,7 +183,7 @@
                 <tr>
                   <td style="padding:18px 32px 34px;">
                     <p style="margin:0;font-size:13px;line-height:1.6;color:{{ $muted }};text-align:center;">
-                      Vragen? Mail ons gerust op
+                      {{ __('mail.app_download.support') }}
                       <a href="mailto:support@milmap.nl" style="color:{{ $blue }};text-decoration:none;">support@milmap.nl</a>.
                     </p>
                   </td>
@@ -199,7 +198,7 @@
             <td align="center" style="padding:22px 24px 8px;">
               <p style="margin:0 0 4px;font-size:12px;color:{{ $muted }};">MilMap &middot; milmap.nl</p>
               <p style="margin:0;font-size:11px;color:#a1a1a6;line-height:1.5;">
-                Je ontvangt deze e-mail omdat je je hebt aangemeld voor de MilMap-app.
+                {{ __('mail.app_download.footer') }}
               </p>
             </td>
           </tr>

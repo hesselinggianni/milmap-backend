@@ -54,7 +54,7 @@ class AccountDeletionController extends Controller
         ])->save();
 
         try {
-            Mail::to($user->email)->send(new AccountDeletionCodeMail($code, self::CODE_MINUTEN));
+            Mail::to($user)->send(new AccountDeletionCodeMail($code, self::CODE_MINUTEN));
         } catch (\Throwable $e) {
             Log::error('[account] verwijdercode mailen mislukt', [
                 'user_id' => $user->id, 'error' => $e->getMessage(),

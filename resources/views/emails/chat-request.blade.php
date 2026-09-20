@@ -1,5 +1,5 @@
 @extends('emails.layout')
-@section('title', 'Chatverzoek — Milmap')
+@section('title', __('mail.chat_request.page_title'))
 @section('body')
 
   <table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0" style="margin-bottom:24px;">
@@ -16,9 +16,9 @@
       </td>
       <td style="vertical-align:middle;padding-left:14px;">
         <h1 style="margin:0 0 3px;font-size:20px;font-weight:700;color:#f8fafc;letter-spacing:-0.01em;line-height:1.2;">
-          Chatverzoek
+          {{ __('mail.chat_request.title') }}
         </h1>
-        <p style="margin:0;font-size:13px;color:#94a3b8;">{{ $requesterName }} wil met je chatten</p>
+        <p style="margin:0;font-size:13px;color:#94a3b8;">{{ __('mail.chat_request.subtitle', ['name' => $requesterName]) }}</p>
       </td>
     </tr>
   </table>
@@ -26,10 +26,11 @@
   <div style="height:1px;background:#1e293b;margin:0 0 24px;"></div>
 
   <p style="margin:0 0 24px;font-size:14px;line-height:1.7;color:#cbd5e1;">
-    <strong style="color:#f8fafc;">{{ $requesterName }}</strong> heeft je een chatverzoek gestuurd op
-    Milmap. Open de app en <strong style="color:#f8fafc;">accepteer</strong> het verzoek om
-    end-to-end versleuteld met elkaar te chatten. Wil je dit liever niet? Dan kun je het verzoek gewoon
-    <strong style="color:#f8fafc;">weigeren</strong> — er wordt dan geen gesprek geopend.
+    {!! __('mail.chat_request.intro', [
+        'name'    => '<strong style="color:#f8fafc;">' . e($requesterName) . '</strong>',
+        'accept'  => '<strong style="color:#f8fafc;">' . __('mail.chat_request.accept') . '</strong>',
+        'decline' => '<strong style="color:#f8fafc;">' . __('mail.chat_request.decline') . '</strong>',
+    ]) !!}
   </p>
 
   <table role="presentation" cellpadding="0" cellspacing="0" border="0" style="margin-bottom:24px;">
@@ -38,17 +39,17 @@
         <a href="{{ $url }}"
            style="display:inline-block;height:44px;padding:0 24px;line-height:44px;
                   font-size:14px;font-weight:600;color:#ffffff;text-decoration:none;border-radius:8px;">
-          Verzoek bekijken in Milmap
+          {{ __('mail.chat_request.cta') }}
         </a>
       </td>
     </tr>
   </table>
 
   <p style="margin:0 0 6px;font-size:10px;font-weight:700;letter-spacing:0.1em;text-transform:uppercase;color:#7e8a9c;">
-    Werkt de knop niet?
+    {{ __('mail.chat_request.fallback_label') }}
   </p>
   <p style="margin:0 0 24px;font-size:13px;line-height:1.6;color:#94a3b8;word-break:break-all;">
-    Kopieer en plak deze link in je browser:<br>
+    {{ __('mail.chat_request.fallback') }}<br>
     <a href="{{ $url }}" style="color:#2b7fff;text-decoration:none;">{{ $url }}</a>
   </p>
 
@@ -56,7 +57,7 @@
 
   <p style="margin:0;padding:12px 16px;background:#0d1320;border:1px solid #1e293b;border-radius:8px;
             font-size:13px;color:#94a3b8;line-height:1.5;">
-    Verwacht u dit verzoek niet? Dan kunt u deze e-mail veilig negeren of het verzoek in de app weigeren.
+    {{ __('mail.chat_request.footer') }}
   </p>
 
 @endsection

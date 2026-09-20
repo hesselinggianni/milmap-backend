@@ -11,6 +11,7 @@ use App\Http\Controllers\Auth\EmailVerificationController;
 
 use App\Http\Controllers\UserController;
 use App\Http\Controllers\MapController;
+use App\Http\Controllers\WorkspaceController;
 use App\Http\Controllers\MapLinkController;
 use App\Http\Controllers\SearchHistoryController;
 use App\Http\Controllers\LocationController;
@@ -626,6 +627,12 @@ Route::prefix('v1')->middleware(['api'])->group(function () {
         Route::put('/maps/{mapId}/collaborators/{userId}', [MapCollaboratorController::class, 'updateRole']);
         Route::delete('/maps/{mapId}/collaborators/{userId}', [MapCollaboratorController::class, 'destroy']);
 
+        // Workspace (/maps): alle kaarten als layers op één kaart.
+        // Twee-traps: /workspace = metadata, /workspace/layers/{id} = features.
+        Route::get('/workspace', [WorkspaceController::class, 'index']);
+        Route::get('/workspace/layers/{mapId}', [WorkspaceController::class, 'layer']);
+        Route::put('/workspace/layer-prefs', [WorkspaceController::class, 'updatePrefs']);
+
         // Map waypoints (collaboration sync)
         Route::get('/maps/{mapId}/waypoints', [MapWaypointController::class, 'index']);
         Route::post('/maps/{mapId}/waypoints', [MapWaypointController::class, 'store']);
@@ -736,6 +743,7 @@ Route::prefix('v1')->middleware(['api'])->group(function () {
         // MUST precede the /chat/keys/{id} wildcard so "escrow" isn't read as an id.
         Route::put('/chat/keys/escrow', [ChatKeyController::class, 'storeEscrow']);
         Route::get('/chat/keys/escrow', [ChatKeyController::class, 'escrow']);
+        Route::delete('/chat/keys/escrow/server-unlock', [ChatKeyController::class, 'revokeUnlockKey']);
         Route::get('/chat/keys/{id}', [ChatKeyController::class, 'show']);
 
         // QR-apparaatkoppeling (WhatsApp-Web-patroon): ontgrendel de chat op een
@@ -787,6 +795,8 @@ Route::prefix('v1')->middleware(['api'])->group(function () {
 
         // Chat attachments
         Route::post('/chat/attachments', [ChatAttachmentController::class, 'store']);
+        Route::get('/chat/attachments/{upload}', [ChatAttachmentController::class, 'show'])
+            ->whereNumber('upload')->name('chat.attachments.show');
 
         // ── Prullenbak (soft-deleted Maps/Missions/RouteMaps + archived chats)
         // 60-day grace window; `php artisan trash:purge` runs nightly. Type-

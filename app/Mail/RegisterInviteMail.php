@@ -22,7 +22,7 @@ class RegisterInviteMail extends Mailable
 
     public function build()
     {
-        return $this->subject('U bent uitgenodigd voor een workspace in Milmap!')
+        return $this->subject(__('mail.register_invite.subject'))
             ->view('emails.register-invite')
             ->with([
                 'workspace' => $this->workspace,

@@ -123,7 +123,7 @@ class PartnerAgreementController extends Controller
         ])->save();
 
         try {
-            Mail::to($partner->user->email)->send(new PartnerAgreementCodeMail($partner, $code));
+            Mail::to($partner->user)->send(new PartnerAgreementCodeMail($partner, $code));
         } catch (\Throwable $e) {
             Log::warning('[partner] bevestigingscode-mail mislukt: ' . $e->getMessage());
         }

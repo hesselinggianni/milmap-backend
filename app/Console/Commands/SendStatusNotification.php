@@ -58,7 +58,7 @@ class SendStatusNotification extends Command
             try {
                 // Synchroon versturen — een storingsmail wil je nú buiten hebben,
                 // niet afhankelijk van een draaiende queue-worker.
-                Mail::to($user->email)->send(new NotificationMail([
+                Mail::to($user)->send(new NotificationMail([
                     'subject' => $subject,
                     'body'    => $body,
                 ]));

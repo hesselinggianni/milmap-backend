@@ -26,7 +26,7 @@ class LoginSuccess extends Mailable
      */
     public function build()
     {
-        return $this->subject('Account login successful')
+        return $this->subject(__('mail.login_success.subject'))
                     ->html(onavan_mail_template('Account login successful', 'Hello '. print_r($this->user).', your password has been reset successfully.'));
     }
 }

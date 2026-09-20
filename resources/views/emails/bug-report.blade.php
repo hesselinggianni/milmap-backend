@@ -1,5 +1,5 @@
 @extends('emails.layout')
-@section('title', 'Bug Report — Milmap')
+@section('title', __('mail.bug_report.page_title'))
 @section('body')
 
   <table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0" style="margin-bottom:24px;">
@@ -17,9 +17,9 @@
       </td>
       <td style="vertical-align:middle;padding-left:14px;">
         <h1 style="margin:0 0 3px;font-size:20px;font-weight:700;color:#f8fafc;letter-spacing:-0.01em;line-height:1.2;">
-          Nieuw Bug Report
+          {{ __('mail.bug_report.title') }}
         </h1>
-        <p style="margin:0;font-size:13px;color:#94a3b8;">Ingediend via het Milmap platform</p>
+        <p style="margin:0;font-size:13px;color:#94a3b8;">{{ __('mail.bug_report.subtitle') }}</p>
       </td>
     </tr>
   </table>
@@ -28,7 +28,7 @@
 
   <!-- Gebruiker info -->
   <p style="margin:0 0 6px;font-size:10px;font-weight:700;letter-spacing:0.1em;text-transform:uppercase;color:#7e8a9c;">
-    Gebruiker
+    {{ __('mail.bug_report.user') }}
   </p>
   <p style="margin:0 0 20px;font-size:14px;line-height:1.7;color:#cbd5e1;">
     <strong style="color:#f8fafc;">{{ $data['user_name'] }}</strong><br>
@@ -37,7 +37,7 @@
 
   <!-- Bericht -->
   <p style="margin:0 0 6px;font-size:10px;font-weight:700;letter-spacing:0.1em;text-transform:uppercase;color:#7e8a9c;">
-    Bericht
+    {{ __('mail.bug_report.message') }}
   </p>
   <div style="margin:0 0 24px;padding:14px 16px;background:#0d1320;border:1px solid #1e293b;
               border-radius:8px;font-size:14px;line-height:1.7;color:#cbd5e1;">
@@ -51,28 +51,28 @@
       <td colspan="2"
           style="padding:10px 16px;background:#0d1320;border-bottom:1px solid #1e293b;
                  font-size:10px;font-weight:700;letter-spacing:0.1em;text-transform:uppercase;color:#7e8a9c;">
-        Technische details
+        {{ __('mail.bug_report.tech_title') }}
       </td>
     </tr>
     <tr>
       <td style="padding:11px 16px;width:30%;font-size:12.5px;color:#94a3b8;border-bottom:1px solid #1a2433;font-weight:500;">
-        URL
+        {{ __('mail.bug_report.url') }}
       </td>
       <td style="padding:11px 16px;font-size:12px;color:#2b7fff;border-bottom:1px solid #1a2433;word-break:break-all;">
-        {{ $data['url'] ?? 'Niet opgegeven' }}
+        {{ $data['url'] ?? __('mail.bug_report.not_provided') }}
       </td>
     </tr>
     <tr>
       <td style="padding:11px 16px;font-size:12.5px;color:#94a3b8;border-bottom:1px solid #1a2433;font-weight:500;">
-        User Agent
+        {{ __('mail.bug_report.user_agent') }}
       </td>
       <td style="padding:11px 16px;font-size:11.5px;color:#cbd5e1;border-bottom:1px solid #1a2433;font-family:monospace;word-break:break-all;">
-        {{ $data['user_agent'] ?? 'Niet opgegeven' }}
+        {{ $data['user_agent'] ?? __('mail.bug_report.not_provided') }}
       </td>
     </tr>
     <tr>
       <td style="padding:11px 16px;font-size:12.5px;color:#94a3b8;font-weight:500;">
-        Tijdstip
+        {{ __('mail.bug_report.time') }}
       </td>
       <td style="padding:11px 16px;font-size:13px;color:#f8fafc;">
         {{ $data['timestamp'] }}

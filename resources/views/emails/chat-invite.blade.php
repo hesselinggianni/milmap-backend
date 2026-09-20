@@ -1,5 +1,5 @@
 @extends('emails.layout')
-@section('title', 'Chatuitnodiging — Milmap')
+@section('title', __('mail.chat_invite.page_title'))
 @section('body')
 
   <table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0" style="margin-bottom:24px;">
@@ -16,9 +16,9 @@
       </td>
       <td style="vertical-align:middle;padding-left:14px;">
         <h1 style="margin:0 0 3px;font-size:20px;font-weight:700;color:#f8fafc;letter-spacing:-0.01em;line-height:1.2;">
-          Chatuitnodiging
+          {{ __('mail.chat_invite.title') }}
         </h1>
-        <p style="margin:0;font-size:13px;color:#94a3b8;">{{ $inviterName }} wil met je chatten</p>
+        <p style="margin:0;font-size:13px;color:#94a3b8;">{{ __('mail.chat_invite.subtitle', ['name' => $inviterName]) }}</p>
       </td>
     </tr>
   </table>
@@ -26,9 +26,9 @@
   <div style="height:1px;background:#1e293b;margin:0 0 24px;"></div>
 
   <p style="margin:0 0 24px;font-size:14px;line-height:1.7;color:#cbd5e1;">
-    <strong style="color:#f8fafc;">{{ $inviterName }}</strong> heeft je uitgenodigd om te chatten op
-    Milmap. Maak een gratis account aan met de knop hieronder, dan kun je direct
-    end-to-end versleuteld berichten sturen.
+    {!! __('mail.chat_invite.intro', [
+        'name' => '<strong style="color:#f8fafc;">' . e($inviterName) . '</strong>',
+    ]) !!}
   </p>
 
   <table role="presentation" cellpadding="0" cellspacing="0" border="0" style="margin-bottom:24px;">
@@ -37,17 +37,17 @@
         <a href="{{ $url }}"
            style="display:inline-block;height:44px;padding:0 24px;line-height:44px;
                   font-size:14px;font-weight:600;color:#ffffff;text-decoration:none;border-radius:8px;">
-          Account aanmaken &amp; chatten
+          {{ __('mail.chat_invite.cta') }}
         </a>
       </td>
     </tr>
   </table>
 
   <p style="margin:0 0 6px;font-size:10px;font-weight:700;letter-spacing:0.1em;text-transform:uppercase;color:#7e8a9c;">
-    Werkt de knop niet?
+    {{ __('mail.chat_invite.fallback_label') }}
   </p>
   <p style="margin:0 0 24px;font-size:13px;line-height:1.6;color:#94a3b8;word-break:break-all;">
-    Kopieer en plak deze link in je browser:<br>
+    {{ __('mail.chat_invite.fallback') }}<br>
     <a href="{{ $url }}" style="color:#2b7fff;text-decoration:none;">{{ $url }}</a>
   </p>
 
@@ -55,7 +55,7 @@
 
   <p style="margin:0;padding:12px 16px;background:#0d1320;border:1px solid #1e293b;border-radius:8px;
             font-size:13px;color:#94a3b8;line-height:1.5;">
-    Verwacht u deze uitnodiging niet? Dan kunt u deze e-mail veilig negeren.
+    {{ __('mail.chat_invite.footer') }}
   </p>
 
 @endsection

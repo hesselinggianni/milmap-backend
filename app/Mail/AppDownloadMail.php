@@ -26,7 +26,7 @@ class AppDownloadMail extends Mailable
 
     public function build()
     {
-        return $this->subject('Je MilMap-app staat klaar — plus 20% korting 🎉')
+        return $this->subject(__('mail.app_download.subject'))
                     ->view('emails.app-download');
     }
 }

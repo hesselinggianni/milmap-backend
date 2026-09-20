@@ -1,5 +1,5 @@
 @extends('emails.layout')
-@section('title', 'Welkom bij Milmap — Stel je wachtwoord in')
+@section('title', __('mail.account_activation.subject'))
 @section('body')
 
   {{-- Header row --}}
@@ -18,9 +18,9 @@
       </td>
       <td style="vertical-align:middle;padding-left:14px;">
         <h1 style="margin:0 0 3px;font-size:20px;font-weight:700;color:#f8fafc;letter-spacing:-0.01em;line-height:1.2;">
-          Betaling geslaagd!
+          {{ __('mail.account_activation.title') }}
         </h1>
-        <p style="margin:0;font-size:13px;color:#94a3b8;">Welkom bij Milmap {{ $planLabel }}</p>
+        <p style="margin:0;font-size:13px;color:#94a3b8;">{{ __('mail.account_activation.subtitle', ['plan' => $planLabel]) }}</p>
       </td>
     </tr>
   </table>
@@ -30,13 +30,14 @@
   {{-- Greeting --}}
   @if($firstName)
   <p style="margin:0 0 16px;font-size:15px;color:#f8fafc;font-weight:600;">
-    Hoi {{ $firstName }},
+    {{ __('mail.account_activation.greeting', ['name' => $firstName]) }}
   </p>
   @endif
 
   <p style="margin:0 0 20px;font-size:14px;line-height:1.7;color:#cbd5e1;">
-    Je betaling is bevestigd en je <strong style="color:#f8fafc;">Milmap {{ $planLabel }}</strong>-abonnement
-    is direct actief. Er is een account aangemaakt op dit e-mailadres.
+    {!! __('mail.account_activation.intro', [
+        'plan' => '<strong style="color:#f8fafc;">Milmap ' . e($planLabel) . '</strong>',
+    ]) !!}
   </p>
 
   {{-- Plan badge --}}
@@ -52,7 +53,7 @@
               </svg>
             </td>
             <td>
-              <p style="margin:0;font-size:13px;font-weight:700;color:#2b7fff;">Actief abonnement: Milmap {{ $planLabel }}</p>
+              <p style="margin:0;font-size:13px;font-weight:700;color:#2b7fff;">{{ __('mail.account_activation.plan_badge', ['plan' => $planLabel]) }}</p>
             </td>
           </tr>
         </table>
@@ -62,11 +63,12 @@
 
   {{-- CTA --}}
   <p style="margin:0 0 6px;font-size:10px;font-weight:700;letter-spacing:0.1em;text-transform:uppercase;color:#7e8a9c;">
-    Stap 1 — Stel je wachtwoord in
+    {{ __('mail.account_activation.step_label') }}
   </p>
   <p style="margin:0 0 20px;font-size:14px;line-height:1.7;color:#cbd5e1;">
-    Klik op de knop hieronder om een wachtwoord in te stellen en direct aan de slag te gaan.
-    De link is <strong style="color:#f8fafc;">60 minuten</strong> geldig.
+    {!! __('mail.account_activation.step_intro', [
+        'duration' => '<strong style="color:#f8fafc;">' . __('mail.account_activation.duration') . '</strong>',
+    ]) !!}
   </p>
 
   <table role="presentation" cellpadding="0" cellspacing="0" border="0" style="margin-bottom:24px;">
@@ -75,14 +77,14 @@
         <a href="{{ $setupUrl }}"
            style="display:inline-block;height:48px;padding:0 28px;line-height:48px;
                   font-size:14px;font-weight:700;color:#ffffff;text-decoration:none;border-radius:8px;">
-          Wachtwoord instellen →
+          {{ __('mail.account_activation.cta') }}
         </a>
       </td>
     </tr>
   </table>
 
   <p style="margin:0 0 24px;font-size:12px;color:#7e8a9c;word-break:break-all;line-height:1.6;">
-    Werkt de knop niet? Kopieer deze URL:<br>
+    {{ __('mail.account_activation.fallback') }}<br>
     <span style="color:#2b7fff;">{{ $setupUrl }}</span>
   </p>
 
@@ -90,13 +92,13 @@
 
   {{-- What's next --}}
   <p style="margin:0 0 10px;font-size:10px;font-weight:700;letter-spacing:0.1em;text-transform:uppercase;color:#7e8a9c;">
-    Na het instellen van je wachtwoord
+    {{ __('mail.account_activation.next_label') }}
   </p>
   <table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0" style="margin-bottom:20px;">
     @foreach([
-      ['icon' => 'map', 'text' => 'Maak je eerste kaart aan'],
-      ['icon' => 'route', 'text' => 'Plan routes met MGRS-coördinaten'],
-      ['icon' => 'file-text', 'text' => 'Exporteer PDF routeboeken'],
+      ['icon' => 'map', 'text' => __('mail.account_activation.next_1')],
+      ['icon' => 'route', 'text' => __('mail.account_activation.next_2')],
+      ['icon' => 'file-text', 'text' => __('mail.account_activation.next_3')],
     ] as $item)
     <tr>
       <td style="padding:6px 0;">
@@ -118,7 +120,7 @@
   <div style="height:1px;background:#1e293b;margin:0 0 20px;"></div>
 
   <p style="margin:0;font-size:12px;color:#7e8a9c;line-height:1.6;">
-    Vragen over je abonnement? Stuur een e-mail naar
+    {{ __('mail.account_activation.footer') }}
     <a href="mailto:app@milmap.nl" style="color:#2b7fff;text-decoration:none;">app@milmap.nl</a>
   </p>
 

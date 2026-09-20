@@ -17,7 +17,7 @@ class AccountDeletionCodeMail extends Mailable
     public function build()
     {
         return $this
-            ->subject('Bevestigingscode: account verwijderen — MilMap')
+            ->subject(__('mail.account_deletion_code.subject'))
             ->view('emails.account-deletion-code', [
                 'code'    => $this->code,
                 'minutes' => $this->minutes,

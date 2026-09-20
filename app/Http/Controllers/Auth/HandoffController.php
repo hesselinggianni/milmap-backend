@@ -54,7 +54,7 @@ class HandoffController extends Controller
         $handoff->forceFill(['used_at' => now()])->save();
 
         $user = $handoff->user;
-        $newToken = $user->createToken('API Token (handoff)', ['user']);
+        $newToken = $user->createToken('API Token (handoff)', ['user'], now()->addHours(1));
         $newToken->accessToken->forceFill([
             'ip_address' => $request->ip(),
             'user_agent' => $request->userAgent(),

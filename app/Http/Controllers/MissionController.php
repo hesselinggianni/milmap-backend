@@ -80,6 +80,9 @@ class MissionController extends Controller
             'time' => 'nullable|string',
             'ogroup' => 'nullable|array',
             'map' => 'nullable|array',
+            'map.id' => 'required_with:map|uuid',
+            'map.source' => 'sometimes|in:server,local',
+            'map.title' => 'sometimes|nullable|string|max:255',
             // Werkgebied (bounding box) waarbinnen de kaart blijft.
             'area' => 'nullable|array',
             'area.minLon' => 'required_with:area|numeric|between:-180,180',
@@ -95,6 +98,8 @@ class MissionController extends Controller
             // terug i.p.v. een tweede aan te maken.
             'client_id' => 'nullable|uuid',
         ]);
+
+        $this->validateMapLink($data, (int) Auth::id(), (int) Auth::id());
 
         // Sync opnieuw geprobeerd nadat de vorige poging half slaagde (server
         // aangemaakt, lokaal opruimen mislukt)? Dan bestaat de missie al.
@@ -175,6 +180,9 @@ class MissionController extends Controller
             'time' => 'nullable|string',
             'ogroup' => 'nullable|array',
             'map' => 'nullable|array',
+            'map.id' => 'required_with:map|uuid',
+            'map.source' => 'sometimes|in:server,local',
+            'map.title' => 'sometimes|nullable|string|max:255',
             // Werkgebied (bounding box) waarbinnen de kaart blijft.
             'area' => 'nullable|array',
             'area.minLon' => 'required_with:area|numeric|between:-180,180',
@@ -186,6 +194,8 @@ class MissionController extends Controller
             'game_mode' => 'nullable|in:standard,exercise',
             'exercise_site_id' => 'nullable|uuid|exists:exercise_sites,id',
         ]);
+
+        $this->validateMapLink($data, (int) $mission->owner_id, (int) $userId, $mission->map);
 
         // Linking / unlinking a team is a management action (owner or admin only)
         if (array_key_exists('linked_team_id', $data) && !$mission->canManage($userId)) {
@@ -348,6 +358,24 @@ class MissionController extends Controller
         $mission->delete();
 
         return response()->json(['message' => 'Mission deleted']);
+    }
+
+    /** Linking delegates map access to mission members; only the common owner may do it. */
+    private function validateMapLink(array $data, int $missionOwner, int $actor, ?array $current = null): void
+    {
+        if (!array_key_exists('map', $data)) return;
+        $link = $data['map'];
+        if ($link != $current && $actor !== $missionOwner) {
+            abort(403, 'Alleen de eigenaar kan de missiekaart wijzigen.');
+        }
+        if (!$link || ($link['source'] ?? 'server') === 'local') return;
+        $owned = \App\Models\Map::whereKey($link['id'] ?? '')
+            ->where('owner_id', $missionOwner)->exists();
+        if (!$owned) {
+            throw \Illuminate\Validation\ValidationException::withMessages([
+                'map' => 'Koppel alleen een kaart die eigendom is van de missie-eigenaar.',
+            ]);
+        }
     }
 
     /**

@@ -1,5 +1,5 @@
 @extends('emails.layout')
-@section('title', 'Wachtwoord resetten — Milmap')
+@section('title', __('mail.reset_password.subject'))
 @section('body')
 
   <table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0" style="margin-bottom:24px;">
@@ -17,9 +17,9 @@
       </td>
       <td style="vertical-align:middle;padding-left:14px;">
         <h1 style="margin:0 0 3px;font-size:20px;font-weight:700;color:#f8fafc;letter-spacing:-0.01em;line-height:1.2;">
-          Wachtwoord resetten
+          {{ __('mail.reset_password.title') }}
         </h1>
-        <p style="margin:0;font-size:13px;color:#94a3b8;">Verzoek ontvangen voor uw account</p>
+        <p style="margin:0;font-size:13px;color:#94a3b8;">{{ __('mail.reset_password.subtitle') }}</p>
       </td>
     </tr>
   </table>
@@ -27,10 +27,12 @@
   <div style="height:1px;background:#1e293b;margin:0 0 24px;"></div>
 
   <p style="margin:0 0 6px;font-size:10px;font-weight:700;letter-spacing:0.1em;text-transform:uppercase;color:#7e8a9c;">
-    Actie vereist
+    {{ __('mail.reset_password.eyebrow') }}
   </p>
   <p style="margin:0 0 24px;font-size:14px;line-height:1.7;color:#cbd5e1;">
-    We hebben een verzoek ontvangen om uw wachtwoord te resetten. Klik op de knop hieronder om een nieuw wachtwoord in te stellen. De link is <strong style="color:#f8fafc;">60 minuten</strong> geldig.
+    {!! __('mail.reset_password.intro', [
+        'duration' => '<strong style="color:#f8fafc;">' . __('mail.reset_password.duration') . '</strong>',
+    ]) !!}
   </p>
 
   <table role="presentation" cellpadding="0" cellspacing="0" border="0" style="margin-bottom:24px;">
@@ -39,14 +41,14 @@
         <a href="{{ $resetUrl }}"
            style="display:inline-block;height:44px;padding:0 24px;line-height:44px;
                   font-size:14px;font-weight:600;color:#ffffff;text-decoration:none;border-radius:8px;">
-          Wachtwoord resetten
+          {{ __('mail.reset_password.cta') }}
         </a>
       </td>
     </tr>
   </table>
 
   <p style="margin:0 0 24px;font-size:12px;color:#7e8a9c;word-break:break-all;line-height:1.6;">
-    Werkt de knop niet? Kopieer deze URL:<br>
+    {{ __('mail.reset_password.fallback') }}<br>
     <span style="color:#2b7fff;">{{ $resetUrl }}</span>
   </p>
 
@@ -65,7 +67,7 @@
               </svg>
             </td>
             <td style="font-size:13px;color:#fcd34d;line-height:1.5;">
-              Heeft u dit niet aangevraagd? Dan kunt u deze e-mail veilig negeren.
+              {{ __('mail.reset_password.warning') }}
             </td>
           </tr>
         </table>

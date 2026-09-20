@@ -10,6 +10,7 @@ use Illuminate\Support\Facades\Auth;
 
 class ReportController extends Controller
 {
+    use \App\Http\Traits\AuthorizesMapAccess;
     // ── Autorisatie ──────────────────────────────────────────────────────────
     // Gemarkeerde gebieden zijn gedeeld op kaartniveau: de eigenaar en elke
     // geaccepteerde collaborator ziet ze; bewerken/verwijderen vereist een niet-
@@ -17,18 +18,7 @@ class ReportController extends Controller
 
     private function mapAccess(Map $map, bool $editorRequired = false): bool
     {
-        $userId = Auth::id();
-        if ((string) $map->owner_id === (string) $userId) return true;
-
-        $collab = $map->collaborators()
-            ->where('user_id', $userId)
-            ->where('status', 'accepted')
-            ->first();
-
-        if (! $collab) return false;
-        if ($editorRequired && $collab->role === 'viewer') return false;
-
-        return true;
+        return $this->authorizeMapAccess($map, $editorRequired);
     }
 
     private function reportAccess(Report $report, bool $editorRequired = false): bool

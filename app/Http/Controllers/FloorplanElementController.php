@@ -11,21 +11,7 @@ use Illuminate\Support\Facades\Auth;
 
 class FloorplanElementController extends Controller
 {
-    private function authorizeMapAccess(Map $map, bool $editorRequired = false): bool
-    {
-        $userId = Auth::id();
-        if ((int) $map->owner_id === $userId) return true;
-
-        $collaborator = $map->collaborators()
-            ->where('user_id', $userId)
-            ->where('status', 'accepted')
-            ->first();
-
-        if (! $collaborator) return false;
-        if ($editorRequired && $collaborator->role === 'viewer') return false;
-
-        return true;
-    }
+    use \App\Http\Traits\AuthorizesMapAccess;
 
     private function mapFor(WaypointFloorplan $floorplan): Map
     {

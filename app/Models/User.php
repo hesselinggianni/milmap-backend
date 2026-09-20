@@ -2,13 +2,14 @@
 
 namespace App\Models;
 
+use Illuminate\Contracts\Translation\HasLocalePreference;
 use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Foundation\Auth\User as Authenticatable;
 use Illuminate\Notifications\Notifiable;
 use Laravel\Sanctum\HasApiTokens;
 use Spatie\Permission\Traits\HasRoles;
 
-class User extends Authenticatable
+class User extends Authenticatable implements HasLocalePreference
 {
     use HasFactory, Notifiable, HasApiTokens, HasRoles;
 
@@ -575,4 +576,18 @@ class User extends Authenticatable
         ];
     }
 
+
+    /**
+     * Taal waarin deze gebruiker gemaild wordt.
+     *
+     * Laravel roept dit automatisch aan bij `Mail::to($user)` en zet daarmee de
+     * locale van de mailable. Engels is de standaard — MilMap is internationaal
+     * — en alleen een account dat expliciet op Nederlands staat krijgt de
+     * Nederlandse tekst. Talen zonder eigen vertaalbestand vallen via
+     * `fallback_locale` terug op Engels.
+     */
+    public function preferredLocale(): string
+    {
+        return strtolower(substr((string) ($this->language ?? ''), 0, 2)) === 'nl' ? 'nl' : 'en';
+    }
 }

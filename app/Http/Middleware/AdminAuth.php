@@ -32,13 +32,13 @@ class AdminAuth
             ], 403);
         }
 
-        // Defense-in-depth: the admin area may only be reached with a token that
-        // was minted through the admin login flow (scoped 'admin'), not with a
-        // regular app session token — so a leaked/misused user token can't touch
-        // admin endpoints even if that user happens to be an admin. Legacy
-        // unscoped ['*'] tokens and the stateful SPA TransientToken both still
-        // satisfy tokenCan(), so this adds no breakage for existing sessions.
-        if (!Auth::user()->tokenCan('admin')) {
+        // Require an explicitly scoped, short-lived personal token. Wildcards
+        // and SPA transient tokens must not grant administration privileges.
+        $token = Auth::user()->currentAccessToken();
+        if (!$token instanceof \Laravel\Sanctum\PersonalAccessToken ||
+            !in_array('admin', $token->abilities ?? [], true) ||
+            !$token->expires_at || $token->expires_at->isPast() ||
+            !$token->created_at || $token->created_at->lte(now()->subHours(8))) {
             return response()->json([
                 'message' => 'Forbidden - Admin token required',
                 'error' => 'admin_token_required'

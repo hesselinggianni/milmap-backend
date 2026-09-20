@@ -89,7 +89,7 @@ class AppleAuthController extends Controller
             $user->forceFill(['deletion_requested_at' => null, 'deletion_purge_at' => null])->save();
         }
 
-        $token = $user->createToken('API Token', ['user']);
+        $token = $user->createToken('API Token', ['user'], now()->addDays(7));
 
         return response()->json([
             'token'    => $token->plainTextToken,

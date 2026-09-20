@@ -72,7 +72,9 @@ class MessageController extends Controller
             'ciphertext_self' => ['nullable', 'string', 'max:20000'],
             'ciphertexts'     => ['nullable', 'array'],
             'ciphertexts.*'   => ['string', 'max:20000'],
-            'encryption'      => ['nullable', 'in:sealed,none'],
+            // Legacy `none` messages remain readable, but new messages must be
+            // end-to-end encrypted. This includes locations and attachments.
+            'encryption'      => ['nullable', 'in:sealed'],
             'type'            => ['nullable', 'in:text,location,mission,image,file,voice,poll,event,contact,medevac'],
             'reply_to_id'     => ['nullable', 'integer'],
         ]);

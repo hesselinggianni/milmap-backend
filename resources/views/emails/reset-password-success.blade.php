@@ -1,5 +1,5 @@
 @extends('emails.layout')
-@section('title', 'Wachtwoord gewijzigd — Milmap')
+@section('title', __('mail.reset_password_success.page_title'))
 @section('body')
 
   <table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0" style="margin-bottom:24px;">
@@ -16,9 +16,9 @@
       </td>
       <td style="vertical-align:middle;padding-left:14px;">
         <h1 style="margin:0 0 3px;font-size:20px;font-weight:700;color:#f8fafc;letter-spacing:-0.01em;line-height:1.2;">
-          Wachtwoord gewijzigd
+          {{ __('mail.reset_password_success.title') }}
         </h1>
-        <p style="margin:0;font-size:13px;color:#94a3b8;">Uw account is bijgewerkt</p>
+        <p style="margin:0;font-size:13px;color:#94a3b8;">{{ __('mail.reset_password_success.subtitle') }}</p>
       </td>
     </tr>
   </table>
@@ -26,11 +26,12 @@
   <div style="height:1px;background:#1e293b;margin:0 0 24px;"></div>
 
   <p style="margin:0 0 6px;font-size:10px;font-weight:700;letter-spacing:0.1em;text-transform:uppercase;color:#7e8a9c;">
-    Bevestiging
+    {{ __('mail.reset_password_success.eyebrow') }}
   </p>
   <p style="margin:0 0 24px;font-size:14px;line-height:1.7;color:#cbd5e1;">
-    Hallo <strong style="color:#f8fafc;">{{ $name }}</strong>,<br><br>
-    Uw wachtwoord is succesvol gewijzigd. U kunt nu inloggen met uw nieuwe wachtwoord.
+    {!! __('mail.reset_password_success.body', [
+        'name' => '<strong style="color:#f8fafc;">' . e($name) . '</strong>',
+    ]) !!}
   </p>
 
   <div style="height:1px;background:#1e293b;margin:0 0 20px;"></div>
@@ -48,7 +49,7 @@
               </svg>
             </td>
             <td style="font-size:13px;color:#fcd34d;line-height:1.5;">
-              Heeft u dit niet zelf gedaan? Neem dan onmiddellijk contact op met uw beheerder.
+              {{ __('mail.reset_password_success.warning') }}
             </td>
           </tr>
         </table>

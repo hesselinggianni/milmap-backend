@@ -158,7 +158,7 @@ class RegisterController extends Controller
         // Generate a Sanctum token scoped to the regular-app 'user' ability so
         // it can never satisfy tokenCan('admin') (admin routes require a token
         // minted through the admin login flow).
-        $token = $user->createToken('API Token', ['user'])->plainTextToken;
+        $token = $user->createToken('API Token', ['user'], now()->addDays(7))->plainTextToken;
 
         return response()->json([
             'message' => 'User registered successfully.',

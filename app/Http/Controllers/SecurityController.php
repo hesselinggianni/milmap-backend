@@ -52,7 +52,7 @@ class SecurityController extends Controller
                     ?: ($user->name ?? null);
 
         try {
-            Mail::to($user->email)->send(new AppLockTripped(
+            Mail::to($user)->send(new AppLockTripped(
                 $name, $ip, $location, $device, $time,
             ));
         } catch (\Throwable $e) {

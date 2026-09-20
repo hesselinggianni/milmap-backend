@@ -21,7 +21,7 @@ class NewLeadNotification extends Mailable
     public function build()
     {
         return $this
-            ->subject('Nieuwe lead — Milmap')
+            ->subject(__('mail.new_lead.subject'))
             ->view('emails.new-lead');
     }
 }

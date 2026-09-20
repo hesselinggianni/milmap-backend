@@ -1,5 +1,5 @@
 @extends('emails.layout')
-@section('title', 'Nieuwe gebruiker — Milmap')
+@section('title', __('mail.new_user_registered.page_title'))
 @section('body')
 
   <table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0" style="margin-bottom:24px;">
@@ -17,9 +17,9 @@
       </td>
       <td style="vertical-align:middle;padding-left:14px;">
         <h1 style="margin:0 0 3px;font-size:20px;font-weight:700;color:#f8fafc;letter-spacing:-0.01em;line-height:1.2;">
-          Nieuwe gebruiker
+          {{ __('mail.new_user_registered.title') }}
         </h1>
-        <p style="margin:0;font-size:13px;color:#94a3b8;">Geregistreerd op Milmap</p>
+        <p style="margin:0;font-size:13px;color:#94a3b8;">{{ __('mail.new_user_registered.subtitle') }}</p>
       </td>
     </tr>
   </table>
@@ -31,28 +31,28 @@
     <tr>
       <td colspan="2" style="padding:10px 16px;background:#0d1320;border-bottom:1px solid #1e293b;
                  font-size:10px;font-weight:700;letter-spacing:0.1em;text-transform:uppercase;color:#7e8a9c;">
-        Accountgegevens
+        {{ __('mail.new_user_registered.table_title') }}
       </td>
     </tr>
     <tr>
-      <td style="padding:11px 16px;width:30%;font-size:12.5px;color:#94a3b8;border-bottom:1px solid #1a2433;font-weight:500;">E-mail</td>
+      <td style="padding:11px 16px;width:30%;font-size:12.5px;color:#94a3b8;border-bottom:1px solid #1a2433;font-weight:500;">{{ __('mail.new_user_registered.email') }}</td>
       <td style="padding:11px 16px;font-size:13px;color:#f8fafc;border-bottom:1px solid #1a2433;">{{ $user->email }}</td>
     </tr>
     <tr>
-      <td style="padding:11px 16px;font-size:12.5px;color:#94a3b8;border-bottom:1px solid #1a2433;font-weight:500;">ID</td>
+      <td style="padding:11px 16px;font-size:12.5px;color:#94a3b8;border-bottom:1px solid #1a2433;font-weight:500;">{{ __('mail.new_user_registered.id') }}</td>
       <td style="padding:11px 16px;font-size:13px;color:#f8fafc;border-bottom:1px solid #1a2433;font-family:monospace;">{{ $user->id }}</td>
     </tr>
     <tr>
-      <td style="padding:11px 16px;font-size:12.5px;color:#94a3b8;border-bottom:1px solid #1a2433;font-weight:500;">Datum</td>
+      <td style="padding:11px 16px;font-size:12.5px;color:#94a3b8;border-bottom:1px solid #1a2433;font-weight:500;">{{ __('mail.new_user_registered.date') }}</td>
       <td style="padding:11px 16px;font-size:13px;color:#f8fafc;border-bottom:1px solid #1a2433;">{{ now() }}</td>
     </tr>
     <tr>
-      <td style="padding:11px 16px;font-size:12.5px;color:#94a3b8;{{ !empty($referrer) ? 'border-bottom:1px solid #1a2433;' : '' }}font-weight:500;">Geregistreerd via</td>
-      <td style="padding:11px 16px;font-size:13px;color:#f8fafc;{{ !empty($referrer) ? 'border-bottom:1px solid #1a2433;' : '' }}word-break:break-all;">{{ !empty($sourceUrl) ? $sourceUrl : 'Onbekend' }}</td>
+      <td style="padding:11px 16px;font-size:12.5px;color:#94a3b8;{{ !empty($referrer) ? 'border-bottom:1px solid #1a2433;' : '' }}font-weight:500;">{{ __('mail.new_user_registered.registered_via') }}</td>
+      <td style="padding:11px 16px;font-size:13px;color:#f8fafc;{{ !empty($referrer) ? 'border-bottom:1px solid #1a2433;' : '' }}word-break:break-all;">{{ !empty($sourceUrl) ? $sourceUrl : __('mail.new_user_registered.unknown') }}</td>
     </tr>
     @if(!empty($referrer))
     <tr>
-      <td style="padding:11px 16px;font-size:12.5px;color:#94a3b8;{{ (!empty($useCase) || !empty($interests)) ? 'border-bottom:1px solid #1a2433;' : '' }}font-weight:500;">Herkomst</td>
+      <td style="padding:11px 16px;font-size:12.5px;color:#94a3b8;{{ (!empty($useCase) || !empty($interests)) ? 'border-bottom:1px solid #1a2433;' : '' }}font-weight:500;">{{ __('mail.new_user_registered.referrer') }}</td>
       <td style="padding:11px 16px;font-size:13px;color:#f8fafc;{{ (!empty($useCase) || !empty($interests)) ? 'border-bottom:1px solid #1a2433;' : '' }}word-break:break-all;">{{ $referrer }}</td>
     </tr>
     @endif
@@ -60,13 +60,13 @@
          of een uitnodiging; dan tonen we de rijen helemaal niet. --}}
     @if(!empty($useCase))
     <tr>
-      <td style="padding:11px 16px;font-size:12.5px;color:#94a3b8;{{ !empty($interests) ? 'border-bottom:1px solid #1a2433;' : '' }}font-weight:500;">Gebruiksdoel</td>
+      <td style="padding:11px 16px;font-size:12.5px;color:#94a3b8;{{ !empty($interests) ? 'border-bottom:1px solid #1a2433;' : '' }}font-weight:500;">{{ __('mail.new_user_registered.use_case') }}</td>
       <td style="padding:11px 16px;font-size:13px;color:#f8fafc;{{ !empty($interests) ? 'border-bottom:1px solid #1a2433;' : '' }}">{{ $useCase }}</td>
     </tr>
     @endif
     @if(!empty($interests))
     <tr>
-      <td style="padding:11px 16px;font-size:12.5px;color:#94a3b8;font-weight:500;">Interesse in</td>
+      <td style="padding:11px 16px;font-size:12.5px;color:#94a3b8;font-weight:500;">{{ __('mail.new_user_registered.interests') }}</td>
       <td style="padding:11px 16px;font-size:13px;color:#f8fafc;">{{ implode(', ', $interests) }}</td>
     </tr>
     @endif

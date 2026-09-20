@@ -39,7 +39,7 @@ trait IssuesLoginSession
             Log::info('[account] verwijderverzoek geannuleerd door inloggen', ['user_id' => $user->id]);
         }
 
-        $newToken = $user->createToken('API Token', ['user']);
+        $newToken = $user->createToken('API Token', ['user'], now()->addDays(7));
 
         $newToken->accessToken->forceFill([
             'ip_address'   => $request->ip(),
@@ -76,7 +76,7 @@ trait IssuesLoginSession
         }
 
         try {
-            Mail::to($user->email)->send(
+            Mail::to($user)->send(
                 new LoginNotification($user->name ?? $user->email, $ip, $location, $device, $loginTime)
             );
         } catch (\Throwable $e) {

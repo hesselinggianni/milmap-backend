@@ -27,7 +27,7 @@ class LoginNotification extends Mailable
 
     public function build()
     {
-        return $this->subject('Nieuwe inlog gedetecteerd — Milmap')
+        return $this->subject(__('mail.login_notification.subject'))
                     ->view('emails.login-notification');
     }
 }

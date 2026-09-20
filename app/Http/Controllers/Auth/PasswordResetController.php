@@ -32,7 +32,7 @@ class PasswordResetController extends Controller
             // de uniforme 200 (anti-enumeratie) niet breken met een 500 — log
             // het en ga door.
             try {
-                Mail::to($user->email)->send(new ResetPasswordMail($resetUrl));
+                Mail::to($user)->send(new ResetPasswordMail($resetUrl));
             } catch (\Throwable $e) {
                 Log::warning('[password-reset] kon reset-link niet versturen: ' . $e->getMessage());
             }
@@ -68,7 +68,7 @@ class PasswordResetController extends Controller
                 // Wachtwoord is al gewijzigd; een mislukte bevestigingsmail mag
                 // de reset niet alsnog laten falen met een 500.
                 try {
-                    Mail::to($user->email)->send(new PasswordResetSuccess($user));
+                    Mail::to($user)->send(new PasswordResetSuccess($user));
                 } catch (\Throwable $e) {
                     Log::warning('[password-reset] kon bevestigingsmail niet versturen: ' . $e->getMessage());
                 }

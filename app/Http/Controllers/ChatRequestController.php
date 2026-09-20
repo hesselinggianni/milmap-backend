@@ -269,7 +269,7 @@ class ChatRequestController extends Controller
             $name = $me->full_name ?: ($me->first_name ?? 'Een Milmap-gebruiker');
             $url  = rtrim(config('app.frontend_url', 'https://app.milmap.nl'), '/') . '/hub';
 
-            Mail::to($recipient->email)->send(new ChatRequestMail($name, $url));
+            Mail::to($recipient)->send(new ChatRequestMail($name, $url));
             RateLimiter::hit($throttleKey, 3600); // 1 uur
         } catch (\Throwable $e) {
             Log::warning('[chat] request email failed: ' . $e->getMessage());

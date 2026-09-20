@@ -20,7 +20,7 @@ class NewPartnerApplicationMail extends Mailable
 
     public function build()
     {
-        return $this->subject('Nieuwe partneraanmelding — ' . ($this->partner->company_name ?: $this->partner->user->email))
+        return $this->subject(__('mail.new_partner_application.subject', ['who' => $this->partner->company_name ?: $this->partner->user->email]))
                     ->view('emails.new-partner-application');
     }
 }

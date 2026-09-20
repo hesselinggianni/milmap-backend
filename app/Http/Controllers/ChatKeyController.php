@@ -76,8 +76,8 @@ class ChatKeyController extends Controller
             'ops'        => ['nullable', 'integer', 'min:1', 'max:100'],
             'mem'        => ['nullable', 'integer', 'min:1'],
             'alg'        => ['nullable', 'string', 'max:32'],
-            // Random account unlock key — secretbox-acct-v1 blobs only.
-            'unlock_key' => ['nullable', 'string', 'max:255'],
+            // Server-readable recovery keys are deliberately no longer accepted.
+            'unlock_key' => ['prohibited'],
         ]);
 
         $user = Auth::user();
@@ -87,8 +87,11 @@ class ChatKeyController extends Controller
         $user->key_escrow_nonce      = $data['nonce'];
         $user->key_escrow_ops        = $data['ops'] ?? null;
         $user->key_escrow_mem        = $data['mem'] ?? null;
-        $user->key_escrow_alg        = $data['alg'] ?? 'argon2id';
-        $user->key_escrow_unlock     = $data['unlock_key'] ?? null;
+        if (($data['alg'] ?? 'argon2id') !== 'argon2id') {
+            return response()->json(['message' => 'Gebruik een persoonlijk beveiligde herstelsleutel.'], 422);
+        }
+        $user->key_escrow_alg        = 'argon2id';
+        $user->key_escrow_unlock     = null;
         $user->key_escrow_updated_at = now();
         $user->save();
 
@@ -117,8 +120,19 @@ class ChatKeyController extends Controller
             'ops'        => $user->key_escrow_ops !== null ? (int) $user->key_escrow_ops : null,
             'mem'        => $user->key_escrow_mem !== null ? (int) $user->key_escrow_mem : null,
             'alg'        => $user->key_escrow_alg,
-            'unlock_key' => $user->key_escrow_unlock,
+            // Boolean migration signal only; the key itself must never leave
+            // the server. An updated device that already has the private key
+            // removes this legacy recovery material through revokeUnlockKey().
+            'legacy_server_unlock_present' => $user->key_escrow_unlock !== null,
             'updated_at' => $user->key_escrow_updated_at?->toIso8601String(),
         ]);
+    }
+
+    public function revokeUnlockKey()
+    {
+        $user = Auth::user();
+        $user->key_escrow_unlock = null;
+        $user->save();
+        return response()->json(['revoked' => true]);
     }
 }

@@ -94,7 +94,7 @@ class PayoutPartners extends Command
             ]);
 
             try {
-                Mail::to($partner->user->email)->send(new PartnerPayoutMail($partner, $total, $pending->count()));
+                Mail::to($partner->user)->send(new PartnerPayoutMail($partner, $total, $pending->count()));
             } catch (\Throwable $e) {
                 Log::warning('[partner] payout-mail mislukt: ' . $e->getMessage());
             }

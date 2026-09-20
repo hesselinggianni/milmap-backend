@@ -1,5 +1,5 @@
 @extends('emails.layout')
-@section('title', 'Nieuwe lead — Milmap')
+@section('title', __('mail.new_lead.subject'))
 @section('body')
 
   <table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0" style="margin-bottom:24px;">
@@ -17,9 +17,9 @@
       </td>
       <td style="vertical-align:middle;padding-left:14px;">
         <h1 style="margin:0 0 3px;font-size:20px;font-weight:700;color:#f8fafc;letter-spacing:-0.01em;line-height:1.2;">
-          Nieuwe lead
+          {{ __('mail.new_lead.title') }}
         </h1>
-        <p style="margin:0;font-size:13px;color:#94a3b8;">Ingevuld op Milmap</p>
+        <p style="margin:0;font-size:13px;color:#94a3b8;">{{ __('mail.new_lead.subtitle') }}</p>
       </td>
     </tr>
   </table>
@@ -31,29 +31,29 @@
     <tr>
       <td colspan="2" style="padding:10px 16px;background:#0d1320;border-bottom:1px solid #1e293b;
                  font-size:10px;font-weight:700;letter-spacing:0.1em;text-transform:uppercase;color:#7e8a9c;">
-        Leadgegevens
+        {{ __('mail.new_lead.table_title') }}
       </td>
     </tr>
     <tr>
-      <td style="padding:11px 16px;width:30%;font-size:12.5px;color:#94a3b8;border-bottom:1px solid #1a2433;font-weight:500;">E-mail</td>
+      <td style="padding:11px 16px;width:30%;font-size:12.5px;color:#94a3b8;border-bottom:1px solid #1a2433;font-weight:500;">{{ __('mail.new_lead.email') }}</td>
       <td style="padding:11px 16px;font-size:13px;color:#f8fafc;border-bottom:1px solid #1a2433;">{{ $lead->email }}</td>
     </tr>
     <tr>
-      <td style="padding:11px 16px;font-size:12.5px;color:#94a3b8;border-bottom:1px solid #1a2433;font-weight:500;">ID</td>
+      <td style="padding:11px 16px;font-size:12.5px;color:#94a3b8;border-bottom:1px solid #1a2433;font-weight:500;">{{ __('mail.new_lead.id') }}</td>
       <td style="padding:11px 16px;font-size:13px;color:#f8fafc;border-bottom:1px solid #1a2433;font-family:monospace;">{{ $lead->id }}</td>
     </tr>
     <tr>
-      <td style="padding:11px 16px;font-size:12.5px;color:#94a3b8;border-bottom:1px solid #1a2433;font-weight:500;">Bron</td>
-      <td style="padding:11px 16px;font-size:13px;color:#f8fafc;border-bottom:1px solid #1a2433;">{{ $lead->source ?: 'Onbekend' }}</td>
+      <td style="padding:11px 16px;font-size:12.5px;color:#94a3b8;border-bottom:1px solid #1a2433;font-weight:500;">{{ __('mail.new_lead.source') }}</td>
+      <td style="padding:11px 16px;font-size:13px;color:#f8fafc;border-bottom:1px solid #1a2433;">{{ $lead->source ?: __('mail.new_lead.unknown') }}</td>
     </tr>
     @if(!empty($lead->utm_source))
     <tr>
-      <td style="padding:11px 16px;font-size:12.5px;color:#94a3b8;border-bottom:1px solid #1a2433;font-weight:500;">UTM-bron</td>
+      <td style="padding:11px 16px;font-size:12.5px;color:#94a3b8;border-bottom:1px solid #1a2433;font-weight:500;">{{ __('mail.new_lead.utm_source') }}</td>
       <td style="padding:11px 16px;font-size:13px;color:#f8fafc;border-bottom:1px solid #1a2433;word-break:break-all;">{{ $lead->utm_source }}</td>
     </tr>
     @endif
     <tr>
-      <td style="padding:11px 16px;font-size:12.5px;color:#94a3b8;font-weight:500;">Datum</td>
+      <td style="padding:11px 16px;font-size:12.5px;color:#94a3b8;font-weight:500;">{{ __('mail.new_lead.date') }}</td>
       <td style="padding:11px 16px;font-size:13px;color:#f8fafc;">{{ optional($lead->created_at)->format('d-m-Y H:i') ?? now()->format('d-m-Y H:i') }}</td>
     </tr>
   </table>

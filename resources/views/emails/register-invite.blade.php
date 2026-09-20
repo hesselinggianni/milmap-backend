@@ -1,5 +1,5 @@
 @extends('emails.layout')
-@section('title', 'Uitnodiging — Milmap')
+@section('title', __('mail.register_invite.title') . ' — Milmap')
 @section('body')
 
   <table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0" style="margin-bottom:24px;">
@@ -16,9 +16,9 @@
       </td>
       <td style="vertical-align:middle;padding-left:14px;">
         <h1 style="margin:0 0 3px;font-size:20px;font-weight:700;color:#f8fafc;letter-spacing:-0.01em;line-height:1.2;">
-          Uitnodiging ontvangen
+          {{ __('mail.register_invite.title') }}
         </h1>
-        <p style="margin:0;font-size:13px;color:#94a3b8;">U bent uitgenodigd voor een workspace</p>
+        <p style="margin:0;font-size:13px;color:#94a3b8;">{{ __('mail.register_invite.subtitle') }}</p>
       </td>
     </tr>
   </table>
@@ -26,12 +26,12 @@
   <div style="height:1px;background:#1e293b;margin:0 0 24px;"></div>
 
   <p style="margin:0 0 6px;font-size:10px;font-weight:700;letter-spacing:0.1em;text-transform:uppercase;color:#7e8a9c;">
-    Workspace toegang
+    {{ __('mail.register_invite.eyebrow') }}
   </p>
   <p style="margin:0 0 24px;font-size:14px;line-height:1.7;color:#cbd5e1;">
-    U bent uitgenodigd om deel te nemen aan de workspace
-    <strong style="color:#f8fafc;">{{ $workspace->name }}</strong> op Milmap.
-    Klik op de knop hieronder om de uitnodiging te accepteren.
+    {!! __('mail.register_invite.intro', [
+        'workspace' => '<strong style="color:#f8fafc;">' . e($workspace->name) . '</strong>',
+    ]) !!}
   </p>
 
   <table role="presentation" cellpadding="0" cellspacing="0" border="0" style="margin-bottom:24px;">
@@ -40,7 +40,7 @@
         <a href="{{ route('workspace.invite.accept', ['id' => $invitation->id]) }}"
            style="display:inline-block;height:44px;padding:0 24px;line-height:44px;
                   font-size:14px;font-weight:600;color:#ffffff;text-decoration:none;border-radius:8px;">
-          Uitnodiging accepteren
+          {{ __('mail.register_invite.cta') }}
         </a>
       </td>
     </tr>
@@ -50,7 +50,7 @@
 
   <p style="margin:0;padding:12px 16px;background:#0d1320;border:1px solid #1e293b;border-radius:8px;
             font-size:13px;color:#94a3b8;line-height:1.5;">
-    Verwacht u deze uitnodiging niet? Dan kunt u deze e-mail veilig negeren.
+    {{ __('mail.register_invite.footer') }}
   </p>
 
 @endsection

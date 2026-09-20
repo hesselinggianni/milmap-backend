@@ -3,6 +3,7 @@
 namespace App\Http\Controllers;
 
 use App\Events\MapWaypointChanged;
+use App\Http\Traits\AuthorizesMapAccess;
 use App\Models\Map;
 use App\Models\MapWaypoint;
 use App\Models\MapWaypointImage;
@@ -14,23 +15,7 @@ use Illuminate\Support\Str;
 
 class MapWaypointController extends Controller
 {
-    // ── Authorization helper ─────────────────────────────────────────────────
-
-    private function authorizeMapAccess(Map $map, bool $editorRequired = false): bool
-    {
-        $userId = Auth::id();
-        if ((int) $map->owner_id === $userId) return true;
-
-        $collaborator = $map->collaborators()
-            ->where('user_id', $userId)
-            ->where('status', 'accepted')
-            ->first();
-
-        if (! $collaborator) return false;
-        if ($editorRequired && $collaborator->role === 'viewer') return false;
-
-        return true;
-    }
+    use AuthorizesMapAccess;
 
     /**
      * List all waypoints for a map (owner or accepted collaborator).

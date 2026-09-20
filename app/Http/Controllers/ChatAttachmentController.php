@@ -3,6 +3,7 @@
 namespace App\Http\Controllers;
 
 use App\Models\UserUpload;
+use App\Models\Conversation;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Auth;
 use Illuminate\Support\Facades\Storage;
@@ -10,27 +11,8 @@ use Illuminate\Support\Str;
 
 class ChatAttachmentController extends Controller
 {
-    private const ALLOWED_MIME = [
-        'image/jpeg', 'image/png', 'image/webp', 'image/gif',
-        'application/pdf',
-        'application/msword',
-        'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
-        // Voice notes / push-to-talk clips
-        'audio/webm', 'audio/ogg', 'audio/mp4', 'audio/mpeg', 'audio/aac', 'audio/wav', 'audio/x-m4a',
-    ];
-
-    // Container formats whose magic bytes are ambiguous: PHP's fileinfo sniffs an
-    // audio-only MediaRecorder clip as "video/webm", "video/mp4" or
-    // "application/ogg" because the container header is shared with video. We
-    // accept these ONLY when the browser-declared type or the file extension
-    // confirms audio, so we never silently allow a real video upload.
-    private const AMBIGUOUS_AUDIO_CONTAINERS = [
-        'video/webm', 'video/x-matroska', 'video/mp4', 'video/ogg', 'application/ogg',
-    ];
-
-    private const AUDIO_EXTENSIONS = ['webm', 'ogg', 'oga', 'mp4', 'm4a', 'mp3', 'aac', 'wav'];
-
-    private const MAX_SIZE = 15 * 1024 * 1024; // 15 MB
+    // AES-GCM adds a small authentication tag to the 15 MB client-side limit.
+    private const MAX_SIZE = 16 * 1024 * 1024;
 
     public function store(Request $request)
     {
@@ -39,7 +21,9 @@ class ChatAttachmentController extends Controller
         // The implicit `uploaded` rule fires when PHP itself rejects the file —
         // almost always because it exceeded the host's upload_max_filesize.
         $request->validate([
-            'file' => ['required', 'file', 'max:15360'],
+            'file' => ['required', 'file', 'max:16384'],
+            'conversation_id' => ['required', 'uuid', 'exists:conversations,id'],
+            'encrypted' => ['required', 'accepted'],
         ], [
             'file.required' => 'Geen bestand ontvangen.',
             'file.file'     => 'Het geüploade item is geen geldig bestand.',
@@ -48,60 +32,60 @@ class ChatAttachmentController extends Controller
         ]);
 
         $file = $request->file('file');
-
-        $detected = $file->getMimeType();                 // content-sniffed (fileinfo)
-        $declared = (string) $file->getClientMimeType();  // browser-sent Content-Type
-        $ext      = strtolower($file->getClientOriginalExtension() ?: '');
-
-        $isAllowed = in_array($detected, self::ALLOWED_MIME, true);
-        $isAudio   = str_starts_with($detected, 'audio/');
-
-        // Rescue voice notes that fileinfo reports as video/* or application/ogg
-        // (audio-only WebM/MP4/Ogg recordings) — but only if the browser or the
-        // extension confirms audio, so real video files stay blocked.
-        if (!$isAllowed && in_array($detected, self::AMBIGUOUS_AUDIO_CONTAINERS, true)) {
-            if (str_starts_with($declared, 'audio/') || in_array($ext, self::AUDIO_EXTENSIONS, true)) {
-                $isAllowed = true;
-                $isAudio   = true;
-            }
-        }
-
-        if (!$isAllowed) {
-            return response()->json(['message' => 'Bestandstype niet toegestaan.'], 422);
+        $conversation = Conversation::findOrFail($request->string('conversation_id'));
+        if (! $conversation->hasParticipant((int) Auth::id())) {
+            abort(403, 'Geen toegang tot dit gesprek.');
         }
 
         if ($file->getSize() > self::MAX_SIZE) {
-            return response()->json(['message' => 'Bestand te groot (max 15 MB).'], 422);
+            return response()->json(['message' => 'Versleutelde upload is te groot.'], 422);
         }
 
-        $isImage = str_starts_with($detected, 'image/');
-        $ext = $ext ?: ($isImage ? 'jpg' : ($isAudio ? 'webm' : 'bin'));
-        $filename = Str::uuid() . '.' . strtolower($ext);
-        $folder = 'chat/' . date('Y/m');
-
-        Storage::disk('public')->putFileAs($folder, $file, $filename);
+        // The browser already encrypted the complete file with AES-GCM. The
+        // server intentionally sees only opaque bytes, so MIME/name stay inside
+        // the separately E2EE-encrypted message metadata.
+        $filename = Str::uuid() . '.bin';
+        $folder = 'chat-encrypted/' . date('Y/m');
+        $path = Storage::disk('local')->putFileAs($folder, $file, $filename);
+        if (! $path) abort(500, 'Versleutelde upload kon niet worden opgeslagen.');
 
         // Opslag-grootboek: chat-bijlagen zijn E2EE en hebben geen eigenaar-
         // record op het bericht zelf, dus leggen we hier een lichte metadata-
         // regel vast zodat StatsController het verbruik kan toerekenen. Best-
         // effort — record() slikt eigen fouten en laat de upload nooit klappen.
-        UserUpload::record(
+        $upload = UserUpload::record(
             (int) Auth::id(),
-            "{$folder}/{$filename}",
+            $path,
             (int) $file->getSize(),
-            $detected,
+            'application/octet-stream',
             'chat',
+            'local',
+            (string) $conversation->id,
         );
-
-        $url = Storage::disk('public')->url("{$folder}/{$filename}");
+        if (! $upload) {
+            Storage::disk('local')->delete($path);
+            abort(500, 'Uploadregistratie is mislukt.');
+        }
 
         return response()->json([
-            'url'      => $url,
-            'filename' => $file->getClientOriginalName(),
-            'mime'     => $detected,
+            'attachment_id' => $upload->id,
+            'url'      => route('chat.attachments.show', ['upload' => $upload->id], false),
             'size'     => $file->getSize(),
-            'is_image' => $isImage,
-            'is_audio' => $isAudio,
+            'encrypted' => true,
         ], 201);
+    }
+
+    public function show(UserUpload $upload)
+    {
+        if ($upload->kind !== 'chat' || ! $upload->conversation_id || $upload->disk !== 'local') abort(404);
+        $conversation = Conversation::find($upload->conversation_id);
+        if (! $conversation || ! $conversation->hasParticipant((int) Auth::id())) abort(404);
+        if (! Storage::disk('local')->exists($upload->path)) abort(404);
+
+        return Storage::disk('local')->download($upload->path, 'encrypted-attachment.bin', [
+            'Content-Type' => 'application/octet-stream',
+            'Cache-Control' => 'private, no-store, max-age=0',
+            'X-Content-Type-Options' => 'nosniff',
+        ]);
     }
 }

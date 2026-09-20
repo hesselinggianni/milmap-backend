@@ -32,16 +32,7 @@ Broadcast::channel('map.{mapId}', function ($user, $mapId) {
         return false;
     }
 
-    // Owner has access
-    if ($map->owner_id === $user->id) {
-        return true;
-    }
-
-    // Check if user is an accepted collaborator
-    return $map->collaborators()
-        ->where('user_id', $user->id)
-        ->where('status', 'accepted')
-        ->exists();
+    return \Illuminate\Support\Facades\Gate::forUser($user)->allows('view', $map);
 });
 
 /**
@@ -65,16 +56,7 @@ Broadcast::channel('map.{mapId}.locations', function ($user, $mapId) {
         return false;
     }
 
-    // Owner has access.
-    if ($map->owner_id === $user->id) {
-        return true;
-    }
-
-    // Accepted collaborators have access.
-    return $map->collaborators()
-        ->where('user_id', $user->id)
-        ->where('status', 'accepted')
-        ->exists();
+    return \Illuminate\Support\Facades\Gate::forUser($user)->allows('view', $map);
 });
 
 /**
@@ -141,17 +123,7 @@ Broadcast::channel('floorplan.{floorplanId}', function ($user, $floorplanId) {
         return false;
     }
 
-    if ($map->owner_id === $user->id) {
-        return [
-            'id'   => $user->id,
-            'name' => trim(($user->first_name ?? '') . ' ' . ($user->last_name ?? '')) ?: $user->email,
-        ];
-    }
-
-    $hasAccess = $map->collaborators()
-        ->where('user_id', $user->id)
-        ->where('status', 'accepted')
-        ->exists();
+    $hasAccess = \Illuminate\Support\Facades\Gate::forUser($user)->allows('view', $map);
 
     if (! $hasAccess) {
         return false;

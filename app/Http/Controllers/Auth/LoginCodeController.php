@@ -34,7 +34,7 @@ class LoginCodeController extends Controller
         // bestaat of niet (zelfde aanpak als password/reset-link).
         if (!$user || $user->isArchived()) {
             return response()->json([
-                'message' => 'Als dit e-mailadres bij ons bekend is, ontvang je een inlogcode.',
+                'message' => 'If this email address is known to us, you will receive a login code.',
             ], 200);
         }
 
@@ -45,7 +45,7 @@ class LoginCodeController extends Controller
 
         if ($recentCodes >= 5) {
             return response()->json([
-                'message' => 'Te veel aanvragen. Probeer het later opnieuw.',
+                'message' => 'Too many requests. Please try again later.',
                 'error' => 'rate_limit',
             ], 429);
         }
@@ -60,13 +60,16 @@ class LoginCodeController extends Controller
         ]);
 
         try {
-            Mail::to($validated['email'])->send(new UserLoginCodeMail($code));
+            // Mail::to($user) i.p.v. het kale adres: zo pakt Laravel
+            // User::preferredLocale() op — Engels, tenzij het account
+            // expliciet op Nederlands staat.
+            Mail::to($user)->send(new UserLoginCodeMail($code));
         } catch (\Throwable $e) {
             \Illuminate\Support\Facades\Log::warning('[login-code] kon inlogcode niet versturen: ' . $e->getMessage());
         }
 
         return response()->json([
-            'message' => 'Als dit e-mailadres bij ons bekend is, ontvang je een inlogcode.',
+            'message' => 'If this email address is known to us, you will receive a login code.',
         ], 200);
     }
 
@@ -87,7 +90,7 @@ class LoginCodeController extends Controller
 
         if (!$user || $user->isArchived() || !$loginCode) {
             throw ValidationException::withMessages([
-                'code' => 'Ongeldige of verlopen code.',
+                'code' => 'Invalid or expired code.',
             ]);
         }
 

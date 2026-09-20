@@ -101,7 +101,7 @@ class AdminPartnerController extends Controller
         ]);
 
         try {
-            Mail::to($partner->user->email)->send(new PartnerApprovedMail($partner));
+            Mail::to($partner->user)->send(new PartnerApprovedMail($partner));
         } catch (\Throwable $e) {
             Log::warning('[partner] goedkeuringsmail mislukt: ' . $e->getMessage());
         }

@@ -26,7 +26,7 @@ class UserLoginCodeMail extends Mailable
     public function envelope(): Envelope
     {
         return new Envelope(
-            subject: 'Je inlogcode — Milmap',
+            subject: __('mail.user_login_code.subject'),
         );
     }
 

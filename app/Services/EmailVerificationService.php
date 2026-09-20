@@ -52,7 +52,7 @@ class EmailVerificationService
                 ? self::setPasswordUrl($user)
                 : null;
 
-            Mail::to($user->email)->send(
+            Mail::to($user)->send(
                 new VerifyEmail($user, self::verificationUrl($user), $setPasswordUrl)
             );
         } catch (\Throwable $e) {

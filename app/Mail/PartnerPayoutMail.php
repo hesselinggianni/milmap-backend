@@ -24,7 +24,7 @@ class PartnerPayoutMail extends Mailable
 
     public function build()
     {
-        return $this->subject('Milmap-partneruitbetaling: €' . number_format($this->amount, 2, ',', '.'))
+        return $this->subject(__('mail.partner_payout.subject', ['amount' => number_format($this->amount, 2, ',', '.')]))
                     ->view('emails.partner-payout');
     }
 }

@@ -38,7 +38,7 @@ class AppLockTripped extends Mailable
 
     public function build()
     {
-        return $this->subject('Verdachte activiteit — 10 mislukte PIN-pogingen op MilMap')
+        return $this->subject(__('mail.app_lock_tripped.subject'))
                     ->view('emails.app-lock-tripped');
     }
 }

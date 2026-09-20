@@ -30,7 +30,7 @@ class VerifyEmail extends Mailable
     public function build()
     {
         return $this
-            ->subject('Bevestig je e-mailadres — Milmap')
+            ->subject(__('mail.verify_email.subject'))
             ->view('emails.verify-email')
             ->with([
                 'firstName'       => $this->user->first_name,

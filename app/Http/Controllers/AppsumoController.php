@@ -112,7 +112,7 @@ class AppsumoController extends Controller
             ]);
         }
 
-        $token = $user->createToken('API Token', ['user'])->plainTextToken;
+        $token = $user->createToken('API Token', ['user'], now()->addDays(7))->plainTextToken;
 
         return response()->json([
             'message' => 'AppSumo code redeemed successfully.',

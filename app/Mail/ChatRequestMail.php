@@ -27,7 +27,7 @@ class ChatRequestMail extends Mailable
     public function envelope(): Envelope
     {
         return new Envelope(
-            subject: "{$this->requesterName} wil met je chatten op Milmap",
+            subject: __('mail.chat_request.subject', ['name' => $this->requesterName]),
         );
     }
 

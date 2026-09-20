@@ -30,7 +30,7 @@ class InvitationMail extends Mailable
         $who = $inviter?->first_name ?: ($inviter?->full_name ?? 'Iemand');
 
         return new Envelope(
-            subject: "{$who} nodigt je uit voor \"{$this->invitation->resourceTitle()}\" op Milmap",
+            subject: __('mail.invitation.subject', ['who' => $who, 'title' => $this->invitation->resourceTitle()]),
         );
     }
 

@@ -1202,7 +1202,7 @@ class BillingController extends Controller
             $setupUrl  = "{$appUrl}/password-reset?token={$token}&email=" . urlencode($user->email);
             $planLabel = $this->planLabel($planKey);
 
-            Mail::to($user->email)->send(
+            Mail::to($user)->send(
                 new AccountActivationMail($setupUrl, $planLabel, $user->first_name)
             );
 

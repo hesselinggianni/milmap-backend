@@ -23,7 +23,7 @@ class AccountActivationMail extends Mailable
 
     public function build()
     {
-        return $this->subject('Welkom bij Milmap — Stel je wachtwoord in')
+        return $this->subject(__('mail.account_activation.subject'))
                     ->view('emails.account-activation')
                     ->with([
                         'setupUrl'  => $this->setupUrl,

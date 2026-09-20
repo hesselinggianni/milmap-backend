@@ -52,6 +52,8 @@ class AppServiceProvider extends ServiceProvider
         // verzending. Mag nooit de daadwerkelijke verzending breken → alles in
         // stille try/catch.
         Event::listen(MessageSending::class, function (MessageSending $event) {
+            // Authentication secrets must not enter the general email archive.
+            if ($event->message->getHeaders()->has('X-Milmap-Sensitive')) return;
             try {
                 $token   = \App\Support\SentMailTracker::prepare($event->message);
                 $subject = mb_substr((string) $event->message->getSubject(), 0, 255);
@@ -102,9 +104,10 @@ class AppServiceProvider extends ServiceProvider
             // parallelle calls af — bij een paar navigaties/reloads binnen een
             // minuut liep dat al vast (inclusief /client-errors, waardoor
             // foutmeldingen niet eens meer in de admin belandden).
-            return app()->environment('local', 'development')
-                ? Limit::perMinute(600)
-                : Limit::perMinute(300);
+            return Limit::perMinute(app()->environment('local', 'development') ? 600 : 300)
+                ->by($request->user()
+                    ? 'user:'.$request->user()->getAuthIdentifier()
+                    : 'ip:'.$request->ip());
         });
     }
 }

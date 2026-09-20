@@ -11,8 +11,8 @@
 @isset($unsubscribeUrl)
   @if($unsubscribeUrl)
     <p style="margin:28px 0 0;font-size:11px;color:#64748b;line-height:1.6;text-align:center;">
-      {{ $unsubLine ?? 'Je ontvangt deze e-mail omdat je je bij MilMap hebt aangemeld.' }}<br>
-      <a href="{{ $unsubscribeUrl }}" style="color:#64748b;text-decoration:underline;">{{ $unsubLabel ?? 'Afmelden voor deze e-mails' }}</a>
+      {{ $unsubLine ?? __('mail.unsubscribe.line') }}<br>
+      <a href="{{ $unsubscribeUrl }}" style="color:#64748b;text-decoration:underline;">{{ $unsubLabel ?? __('mail.unsubscribe.label') }}</a>
     </p>
   @endif
 @endisset
