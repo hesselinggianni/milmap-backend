@@ -13,6 +13,10 @@ Artisan::command('inspire', function () {
 // Laravel 11-bootstrap (bootstrap/app.php) niet meer geladen.
 Schedule::command('tiles:prune-terrain')->dailyAt('04:10');
 
+// Idem voor de static-map-cache (thumbnails/share-kaartjes, zie
+// StaticMapController) — andere map, dus los commando, zelfde ritme.
+Schedule::command('tiles:prune-static')->dailyAt('04:20');
+
 // ── De rest van app/Console/Kernel.php::schedule() stond hier NOOIT actief:
 // die methode wordt door de Laravel 11-bootstrap niet geladen (geen
 // ->withSchedule() in bootstrap/app.php), dus onderstaande commands draaiden

@@ -2,7 +2,9 @@
 
 namespace App\Http\Controllers;
 
+use App\Http\Traits\AuthorizesMapAccess;
 use App\Models\Activity;
+use App\Models\Map;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Auth;
 
@@ -13,19 +15,25 @@ use Illuminate\Support\Facades\Auth;
  */
 class ActivityController extends Controller
 {
+    use AuthorizesMapAccess;
+
     /**
      * Lijst van eigen activiteiten (nieuwste eerst), zonder het zware
      * `points`-track — die haal je per activiteit op via show().
+     * Optioneel gefilterd op `map_id` (alleen tracks van díe kaart) — zonder
+     * dat filter blijft dit de volledige, kaart-onafhankelijke lijst (bv. voor
+     * een persoonlijk activiteiten-overzicht).
      * GET /api/v1/activities
      */
     public function index(Request $request)
     {
         $activities = Activity::query()
             ->where('user_id', Auth::id())
+            ->when($request->filled('map_id'), fn ($q) => $q->where('map_id', $request->query('map_id')))
             ->orderByDesc('started_at')
             ->limit(100)
             ->select([
-                'id', 'user_id', 'type', 'title', 'notes', 'notes_ciphertext', 'started_at', 'ended_at',
+                'id', 'user_id', 'map_id', 'type', 'title', 'notes', 'notes_ciphertext', 'started_at', 'ended_at',
                 'distance_m', 'moving_time_s', 'elapsed_time_s', 'elevation_gain_m',
                 'avg_pace_s_per_km', 'avg_speed_kmh', 'avg_power_w', 'calories',
                 'source', 'garmin_activity_id', 'garmin_device_name', 'created_at', 'updated_at',
@@ -68,6 +76,9 @@ class ActivityController extends Controller
         // zelf, dat zijn er duizenden) en gooien we 'm daarna gewoon door.
         try {
             $data = $this->validateActivity($request);
+            if (!empty($data['map_id']) && !$this->authorizeMapAccess(Map::findOrFail($data['map_id']))) {
+                abort(403, 'Geen toegang tot deze kaart.');
+            }
         } catch (\Illuminate\Validation\ValidationException $e) {
             \Illuminate\Support\Facades\Log::warning('[activity] opslaan geweigerd', [
                 'user_id' => Auth::id(),
@@ -105,6 +116,7 @@ class ActivityController extends Controller
             // aan (zie NavigationView.vue's travelModes), maar deze regel
             // kende er maar drie — een navigatie in de auto liep daardoor
             // altijd op een 422 en werd nooit opgeslagen.
+            'map_id' => ['nullable', 'string', 'exists:maps,id'],
             'type' => ['required', 'string', 'in:run,ride,walk,drive'],
             'title' => ['nullable', 'string', 'max:255'],
             'notes' => ['nullable', 'string', 'max:4000'],

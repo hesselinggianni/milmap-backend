@@ -220,9 +220,19 @@ Route::prefix('v1')->middleware(['api'])->group(function () {
     Route::get('/geo/reverse', [\App\Http\Controllers\GeoProxyController::class, 'reverse'])
         ->withoutMiddleware('throttle:api')
         ->middleware('throttle:120,1');
+    Route::get('/geo/search', [\App\Http\Controllers\GeoProxyController::class, 'search'])
+        ->withoutMiddleware('throttle:api')
+        ->middleware('throttle:120,1');
     Route::post('/geo/overpass', [\App\Http\Controllers\GeoProxyController::class, 'overpass'])
         ->withoutMiddleware('throttle:api')
         ->middleware('throttle:30,1');
+
+    // Cachende proxy voor Mapbox Static Images (thumbnails/share-kaartjes) —
+    // zie StaticMapController. Publiek om dezelfde reden als de tegel-proxy's:
+    // een gedeelde kaart zonder account toont ook zulke kaartjes.
+    Route::get('/static-map', [\App\Http\Controllers\StaticMapController::class, 'show'])
+        ->withoutMiddleware('throttle:api')
+        ->middleware('throttle:120,1');
 
     // Status-page domains — public; the Nuxt status page (milmap.nl/status)
     // fetches the enabled domains here. Managed via the admin routes below.
