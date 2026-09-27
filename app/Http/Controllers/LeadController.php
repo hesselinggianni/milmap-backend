@@ -236,7 +236,9 @@ class LeadController extends Controller
             'source'   => 'nullable|string|max:64',
             'platform' => 'nullable|in:ios,android,web',
             'pending'  => 'nullable|in:0,1',
-            'step'     => 'nullable|integer|min:1|max:5',
+            // Flow 2.0 heeft nog maar 2 onboarding-stappen + stap 3
+            // ("Registratie voltooid"); zie adminFunnel().
+            'step'     => 'nullable|integer|min:1|max:3',
             'page'     => 'nullable|integer|min:1',
             'per'      => 'nullable|integer|min:1|max:200',
         ]);
@@ -257,13 +259,13 @@ class LeadController extends Controller
             $q->whereNull('notified_at');
         }
         // Filteren op afhaakpunt: "laat me iedereen zien die niet verder kwam
-        // dan stap 2". Stap 1 vangt ook de leads van vóór deze meting op
+        // dan stap X". Stap 1 vangt ook de leads van vóór deze meting op
         // (funnel_step is dan NULL).
         if ($step = $request->query('step')) {
             $step = (int) $step;
 
-            if ($step === 6) {
-                // Stap 6 is geen funnel_step maar "heeft een account afgerond";
+            if ($step === 3) {
+                // Stap 3 is geen funnel_step maar "heeft een account afgerond";
                 // zie adminFunnel voor waarom die twee losstaan.
                 $q->whereNotNull('converted_at');
             } elseif ($step === 1) {
@@ -272,7 +274,11 @@ class LeadController extends Controller
                 $q->whereNull('converted_at')
                     ->where(fn ($w) => $w->whereNull('funnel_step')->orWhere('funnel_step', 1));
             } else {
-                $q->whereNull('converted_at')->where('funnel_step', $step);
+                // Stap 2 ("Account"): Flow 2.0 kent alleen nog stap 1 en 2,
+                // maar oudere leads uit de afgeschafte 5-stappen-flow hebben
+                // soms funnel_step 3, 4 of 5 — die kwamen allemaal al tot
+                // (voorbij) het accountformulier, dus >= 2 i.p.v. exact 2.
+                $q->whereNull('converted_at')->where('funnel_step', '>=', 2);
             }
         }
 
@@ -311,20 +317,27 @@ class LeadController extends Controller
      * `funnel_step` is de HOOGST bereikte stap. Leads van vóór deze meting
      * hebben NULL en tellen als stap 1 — ze kwamen immers minstens tot het
      * invullen van hun e-mailadres.
+     *
+     * Flow 2.0: de onboarding (Home.vue) telt nog maar 2 stappen — e-mail en
+     * account — i.p.v. de oude 5 (met tussenstappen "Gebruiksdoel"/"Wat je
+     * krijgt"/een losse prijzenstap). Oudere leads met funnel_step 3, 4 of 5
+     * kwamen in die oude flow allemaal al tot (voorbij) het accountformulier,
+     * dus die vallen hier samen in bucket 2 — anders klopt de trechter niet
+     * meer met wat de app vandaag daadwerkelijk laat zien.
      */
     public function adminFunnel()
     {
-        // Stap 6 = registratie daadwerkelijk afgerond. Die staat los van
+        // Stap 3 = registratie daadwerkelijk afgerond. Die staat los van
         // funnel_step: iemand kan zich rechtstreeks registreren zonder de
         // onboarding-stappen te doorlopen, en in de praktijk gebeurt dat ook —
         // alle geconverteerde leads hadden funnel_step NULL, waardoor ze in de
         // trechter meetelden als "afgehaakt bij stap 1" terwijl ze juist klant
         // werden. Vandaar: converted_at wint altijd van funnel_step.
-        $STAPPEN = 6;
-        $STAP_ACCOUNT_AF = 6;
+        $STAPPEN = 3;
+        $STAP_ACCOUNT_AF = 3;
 
         $perStap = Lead::selectRaw(
-            'CASE WHEN converted_at IS NOT NULL THEN ? ELSE COALESCE(funnel_step, 1) END as stap, COUNT(*) as aantal',
+            'CASE WHEN converted_at IS NOT NULL THEN ? ELSE LEAST(COALESCE(funnel_step, 1), 2) END as stap, COUNT(*) as aantal',
             [$STAP_ACCOUNT_AF]
         )
             ->groupBy('stap')
@@ -373,11 +386,12 @@ class LeadController extends Controller
         $interesses = collect($telling)->map(fn ($n, $label) => ['label' => $label, 'count' => $n])->values();
 
         return response()->json([
-            'total'      => $totaal,
-            'converted'  => Lead::whereNotNull('converted_at')->count(),
-            'steps'      => $stappen,
-            'use_cases'  => $doelen,
-            'interests'  => $interesses,
+            'total'        => $totaal,
+            'converted'    => Lead::whereNotNull('converted_at')->count(),
+            'flow_version' => 'Flow 2.0',
+            'steps'        => $stappen,
+            'use_cases'    => $doelen,
+            'interests'    => $interesses,
         ]);
     }
 
