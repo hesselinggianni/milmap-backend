@@ -20,7 +20,7 @@ class MapAccess
                     ->where('status', 'accepted')->whereIn('role', ['viewer', 'editor', 'admin']))
                 ->orWhereExists(Mission::query()->selectRaw('1')
                     ->whereColumn('missions.owner_id', 'maps.owner_id')
-                    ->whereColumn('missions.map->id', 'maps.id')
+                    ->whereColumn('missions.map_ref_id', 'maps.id')
                     ->where(fn ($m) => $m->whereNull('map->source')->orWhere('map->source', 'server'))
                     ->whereHas('collaborators', fn ($c) => $c->where('user_id', $user->id)
                         ->where('status', 'accepted')->whereIn('role', ['viewer', 'editor', 'admin'])));
@@ -48,7 +48,10 @@ class MapAccess
 
         // A user-controlled mission reference is NOT permission from the map owner.
         // Only the map owner's own missions can delegate access, including old rows.
-        $missions = Mission::whereIn('map->id', $remaining->keys())
+        // map_ref_id is an indexed generated column mirroring map->id (see
+        // migration 2026_09_28_000000) — filtering the raw JSON path here scans
+        // the whole missions table on every map-access check.
+        $missions = Mission::whereIn('map_ref_id', $remaining->keys())
             ->whereIn('owner_id', $remaining->pluck('owner_id')->unique())
             ->where(fn ($q) => $q->whereNull('map->source')->orWhere('map->source', 'server'))
             ->whereHas('collaborators', fn ($c) => $c->where('user_id', $user->id)->where('status', 'accepted'))
