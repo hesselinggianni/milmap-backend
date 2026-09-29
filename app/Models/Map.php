@@ -60,4 +60,20 @@ class Map extends Model
     {
         return $this->hasMany(MapCollaborator::class, 'map_id');
     }
+
+    /**
+     * Gemarkeerde gebieden (meldingen) op deze kaart.
+     */
+    public function reports()
+    {
+        return $this->hasMany(Report::class, 'map_id');
+    }
+
+    /**
+     * Opgenomen GPS-tracks op deze kaart.
+     */
+    public function tracks()
+    {
+        return $this->hasMany(Activity::class, 'map_id');
+    }
 }

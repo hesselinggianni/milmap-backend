@@ -2,6 +2,7 @@
 namespace App\Http\Controllers;
 
 use App\Models\Map;
+use App\Models\Mission;
 use App\Policies\MapPolicy;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Auth;
@@ -78,11 +79,27 @@ class MapController extends Controller
      */
     public function myMaps()
     {
-        return response()->json(
-            Map::where('owner_id', Auth::id())
-                ->latest()
-                ->get()
-        );
+        // Aantallen i.p.v. alleen de datum in de kaartenlijst: hoeveel
+        // gemarkeerde gebieden/waypoints/routekaarten/tracks/missies op elke
+        // kaart staan. withCount() = 4 losse, elk index-backed subqueries i.p.v.
+        // de features zelf inladen. Missies zitten los (JSON-gekoppeld via
+        // map_ref_id, zie migratie 2026_09_28) en horen niet bij een Eloquent-
+        // relatie op Map, dus die tellen we apart in één gegroepeerde query.
+        $maps = Map::where('owner_id', Auth::id())
+            ->withCount(['waypoints', 'routeMaps', 'reports', 'tracks'])
+            ->latest()
+            ->get();
+
+        $missionCounts = Mission::whereIn('map_ref_id', $maps->pluck('id'))
+            ->selectRaw('map_ref_id, count(*) as aantal')
+            ->groupBy('map_ref_id')
+            ->pluck('aantal', 'map_ref_id');
+
+        $maps->each(function (Map $map) use ($missionCounts) {
+            $map->missions_count = (int) ($missionCounts[$map->id] ?? 0);
+        });
+
+        return response()->json($maps);
     }
 
     /**
