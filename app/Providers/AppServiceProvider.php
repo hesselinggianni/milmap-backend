@@ -103,8 +103,10 @@ class AppServiceProvider extends ServiceProvider
             // stond op 60/min, maar een enkele pagina-load vuurt al 15-20
             // parallelle calls af — bij een paar navigaties/reloads binnen een
             // minuut liep dat al vast (inclusief /client-errors, waardoor
-            // foutmeldingen niet eens meer in de admin belandden).
-            return Limit::perMinute(app()->environment('local', 'development') ? 600 : 300)
+            // foutmeldingen niet eens meer in de admin belandden). Productie
+            // draaide feitelijk op 600 (APP_ENV stond op local); dat houden we
+            // aan, los van APP_ENV.
+            return Limit::perMinute(600)
                 ->by($request->user()
                     ? 'user:'.$request->user()->getAuthIdentifier()
                     : 'ip:'.$request->ip());
