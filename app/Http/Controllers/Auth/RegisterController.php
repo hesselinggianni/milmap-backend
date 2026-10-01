@@ -123,6 +123,7 @@ class RegisterController extends Controller
         // (oudere app-versies). Puur informatief; wordt niet opgeslagen.
         $sourceUrl = $request->input('source_url') ?: $request->header('Referer');
         $referrer  = $request->input('referrer');
+        $sourceUrl = self::labelSourceUrl($sourceUrl);
 
         // Admin-notificatie "nieuwe gebruiker" — mag de registratie nooit
         // breken als de mailserver hapert. Stil loggen en doorgaan.
@@ -247,5 +248,21 @@ class RegisterController extends Controller
             'created_by' => $a,
         ]);
         $conversation->participants()->attach([$a, $b]);
+    }
+
+    /**
+     * Oudere app-builds sturen hun WebView-URL mee: https://localhost/ op
+     * Android, capacitor://localhost op iOS. Vertaal naar een leesbaar label
+     * ("android-app /start"); gewone web-URL's blijven ongewijzigd.
+     */
+    public static function labelSourceUrl(?string $sourceUrl): ?string
+    {
+        if (is_string($sourceUrl) && preg_match('~^(https|capacitor)://localhost(/[^?#\s]*)?(?:[?#]|$)~i', $sourceUrl, $m)) {
+            $platform = strtolower($m[1]) === 'capacitor' ? 'ios' : 'android';
+            $path     = $m[2] ?? '';
+            return $platform . '-app' . ($path !== '' && $path !== '/' ? ' ' . $path : '');
+        }
+
+        return $sourceUrl;
     }
 }
