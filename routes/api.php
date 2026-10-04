@@ -32,8 +32,6 @@ use App\Http\Controllers\OtaUpdateController;
 use App\Http\Controllers\BillingController;
 use App\Http\Controllers\MapCollaboratorController;
 use App\Http\Controllers\MapWaypointController;
-use App\Http\Controllers\WaypointFloorplanController;
-use App\Http\Controllers\FloorplanElementController;
 use App\Http\Controllers\RouteGenerationController;
 use App\Http\Controllers\ChatKeyController;
 use App\Http\Controllers\ChatPairingController;
@@ -566,6 +564,8 @@ Route::prefix('v1')->middleware(['api'])->group(function () {
         // geeft hij het Map-object terug i.p.v. de sub-resource. De constraint
         // beperkt {lonlat} tot coördinaat-tekens, zodat woord-segmenten
         // doorvallen naar hun eigen route.
+        // Alles voor het openen van een kaart in één verzoek (zie MapBootstrapController).
+        Route::get('/maps/{id}/bootstrap', [\App\Http\Controllers\MapBootstrapController::class, 'show']);
         Route::get('/maps/{id}/{lonlat}', [MapController::class, 'show'])
             ->where('lonlat', '[-0-9.,/]+');
         Route::post('/maps', [MapController::class, 'store']);
@@ -646,21 +646,12 @@ Route::prefix('v1')->middleware(['api'])->group(function () {
         // Map waypoints (collaboration sync)
         Route::get('/maps/{mapId}/waypoints', [MapWaypointController::class, 'index']);
         Route::post('/maps/{mapId}/waypoints', [MapWaypointController::class, 'store']);
+        Route::post('/maps/{mapId}/waypoints/batch', [MapWaypointController::class, 'storeBatch']);
         Route::put('/maps/{mapId}/waypoints/{localId}', [MapWaypointController::class, 'update']);
         Route::delete('/maps/{mapId}/waypoints/{localId}', [MapWaypointController::class, 'destroy']);
         // Waypoint-foto's
         Route::post('/maps/{mapId}/waypoints/{localId}/images', [MapWaypointController::class, 'uploadImage']);
         Route::delete('/maps/{mapId}/waypoints/{localId}/images/{imageId}', [MapWaypointController::class, 'deleteImage']);
-
-        // Waypoint-plattegronden (CAD-tekentool, live via Reverb op floorplan.{id})
-        Route::get('/maps/{mapId}/waypoints/{localId}/floorplans', [WaypointFloorplanController::class, 'index']);
-        Route::post('/maps/{mapId}/waypoints/{localId}/floorplans', [WaypointFloorplanController::class, 'store']);
-        Route::get('/floorplans/{floorplanId}', [WaypointFloorplanController::class, 'show']);
-        Route::put('/floorplans/{floorplanId}', [WaypointFloorplanController::class, 'update']);
-        Route::delete('/floorplans/{floorplanId}', [WaypointFloorplanController::class, 'destroy']);
-        Route::post('/floorplans/{floorplanId}/elements', [FloorplanElementController::class, 'store']);
-        Route::put('/floorplans/{floorplanId}/elements/{elementId}', [FloorplanElementController::class, 'update']);
-        Route::delete('/floorplans/{floorplanId}/elements/{elementId}', [FloorplanElementController::class, 'destroy']);
 
         // ── Missions (owner + collaborators with roles) ──────────────────
         // Literal invitation routes first so they aren't captured by {id}.

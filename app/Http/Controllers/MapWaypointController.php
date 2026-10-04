@@ -3,6 +3,7 @@
 namespace App\Http\Controllers;
 
 use App\Events\MapWaypointChanged;
+use App\Events\MapWaypointsReload;
 use App\Http\Traits\AuthorizesMapAccess;
 use App\Models\Map;
 use App\Models\MapWaypoint;
@@ -10,6 +11,7 @@ use App\Models\MapWaypointImage;
 use App\Models\UserUpload;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Auth;
+use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Storage;
 use Illuminate\Support\Str;
 
@@ -33,6 +35,60 @@ class MapWaypointController extends Controller
             ->map(fn($w) => $w->toClientArray());
 
         return response()->json(['waypoints' => $waypoints]);
+    }
+
+    /**
+     * Veel waypoints in één keer opslaan (bv. een GPX-import).
+     * POST /api/v1/maps/{mapId}/waypoints/batch  { waypoints: [...] }
+     * Zelfde velden en upsert op local_id als store(); max 500 per verzoek.
+     * Eén broadcast-seintje i.p.v. één per punt.
+     */
+    public function storeBatch(Request $request, $mapId)
+    {
+        $map = Map::findOrFail($mapId);
+
+        if (! $this->authorizeMapAccess($map, editorRequired: true)) {
+            abort(403, 'Geen bewerkrechten op deze kaart.');
+        }
+
+        $data = $request->validate([
+            'waypoints'            => 'required|array|min:1|max:500',
+            'waypoints.*.local_id' => 'required|integer',
+            'waypoints.*.lon'      => 'required|numeric|between:-180,180',
+            'waypoints.*.lat'      => 'required|numeric|between:-90,90',
+            'waypoints.*.mgrs'     => 'nullable|string|max:20',
+            'waypoints.*.label'    => 'nullable|string|max:200',
+            'waypoints.*.color'    => 'nullable|string|max:20',
+            'waypoints.*.icon'     => 'nullable|string|max:30',
+            'waypoints.*.type'     => 'nullable|string|max:30',
+            'waypoints.*.note'     => 'nullable|string',
+        ]);
+
+        $userId = Auth::id();
+        $saved = DB::transaction(function () use ($data, $mapId, $userId) {
+            $out = [];
+            foreach ($data['waypoints'] as $w) {
+                $out[] = MapWaypoint::updateOrCreate(
+                    ['map_id' => $mapId, 'local_id' => $w['local_id']],
+                    [
+                        'user_id' => $userId,
+                        'lon'     => $w['lon'],
+                        'lat'     => $w['lat'],
+                        'mgrs'    => $w['mgrs'] ?? null,
+                        'label'   => $w['label'] ?? null,
+                        'color'   => $w['color'] ?? '#2b7fff',
+                        'icon'    => $w['icon'] ?? 'pin',
+                        'type'    => $w['type'] ?? null,
+                        'note'    => $w['note'] ?? null,
+                    ]
+                )->toClientArray();
+            }
+            return $out;
+        });
+
+        broadcast(new MapWaypointsReload($mapId, count($saved), $userId))->toOthers();
+
+        return response()->json(['waypoints' => $saved], 201);
     }
 
     /**

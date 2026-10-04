@@ -36,9 +36,26 @@ class ConversationController extends Controller
             ->orderByRaw('COALESCE(last_message_at, created_at) DESC')
             ->get();
 
+        // Ongelezen-tellers voor alle gesprekken in één gegroepeerde query
+        // (was één COUNT per gesprek). Zelfde regel als in present(): berichten
+        // van anderen, ná jouw last_read_at.
+        $unread = $conversations->isEmpty() ? collect() : DB::table('messages as m')
+            ->join('conversation_user as cu', function ($j) use ($userId) {
+                $j->on('cu.conversation_id', '=', 'm.conversation_id')
+                    ->where('cu.user_id', '=', $userId);
+            })
+            ->whereIn('m.conversation_id', $conversations->pluck('id'))
+            ->where('m.sender_id', '!=', $userId)
+            ->where(function ($q) {
+                $q->whereNull('cu.last_read_at')
+                    ->orWhereColumn('m.created_at', '>', 'cu.last_read_at');
+            })
+            ->groupBy('m.conversation_id')
+            ->pluck(DB::raw('COUNT(*)'), 'm.conversation_id');
+
         return response()->json([
             'conversations' => $conversations->map(
-                fn (Conversation $c) => $this->present($c, $userId)
+                fn (Conversation $c) => $this->present($c, $userId, (int) ($unread[$c->id] ?? 0))
             )->values(),
         ]);
     }
@@ -50,9 +67,25 @@ class ConversationController extends Controller
      */
     protected function ensureMissionConversations(int $userId): void
     {
-        Mission::participatedBy($userId)
-            ->get(['id', 'name', 'owner_id', 'status', 'linked_team_id'])
-            ->each(fn (Mission $m) => $m->syncGroupConversation());
+        $missions = Mission::participatedBy($userId)
+            ->withCount(['collaborators as accepted_count' => fn ($q) => $q->where('status', 'accepted')])
+            ->get(['id', 'name', 'owner_id', 'status', 'linked_team_id']);
+
+        // Alleen opnieuw synchroniseren als er aan de missies iets veranderd is
+        // (erbij/eraf, naam, status, team, aantal deelnemers). Eerder kostte élke
+        // lijst-load 3 queries per missie, en die lijst laadt nu bij iedere
+        // kaartopening (chatwidget). TTL als vangnet voor wijzigingen die de
+        // vingerafdruk niet ziet, zoals iemand die bij het gekoppelde team komt.
+        $fingerprint = md5($missions->map(fn ($m) => implode(':', [
+            $m->id, $m->name, $m->status, $m->linked_team_id, $m->accepted_count,
+        ]))->implode('|'));
+        $key = "chat:mission-sync:{$userId}";
+        if (\Illuminate\Support\Facades\Cache::get($key) === $fingerprint) {
+            return;
+        }
+
+        $missions->each(fn (Mission $m) => $m->syncGroupConversation());
+        \Illuminate\Support\Facades\Cache::put($key, $fingerprint, now()->addMinutes(2));
     }
 
     /**
@@ -491,7 +524,7 @@ class ConversationController extends Controller
     /**
      * Shape a conversation for the API, from the viewer's perspective.
      */
-    protected function present(Conversation $c, int $viewerId): array
+    protected function present(Conversation $c, int $viewerId, ?int $unreadCount = null): array
     {
         $others = $c->participants->where('id', '!=', $viewerId)->values();
         $me     = $c->participants->firstWhere('id', $viewerId);
@@ -501,7 +534,8 @@ class ConversationController extends Controller
             : ($c->name ?? 'Groep');
 
         $lastReadAt = $me?->pivot?->last_read_at;
-        $unread = Message::where('conversation_id', $c->id)
+        // index() levert de tellingen in bulk aan; losse aanroepen tellen zelf.
+        $unread = $unreadCount ?? Message::where('conversation_id', $c->id)
             ->where('sender_id', '!=', $viewerId)
             ->when($lastReadAt, fn ($q) => $q->where('created_at', '>', $lastReadAt))
             ->count();
