@@ -10,6 +10,8 @@ use Illuminate\Http\Request;
 use Illuminate\Mail\Events\MessageSending;
 use Illuminate\Mail\Events\MessageSent;
 use Illuminate\Support\Facades\RateLimiter;
+use Illuminate\Broadcasting\BroadcastManager;
+use App\Broadcasting\ResilientPusherBroadcaster;
 
 /* Models */
 use App\Models\User;
@@ -110,6 +112,14 @@ class AppServiceProvider extends ServiceProvider
                 ->by($request->user()
                     ? 'user:'.$request->user()->getAuthIdentifier()
                     : 'ip:'.$request->ip());
+        });
+
+        // Broadcastfouten (Reverb onbereikbaar) nooit laten doorwerken in de
+        // request: zie ResilientPusherBroadcaster.
+        $this->app->make(BroadcastManager::class)->extend('reverb', function ($app, array $config) {
+            return new ResilientPusherBroadcaster(
+                $app->make(BroadcastManager::class)->pusher($config)
+            );
         });
     }
 }

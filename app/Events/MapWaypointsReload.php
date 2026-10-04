@@ -4,7 +4,7 @@ namespace App\Events;
 
 use Illuminate\Broadcasting\InteractsWithSockets;
 use Illuminate\Broadcasting\PrivateChannel;
-use Illuminate\Contracts\Broadcasting\ShouldBroadcast;
+use Illuminate\Contracts\Broadcasting\ShouldBroadcastNow;
 use Illuminate\Foundation\Events\Dispatchable;
 
 /**
@@ -12,7 +12,7 @@ use Illuminate\Foundation\Events\Dispatchable;
  * opnieuw op. Bewust zonder de waypoints zelf — een batch van honderden punten
  * past niet in één broadcast-bericht (limiet ±10 KB bij Reverb/Pusher).
  */
-class MapWaypointsReload implements ShouldBroadcast
+class MapWaypointsReload implements ShouldBroadcastNow
 {
     use Dispatchable, InteractsWithSockets;
 
