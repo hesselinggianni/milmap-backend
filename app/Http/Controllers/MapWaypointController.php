@@ -226,20 +226,33 @@ class MapWaypointController extends Controller
 
         // Waypoint moet bestaan; maak het aan als de kaart net server-side wordt
         // (upsert op local_id) zodat foto's ook op nog-lokale kaarten werken.
-        $waypoint = MapWaypoint::firstOrNew([
-            'map_id'   => $mapId,
-            'local_id' => (int) $localId,
-        ]);
-        if (! $waypoint->exists) {
-            $waypoint->fill([
-                'user_id' => Auth::id(),
-                'lon'     => $request->input('lon', 0),
-                'lat'     => $request->input('lat', 0),
-                'mgrs'    => $request->input('mgrs'),
-                'label'   => $request->input('label'),
-                'color'   => $request->input('color', '#2b7fff'),
-                'icon'    => $request->input('icon', 'pin'),
-            ])->save();
+        $waypoint = MapWaypoint::where('map_id', $mapId)
+            ->where('local_id', (int) $localId)
+            ->first();
+        if (! $waypoint) {
+            try {
+                $waypoint = MapWaypoint::create([
+                    'map_id'   => $mapId,
+                    'local_id' => (int) $localId,
+                    'user_id'  => Auth::id(),
+                    'lon'      => $request->input('lon', 0),
+                    'lat'      => $request->input('lat', 0),
+                    'mgrs'     => $request->input('mgrs'),
+                    'label'    => $request->input('label'),
+                    'color'    => $request->input('color', '#2b7fff'),
+                    'icon'     => $request->input('icon', 'pin'),
+                ]);
+            } catch (\Illuminate\Database\QueryException $e) {
+                // Race: een gelijktijdig verzoek (bv. het opslaan van het waypoint
+                // zelf, of een tweede foto) maakte dit waypoint net aan. Dan
+                // gewoon dát waypoint gebruiken i.p.v. een 500 te geven.
+                if (($e->errorInfo[0] ?? null) !== '23000') {
+                    throw $e;
+                }
+                $waypoint = MapWaypoint::where('map_id', $mapId)
+                    ->where('local_id', (int) $localId)
+                    ->firstOrFail();
+            }
         }
 
         if ($waypoint->images()->count() >= self::MAX_IMAGES) {
