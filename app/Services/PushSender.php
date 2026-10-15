@@ -37,7 +37,14 @@ class PushSender
     public static function silentToDevice(ConnectDevice $device, array $data): void
     {
         $token = $device->push_token;
-        if (!$token || $device->push_platform !== 'ios') {
+        if (!$token) {
+            return;
+        }
+        if ($device->push_platform === 'android') {
+            self::fcmSilent($token, $data, $device->id);
+            return;
+        }
+        if ($device->push_platform !== 'ios') {
             return;
         }
         $keyPath = env('APNS_KEY_PATH');
@@ -80,6 +87,53 @@ class PushSender
             }
         } catch (\Throwable $e) {
             Log::warning('[push] silent push mislukt: ' . $e->getMessage());
+        }
+    }
+
+    /**
+     * Android: FCM HTTP v1 data-bericht (hoge prioriteit). Config:
+     * FCM_SERVICE_ACCOUNT_PATH = Firebase service-account JSON (project_id staat erin).
+     */
+    private static function fcmSilent(string $token, array $data, int $deviceId): void
+    {
+        $path = env('FCM_SERVICE_ACCOUNT_PATH');
+        if (!$path || !is_readable($path)) {
+            Log::warning('[push] FCM niet geconfigureerd, silent push overgeslagen');
+            return;
+        }
+
+        try {
+            $sa = json_decode(file_get_contents($path), true);
+            $access = Cache::remember('fcm-access-token', 50 * 60, function () use ($sa) {
+                $now = time();
+                $assertion = JWT::encode([
+                    'iss' => $sa['client_email'],
+                    'scope' => 'https://www.googleapis.com/auth/firebase.messaging',
+                    'aud' => 'https://oauth2.googleapis.com/token',
+                    'iat' => $now,
+                    'exp' => $now + 3600,
+                ], $sa['private_key'], 'RS256');
+                $r = \Illuminate\Support\Facades\Http::asForm()->timeout(5)->post('https://oauth2.googleapis.com/token', [
+                    'grant_type' => 'urn:ietf:params:oauth:grant-type:jwt-bearer',
+                    'assertion' => $assertion,
+                ]);
+                return $r->json('access_token');
+            });
+
+            $res = \Illuminate\Support\Facades\Http::withToken($access)->timeout(5)
+                ->post("https://fcm.googleapis.com/v1/projects/{$sa['project_id']}/messages:send", [
+                    'message' => [
+                        'token' => $token,
+                        // FCM-data moet string => string zijn.
+                        'data' => array_map('strval', $data),
+                        'android' => ['priority' => 'HIGH'],
+                    ],
+                ]);
+            if (!$res->successful()) {
+                Log::warning('[push] FCM weigerde silent push', ['status' => $res->status(), 'body' => $res->body(), 'device' => $deviceId]);
+            }
+        } catch (\Throwable $e) {
+            Log::warning('[push] FCM silent push mislukt: ' . $e->getMessage());
         }
     }
 }
