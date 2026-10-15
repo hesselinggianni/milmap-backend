@@ -163,6 +163,7 @@ Route::prefix('v1')->middleware(['api'])->group(function () {
     // Drietraps — code per mail, wachtwoord, bevestigingswoord — en daarna 90
     // dagen bedenktijd. Paden komen exact overeen met AuthServices.js.
     Route::middleware('auth:sanctum')->group(function () {
+        Route::post('/push-token', [\App\Http\Controllers\PushTokenController::class, 'store']);
         Route::post('/user/account/deletion/request-code', [\App\Http\Controllers\AccountDeletionController::class, 'requestCode'])
             ->middleware('throttle:5,10');
         Route::post('/user/account/deletion',              [\App\Http\Controllers\AccountDeletionController::class, 'schedule'])

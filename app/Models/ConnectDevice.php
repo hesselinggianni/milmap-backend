@@ -4,8 +4,8 @@ use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Support\Facades\DB;
 class ConnectDevice extends Model {
-    protected $fillable = ['user_id', 'organization_id', 'installation_id', 'vendor_id', 'model', 'os_version', 'app_version', 'name', 'platform', 'last_seen_at', 'revoked_at', 'update_requested_at'];
-    protected $hidden = ['installation_id', 'vendor_id'];
+    protected $fillable = ['user_id', 'organization_id', 'installation_id', 'vendor_id', 'model', 'os_version', 'app_version', 'name', 'platform', 'last_seen_at', 'revoked_at', 'update_requested_at', 'push_token', 'push_platform'];
+    protected $hidden = ['installation_id', 'vendor_id', 'push_token'];
     protected $appends = ['is_connected'];
     protected $casts = ['last_seen_at' => 'datetime', 'revoked_at' => 'datetime', 'update_requested_at' => 'datetime'];
     public function user() { return $this->belongsTo(User::class); }

@@ -134,6 +134,8 @@ class ConnectController extends Controller {
     public function revokeDevice(Request $r, ConnectOrganization $organization, ConnectDevice $device) {
         $this->manager($r, $organization);
         abort_unless($organization->members()->where('user_id', $device->user_id)->where('status', 'active')->exists(), 404);
+        // Silent push: de app logt direct uit i.p.v. pas bij het volgende API-verzoek.
+        \App\Services\PushSender::silentToDevice($device, ['action' => 'logout']);
         DB::transaction(function () use ($device) {
             $device->update(['revoked_at' => now()]);
             DB::table('personal_access_tokens')->where('connect_device_id', $device->id)->where('tokenable_id', $device->user_id)->where('tokenable_type', \App\Models\User::class)->delete();
