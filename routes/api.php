@@ -1094,13 +1094,8 @@ Route::prefix('v1')->middleware(['api'])->group(function () {
             Route::post('/admin/users/{userId}/connect-organizations/{organizationId}/licenses', [AdminController::class, 'addConnectLicense']);
             Route::delete('/admin/users/{userId}', [AdminController::class, 'deleteUser']);
             Route::post('/admin/users/{userId}/reset-password', [AdminController::class, 'resetUserPassword']);
-<<<<<<< HEAD
             Route::get('/admin/users/{userId}/transfer-data', [\App\Http\Controllers\AdminDataTransferController::class, 'preview']);
             Route::post('/admin/users/{userId}/transfer-data', [\App\Http\Controllers\AdminDataTransferController::class, 'transfer']);
-=======
-            Route::post('/admin/users/{userId}/connect-organization', [AdminController::class, 'createConnectOrganization']);
-            Route::post('/admin/users/{userId}/connect-organizations/{organizationId}/licenses', [AdminController::class, 'addConnectLicense']);
->>>>>>> d07d5788a14ab52e5ecf20873ae0d1bf2a5e21e1
             // Gratis (premium-)toegang toekennen/verlengen + handmatig e-mail verifiëren.
             Route::post('/admin/users/{userId}/grant-access', [AdminController::class, 'grantAccess']);
             Route::post('/admin/users/{userId}/verify-email', [AdminController::class, 'verifyUserEmail']);
