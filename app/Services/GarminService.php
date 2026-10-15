@@ -194,8 +194,30 @@ class GarminService
      */
     public function fetchActivityData(GarminAccount $account, string $fetchUrl): array
     {
+        // De ophaal-URL komt uit de (niet-geauthenticeerde) ping-payload. Zonder
+        // deze check kon iedereen een ping sturen met een eigen URL en zo het
+        // Garmin-accesstoken van de gebruiker naar zich toe laten sturen (en
+        // onze server willekeurige/interne URL's laten ophalen).
+        if (! self::isTrustedGarminUrl($fetchUrl)) {
+            throw new \InvalidArgumentException('Garmin-ophaal-URL op niet-Garmin-host geweigerd.');
+        }
+
         $token = $this->ensureFreshAccessToken($account);
 
-        return Http::withToken($token)->get($fetchUrl)->throw()->json();
+        // Geen redirects volgen: anders kan een Garmin-URL alsnog naar een
+        // andere host doorverwijzen, met het token in de header.
+        return Http::withToken($token)->withoutRedirecting()->get($fetchUrl)->throw()->json();
+    }
+
+    /** Alleen https naar garmin.com of een subdomein daarvan (bv. apis.garmin.com). */
+    public static function isTrustedGarminUrl(string $url): bool
+    {
+        $parts = parse_url($url);
+        if (! $parts || strtolower($parts['scheme'] ?? '') !== 'https' || isset($parts['user']) || isset($parts['port'])) {
+            return false;
+        }
+        $host = strtolower($parts['host'] ?? '');
+
+        return $host === 'garmin.com' || str_ends_with($host, '.garmin.com');
     }
 }

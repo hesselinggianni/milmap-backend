@@ -3,7 +3,6 @@
 use Illuminate\Database\Migrations\Migration;
 use Illuminate\Database\Schema\Blueprint;
 use Illuminate\Support\Facades\Schema;
-use Illuminate\Support\Facades\DB;
 
 return new class extends Migration
 {
@@ -24,22 +23,17 @@ return new class extends Migration
             $table->string('classification', 64)->nullable()->after('mission_number');
         });
 
-        // Expand the status enum to include all 7 lifecycle states.
-        // We can't easily modify enums; use a raw ALTER.
-        DB::statement(
-            "ALTER TABLE missions MODIFY COLUMN status ENUM(
-                'draft','planning','review','approved','active','complete','archived'
-            ) NOT NULL DEFAULT 'planning'"
-        );
+        Schema::table('missions', function (Blueprint $table) {
+            $table->enum('status', ['draft', 'planning', 'review', 'approved', 'active', 'complete', 'archived'])
+                ->default('planning')->change();
+        });
     }
 
     public function down(): void
     {
-        DB::statement(
-            "ALTER TABLE missions MODIFY COLUMN status ENUM(
-                'planning','active','complete'
-            ) NOT NULL DEFAULT 'planning'"
-        );
+        Schema::table('missions', function (Blueprint $table) {
+            $table->enum('status', ['planning', 'active', 'complete'])->default('planning')->change();
+        });
 
         Schema::table('missions', function (Blueprint $table) {
             $table->dropColumn(['approved_by', 'approved_at', 'locked', 'mission_number', 'classification']);

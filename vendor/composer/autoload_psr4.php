@@ -73,6 +73,7 @@ return array(
     'Mollie\\Laravel\\' => array($vendorDir . '/mollie/laravel-mollie/src'),
     'Mollie\\Api\\' => array($vendorDir . '/mollie/mollie-api-php/src'),
     'Mockery\\' => array($vendorDir . '/mockery/mockery/library/Mockery'),
+    'MaxMind\\Db\\' => array($vendorDir . '/maxmind-db/reader/src/MaxMind/Db'),
     'Masterminds\\' => array($vendorDir . '/masterminds/html5/src'),
     'League\\Uri\\' => array($vendorDir . '/league/uri', $vendorDir . '/league/uri-interfaces'),
     'League\\MimeTypeDetection\\' => array($vendorDir . '/league/mime-type-detection/src'),

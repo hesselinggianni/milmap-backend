@@ -1,84 +1,20 @@
-@extends('emails.layout')
+@extends('emails.layout-minimal')
 @section('title', __('mail.contact_ticket.page_title'))
 @section('body')
-
-  <table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0" style="margin-bottom:24px;">
-    <tr>
-      <td style="vertical-align:top;width:56px;">
-        <div style="width:48px;height:48px;background:#1a2433;border:1px solid #2a3a52;
-                    border-radius:10px;text-align:center;line-height:48px;">
-          <svg xmlns="http://www.w3.org/2000/svg" width="22" height="22" viewBox="0 0 24 24"
-               fill="none" stroke="#2b7fff" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"
-               style="display:inline-block;vertical-align:middle;">
-            <path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/>
-          </svg>
-        </div>
-      </td>
-      <td style="vertical-align:middle;padding-left:14px;">
-        <h1 style="margin:0 0 3px;font-size:20px;font-weight:700;color:#f8fafc;letter-spacing:-0.01em;line-height:1.2;">
-          {{ __('mail.contact_ticket.title', ['id' => $ticket->id]) }}
-        </h1>
-        <p style="margin:0;font-size:13px;color:#94a3b8;">{{ __('mail.contact_ticket.subtitle') }}</p>
-      </td>
-    </tr>
-  </table>
-
-  <div style="height:1px;background:#1e293b;margin:0 0 24px;"></div>
-
-  <!-- Type badge -->
-  <p style="margin:0 0 16px;">
-    <span style="display:inline-block;padding:4px 12px;border-radius:20px;font-size:12px;font-weight:600;background:#1a2433;color:#fcd34d;">
-      {{ ucfirst($ticket->type) }}
-    </span>
+  <h1 style="margin:0 0 12px;font-size:34px;line-height:1.2;font-weight:800;color:#01163d;letter-spacing:-0.02em;">{{ __('mail.contact_ticket.title', ['id' => $ticket->id]) }}</h1>
+  <p style="margin:0 0 32px;">{{ __('mail.contact_ticket.subtitle') }}</p>
+  <p style="margin:0 0 8px;font-size:20px;font-weight:700;color:#01163d;">{{ $ticket->subject }}</p>
+  <p style="margin:0 0 24px;font-size:14px;color:#6b7280;">{{ ucfirst($ticket->type) }}</p>
+  <p style="margin:0 0 28px;line-height:1.9;">
+    <strong style="color:#01163d;">{{ __('mail.contact_ticket.from') }}:</strong>
+    {{ $ticket->name }} (<a href="mailto:{{ $ticket->email }}" style="color:#01163d;">{{ $ticket->email }}</a>)
   </p>
-
-  <!-- Onderwerp -->
-  <p style="margin:0 0 6px;font-size:10px;font-weight:700;letter-spacing:0.1em;text-transform:uppercase;color:#7e8a9c;">
-    {{ __('mail.contact_ticket.subject_label') }}
+  <p style="margin:0 0 8px;"><strong style="color:#01163d;">{{ __('mail.contact_ticket.message') }}:</strong></p>
+  <div style="margin:0 0 28px;padding:16px 18px;background:#f3f4f6;border-radius:8px;font-size:16px;line-height:1.7;color:#01163d;white-space:pre-line;">{{ $ticket->message }}</div>
+  <p style="margin:0 0 8px;"><strong style="color:#01163d;">{{ __('mail.contact_ticket.details_title') }}</strong></p>
+  <p style="margin:0;line-height:1.9;font-size:15px;">
+    <strong style="color:#01163d;">Ticket ID:</strong> #{{ $ticket->id }}<br>
+    <strong style="color:#01163d;">{{ __('mail.contact_ticket.status') }}:</strong> {{ __('mail.contact_ticket.status_open') }}<br>
+    <strong style="color:#01163d;">{{ __('mail.contact_ticket.received') }}:</strong> {{ $ticket->created_at->setTimezone('Europe/Amsterdam')->format('d-m-Y \o\m H:i:s') }}
   </p>
-  <p style="margin:0 0 20px;font-size:16px;font-weight:700;color:#f8fafc;">
-    {{ $ticket->subject }}
-  </p>
-
-  <!-- Afzender -->
-  <p style="margin:0 0 6px;font-size:10px;font-weight:700;letter-spacing:0.1em;text-transform:uppercase;color:#7e8a9c;">
-    {{ __('mail.contact_ticket.from') }}
-  </p>
-  <p style="margin:0 0 20px;font-size:14px;line-height:1.7;color:#cbd5e1;">
-    <strong style="color:#f8fafc;">{{ $ticket->name }}</strong><br>
-    <a href="mailto:{{ $ticket->email }}" style="color:#2b7fff;text-decoration:none;">{{ $ticket->email }}</a>
-  </p>
-
-  <!-- Bericht -->
-  <p style="margin:0 0 6px;font-size:10px;font-weight:700;letter-spacing:0.1em;text-transform:uppercase;color:#7e8a9c;">
-    {{ __('mail.contact_ticket.message') }}
-  </p>
-  <div style="margin:0 0 24px;padding:14px 16px;background:#0d1320;border:1px solid #1e293b;
-              border-radius:8px;font-size:14px;line-height:1.7;color:#cbd5e1;white-space:pre-line;">
-{{ $ticket->message }}
-  </div>
-
-  <!-- Meta -->
-  <table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0"
-         style="border:1px solid #1e293b;border-radius:8px;overflow:hidden;">
-    <tr>
-      <td colspan="2" style="padding:10px 16px;background:#0d1320;border-bottom:1px solid #1e293b;
-                 font-size:10px;font-weight:700;letter-spacing:0.1em;text-transform:uppercase;color:#7e8a9c;">
-        {{ __('mail.contact_ticket.details_title') }}
-      </td>
-    </tr>
-    <tr>
-      <td style="padding:11px 16px;width:30%;font-size:12.5px;color:#94a3b8;border-bottom:1px solid #1a2433;font-weight:500;">Ticket ID</td>
-      <td style="padding:11px 16px;font-size:13px;color:#f8fafc;border-bottom:1px solid #1a2433;font-weight:700;">#{{ $ticket->id }}</td>
-    </tr>
-    <tr>
-      <td style="padding:11px 16px;font-size:12.5px;color:#94a3b8;border-bottom:1px solid #1a2433;font-weight:500;">{{ __('mail.contact_ticket.status') }}</td>
-      <td style="padding:11px 16px;font-size:13px;color:#16a34a;border-bottom:1px solid #1a2433;font-weight:600;">{{ __('mail.contact_ticket.status_open') }}</td>
-    </tr>
-    <tr>
-      <td style="padding:11px 16px;font-size:12.5px;color:#94a3b8;font-weight:500;">{{ __('mail.contact_ticket.received') }}</td>
-      <td style="padding:11px 16px;font-size:13px;color:#f8fafc;">{{ $ticket->created_at->setTimezone('Europe/Amsterdam')->format('d-m-Y \o\m H:i:s') }}</td>
-    </tr>
-  </table>
-
 @endsection

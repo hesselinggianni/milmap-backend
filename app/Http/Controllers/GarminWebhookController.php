@@ -41,6 +41,14 @@ class GarminWebhookController extends Controller
                 continue;
             }
 
+            // Vroeg weigeren (de service checkt het nogmaals vlak vóór het
+            // ophalen): een ping met een niet-Garmin-ophaal-URL is vervalst.
+            $fetchUrl = (string) ($entry['callbackURL'] ?? $entry['activityDetailsUrl'] ?? '');
+            if ($fetchUrl !== '' && ! \App\Services\GarminService::isTrustedGarminUrl($fetchUrl)) {
+                Log::warning('Garmin-ping met niet-Garmin-ophaal-URL geweigerd', ['garmin_user_id' => $garminUserId]);
+                continue;
+            }
+
             ImportGarminActivity::dispatch($account->id, $entry);
         }
 

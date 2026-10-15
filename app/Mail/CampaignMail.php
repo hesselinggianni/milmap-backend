@@ -29,7 +29,10 @@ class CampaignMail extends Mailable
 
     public function envelope(): Envelope
     {
-        return new Envelope(subject: $this->subjectLine);
+        return new Envelope(
+            subject: $this->subjectLine,
+            replyTo: [config('mail.admin_reply_to', 'support@milmap.nl')],
+        );
     }
 
     public function content(): Content

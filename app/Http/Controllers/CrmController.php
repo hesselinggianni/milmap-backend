@@ -212,7 +212,7 @@ class CrmController extends Controller
                 . "<p>Veel plezier met verkennen — vragen? Antwoord gerust op deze mail.</p>";
             Mail::html($html, function ($m) use ($user) {
                 $m->to($user->email)->subject('Je MilMap-demo staat klaar');
-                $m->replyTo(config('mail.admin_mail', config('mail.from.address')));
+                $m->replyTo(config('mail.admin_reply_to', 'support@milmap.nl'));
             });
         } catch (\Throwable $e) {
             Log::warning('[crm] demo-mail mislukt: ' . $e->getMessage());
@@ -253,7 +253,7 @@ class CrmController extends Controller
             Mail::html($html, function ($m) use ($deal, $data) {
                 $m->to($deal->contact_email, $deal->contact_name ?: null)
                   ->subject($data['subject'])
-                  ->replyTo(config('mail.admin_mail', config('mail.from.address')));
+                  ->replyTo(config('mail.admin_reply_to', 'support@milmap.nl'));
             });
         } catch (\Throwable $e) {
             Log::error('[crm] e-mail versturen mislukt: ' . $e->getMessage());

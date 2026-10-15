@@ -4,6 +4,7 @@ namespace App\Http\Controllers;
 
 use App\Models\Setting;
 use Illuminate\Http\Request;
+use Illuminate\Support\Facades\Http;
 use Stripe\StripeClient;
 use Throwable;
 
@@ -177,5 +178,164 @@ class AdminBillingController extends Controller
         BillingController::forgetPricingCache();
 
         return response()->json(['ok' => true]);
+    }
+
+    /**
+     * Stripe-facturen binnen een periode (op aanmaakdatum), via auto-paging.
+     * Filters: from/to (Y-m-d), status (paid|open|void|uncollectible|draft|all).
+     */
+    private function invoicesFor(Request $request): array
+    {
+        $data = $request->validate([
+            'from'   => ['nullable', 'date'],
+            'to'     => ['nullable', 'date'],
+            'status' => ['nullable', 'in:all,paid,open,void,uncollectible,draft'],
+        ]);
+
+        $params = ['limit' => 100, 'expand' => ['data.customer']];
+        $created = [];
+        if (! empty($data['from'])) $created['gte'] = strtotime($data['from'] . ' 00:00:00');
+        if (! empty($data['to']))   $created['lte'] = strtotime($data['to'] . ' 23:59:59');
+        if ($created) $params['created'] = $created;
+        if (! empty($data['status']) && $data['status'] !== 'all') $params['status'] = $data['status'];
+
+        $stripe = new StripeClient(config('billing.stripe_secret'));
+        $out = [];
+        foreach ($stripe->invoices->all($params)->autoPagingIterator() as $inv) {
+            $out[] = $inv;
+        }
+
+        return $out;
+    }
+
+    private function stripeGuard()
+    {
+        if (! config('billing.stripe_secret')) {
+            return response()->json(['message' => 'Stripe is nog niet geconfigureerd (geen secret key).'], 422);
+        }
+        return null;
+    }
+
+    /**
+     * GET /api/v1/admin/billing/invoices/export.csv
+     * CSV-export van Stripe-facturen (puntkomma, UTF-8 BOM voor Excel-NL).
+     */
+    public function exportInvoicesCsv(Request $request)
+    {
+        if ($r = $this->stripeGuard()) return $r;
+        @set_time_limit(300);
+
+        try {
+            $invoices = $this->invoicesFor($request);
+        } catch (Throwable $e) {
+            return response()->json(['message' => 'Kon Stripe-facturen niet laden: ' . $e->getMessage()], 422);
+        }
+
+        $money = fn ($cents) => $cents === null ? '' : number_format($cents / 100, 2, ',', '');
+        $date  = fn ($ts) => $ts ? date('Y-m-d', $ts) : '';
+
+        $fh = fopen('php://temp', 'w+');
+        fwrite($fh, "\xEF\xBB\xBF");
+        fputcsv($fh, [
+            'Factuurnummer', 'Stripe ID', 'Datum', 'Betaald op', 'Status', 'Klant', 'E-mail',
+            'Land', 'Btw-nummer', 'Omschrijving', 'Valuta', 'Subtotaal', 'Btw', 'Totaal',
+            'Betaald', 'Openstaand', 'Abonnement', 'PDF-link',
+        ], ';');
+
+        foreach ($invoices as $inv) {
+            $customer = is_object($inv->customer) ? $inv->customer : null;
+            $taxIds = collect($inv->customer_tax_ids ?? [])->map(fn ($t) => $t->value ?? '')->filter()->implode(', ');
+            $lines = collect($inv->lines->data ?? [])->map(fn ($l) => $l->description ?? '')->filter()->implode(' | ');
+            $tax = collect($inv->total_taxes ?? $inv->total_tax_amounts ?? [])->sum(fn ($t) => $t->amount ?? 0);
+            $subscription = $inv->parent->subscription_details->subscription ?? ($inv->subscription ?? '');
+
+            fputcsv($fh, [
+                $inv->number ?? '',
+                $inv->id,
+                $date($inv->created),
+                $date($inv->status_transitions->paid_at ?? null),
+                $inv->status,
+                $inv->customer_name ?: ($customer->name ?? ''),
+                $inv->customer_email ?: ($customer->email ?? ''),
+                $inv->customer_address->country ?? ($customer->address->country ?? ''),
+                $taxIds,
+                $lines,
+                strtoupper((string) $inv->currency),
+                $money($inv->subtotal),
+                $money($tax),
+                $money($inv->total),
+                $money($inv->amount_paid),
+                $money($inv->amount_remaining),
+                is_string($subscription) ? $subscription : ($subscription->id ?? ''),
+                $inv->invoice_pdf ?? '',
+            ], ';');
+        }
+
+        rewind($fh);
+        $csv = stream_get_contents($fh);
+        fclose($fh);
+
+        return response($csv, 200, [
+            'Content-Type'        => 'text/csv; charset=UTF-8',
+            'Content-Disposition' => 'attachment; filename="' . $this->exportName($request, 'csv') . '"',
+        ]);
+    }
+
+    /**
+     * GET /api/v1/admin/billing/invoices/pdfs.zip
+     * Alle factuur-PDF's uit Stripe gebundeld in één ZIP (max 1000 per keer).
+     */
+    public function downloadInvoicePdfs(Request $request)
+    {
+        if ($r = $this->stripeGuard()) return $r;
+        @set_time_limit(900);
+
+        try {
+            $invoices = array_values(array_filter($this->invoicesFor($request), fn ($i) => ! empty($i->invoice_pdf)));
+        } catch (Throwable $e) {
+            return response()->json(['message' => 'Kon Stripe-facturen niet laden: ' . $e->getMessage()], 422);
+        }
+
+        if (! $invoices) {
+            return response()->json(['message' => 'Geen facturen met PDF gevonden in deze periode.'], 404);
+        }
+        if (count($invoices) > 1000) {
+            return response()->json(['message' => count($invoices) . ' facturen gevonden — kies een kortere periode (max 1000 per download).'], 422);
+        }
+
+        $zipPath = tempnam(sys_get_temp_dir(), 'inv') . '.zip';
+        $zip = new \ZipArchive();
+        $zip->open($zipPath, \ZipArchive::CREATE | \ZipArchive::OVERWRITE);
+
+        $failed = [];
+        foreach (array_chunk($invoices, 10) as $chunk) {
+            $responses = Http::pool(fn ($pool) => array_map(
+                fn ($inv) => $pool->as($inv->id)->timeout(60)->retry(2, 500, throw: false)->get($inv->invoice_pdf),
+                $chunk
+            ));
+            foreach ($chunk as $inv) {
+                $res = $responses[$inv->id] ?? null;
+                $name = date('Y-m-d', $inv->created) . '_' . preg_replace('/[^A-Za-z0-9_-]/', '-', $inv->number ?: $inv->id) . '.pdf';
+                if ($res instanceof \Illuminate\Http\Client\Response && $res->successful()) {
+                    $zip->addFromString($name, $res->body());
+                } else {
+                    $failed[] = ($inv->number ?: $inv->id) . "\t" . ($inv->invoice_pdf ?? '');
+                }
+            }
+        }
+        if ($failed) {
+            $zip->addFromString('_niet-gedownload.txt', "Deze facturen konden niet worden opgehaald:\n" . implode("\n", $failed) . "\n");
+        }
+        $zip->close();
+
+        return response()->download($zipPath, $this->exportName($request, 'zip'), [
+            'Content-Type' => 'application/zip',
+        ])->deleteFileAfterSend(true);
+    }
+
+    private function exportName(Request $request, string $ext): string
+    {
+        $range = trim(($request->input('from') ?: 'begin') . '_' . ($request->input('to') ?: date('Y-m-d')));
+        return 'stripe-facturen_' . preg_replace('/[^0-9A-Za-z_-]/', '', $range) . '.' . $ext;
     }
 }

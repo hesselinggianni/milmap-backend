@@ -86,3 +86,7 @@ Schedule::command('partners:payout')
 // Accounts waarvan de 90-daagse bedenktijd verstreken is definitief
 // verwijderen (zie AccountDeletionController).
 Schedule::command('accounts:purge')->dailyAt('04:20');
+
+// Lokale GeoIP-database (DB-IP Country Lite) verversen — zie App\Support\GeoIp.
+// Zo hoeft het IP van een bezoeker de server niet te verlaten.
+Schedule::command('geoip:update')->monthlyOn(5, '04:40')->withoutOverlapping();

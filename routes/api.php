@@ -272,7 +272,7 @@ Route::prefix('v1')->middleware(['api'])->group(function () {
     // Partnerportaal — ingelogd als milmap-user mét partnerprofiel. Bewust
     // buiten de EnsureEmailVerified/EnsureNotViewOnly-groep: een net
     // aangemaakte partner moet zijn status kunnen zien.
-    Route::middleware(['auth:sanctum', 'partner'])->prefix('partner')->group(function () {
+    Route::middleware(['auth:sanctum', \App\Http\Middleware\TrackConnectDevice::class, 'partner'])->prefix('partner')->group(function () {
         // Partnerovereenkomst: accepteren → code per mail → bevestigen.
         Route::get ('/agreement',          [\App\Http\Controllers\PartnerAgreementController::class, 'status']);
         Route::post('/agreement/accept',   [\App\Http\Controllers\PartnerAgreementController::class, 'accept'])->middleware('throttle:10,1');
@@ -411,7 +411,7 @@ Route::prefix('v1')->middleware(['api'])->group(function () {
 
 
 Route::prefix('v1')->middleware(['api'])->group(function () {
-    Route::middleware(['auth:sanctum', \App\Http\Middleware\TrackLastSeen::class, \App\Http\Middleware\EnsureEmailVerified::class, \App\Http\Middleware\EnsureNotViewOnly::class])->group(function () {
+    Route::middleware(['auth:sanctum', \App\Http\Middleware\TrackConnectDevice::class, \App\Http\Middleware\TrackLastSeen::class, \App\Http\Middleware\EnsureEmailVerified::class, \App\Http\Middleware\EnsureNotViewOnly::class])->group(function () {
 
         /* User group */
 
@@ -948,6 +948,8 @@ Route::prefix('v1')->middleware(['api'])->group(function () {
             Route::get('/admin/billing/price-map', [AdminBillingController::class, 'priceMap']);
             Route::put('/admin/billing/price-map', [AdminBillingController::class, 'savePriceMap']);
             Route::post('/admin/billing/flush-cache', [AdminBillingController::class, 'flushPricingCache']);
+            Route::get('/admin/billing/invoices/export.csv', [AdminBillingController::class, 'exportInvoicesCsv']);
+            Route::get('/admin/billing/invoices/pdfs.zip', [AdminBillingController::class, 'downloadInvoicePdfs']);
             // ── Status-page domains (managed here, shown on milmap.nl/status) ─
             Route::get   ('/admin/status-domains',        [StatusPageController::class, 'adminIndex']);
             Route::post  ('/admin/status-domains',        [StatusPageController::class, 'store']);
@@ -1084,13 +1086,22 @@ Route::prefix('v1')->middleware(['api'])->group(function () {
             Route::post('/admin/garmin/config', [\App\Http\Controllers\AdminGarminController::class, 'saveConfig']);
 
             Route::get('/admin/users/{userId}', [AdminController::class, 'getUser']);
+            Route::get('/admin/users/{userId}/devices', [AdminController::class, 'getUserDevices']);
+            Route::get('/admin/users/{userId}/billing-profile', [\App\Http\Controllers\AdminBillingProfileController::class, 'show']);
+            Route::put('/admin/users/{userId}/billing-profile', [\App\Http\Controllers\AdminBillingProfileController::class, 'update']);
+            Route::get('/admin/users/{userId}/invoices', [\App\Http\Controllers\AdminUserOverviewController::class, 'invoices']);
+            Route::post('/admin/users/{userId}/connect-organization', [AdminController::class, 'createConnectOrganization']);
+            Route::post('/admin/users/{userId}/connect-organizations/{organizationId}/licenses', [AdminController::class, 'addConnectLicense']);
             Route::delete('/admin/users/{userId}', [AdminController::class, 'deleteUser']);
             Route::post('/admin/users/{userId}/reset-password', [AdminController::class, 'resetUserPassword']);
+            Route::get('/admin/users/{userId}/transfer-data', [\App\Http\Controllers\AdminDataTransferController::class, 'preview']);
+            Route::post('/admin/users/{userId}/transfer-data', [\App\Http\Controllers\AdminDataTransferController::class, 'transfer']);
             // Gratis (premium-)toegang toekennen/verlengen + handmatig e-mail verifiëren.
             Route::post('/admin/users/{userId}/grant-access', [AdminController::class, 'grantAccess']);
             Route::post('/admin/users/{userId}/verify-email', [AdminController::class, 'verifyUserEmail']);
             // Handmatige 1-op-1 mail vanuit de Mails-tab op de gebruikersdetailpagina.
             Route::post('/admin/users/{userId}/send-mail', [AdminController::class, 'sendUserMail']);
+            Route::post('/admin/users/{userId}/send-chat', [AdminController::class, 'sendUserChat']);
             // Van/reply-to-adressen voor de compose-preview (geen hardcoded waarden in de frontend).
             Route::get('/admin/mail-meta', [AdminController::class, 'mailMeta']);
             // Demo-account aan/uit: telt dan niet mee in statistieken/analytics.
@@ -1098,6 +1109,7 @@ Route::prefix('v1')->middleware(['api'])->group(function () {
 
             // ── Admin mail client (IMAP/SMTP inboxes) ───────────────────
             // Inbox configuration (CRUD). Passwords are write-only.
+            Route::get('/admin/mail/recipients', [AdminMailboxController::class, 'recipients']);
             Route::get('/admin/mail/accounts', [AdminMailAccountController::class, 'index']);
             Route::post('/admin/mail/accounts', [AdminMailAccountController::class, 'store']);
             Route::put('/admin/mail/accounts/{id}', [AdminMailAccountController::class, 'update']);
@@ -1110,6 +1122,7 @@ Route::prefix('v1')->middleware(['api'])->group(function () {
             Route::get('/admin/mail/accounts/{id}/messages/{uid}', [AdminMailboxController::class, 'show']);
             Route::get('/admin/mail/accounts/{id}/messages/{uid}/attachments/{index}', [AdminMailboxController::class, 'attachment']);
             Route::post('/admin/mail/accounts/{id}/messages/{uid}/flag', [AdminMailboxController::class, 'flag']);
+            Route::post('/admin/mail/accounts/{id}/messages/{uid}/move', [AdminMailboxController::class, 'move']);
             Route::post('/admin/mail/accounts/{id}/send', [AdminMailboxController::class, 'send']);
         });
 
@@ -1142,3 +1155,5 @@ Route::prefix('v1')->middleware(['api', 'deploy.token'])->group(function () {
     Route::delete('/deploy/todos/{id}', [TodoController::class, 'deployDestroy']);
     Route::post  ('/deploy/todos/{id}/run-log', [TodoController::class, 'deployRunLog']);
 });
+
+require __DIR__.'/connect.php';

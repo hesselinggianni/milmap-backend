@@ -59,6 +59,7 @@ class LocationController extends Controller
         $this->authorizeMap($mapId, requireEdit: true);
 
         $validated = $request->validate([
+            'client_request_id' => 'nullable|string|max:100',
             'name'        => 'nullable|string|max:255',
             'description' => 'nullable|string',
             'latitude'    => 'required|numeric|between:-90,90',
@@ -68,7 +69,7 @@ class LocationController extends Controller
             'metadata'    => 'nullable|array',
         ]);
 
-        $location = Location::create([
+        $attributes = [
             'map_id'      => $mapId,
             'user_id'     => Auth::id(),
             'name'        => $validated['name'] ?? null,
@@ -78,7 +79,11 @@ class LocationController extends Controller
             'color'       => $validated['color'] ?? '#FF0000',
             'icon'        => $validated['icon'] ?? 'marker',
             'metadata'    => $validated['metadata'] ?? null,
-        ]);
+        ];
+
+        $location = !empty($validated['client_request_id'])
+            ? Location::firstOrCreate(['user_id' => Auth::id(), 'client_request_id' => $validated['client_request_id']], $attributes)
+            : Location::create($attributes);
 
         return response()->json($location, 201);
     }

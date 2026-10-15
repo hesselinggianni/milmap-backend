@@ -3,6 +3,7 @@
 namespace App\Http\Controllers;
 
 use App\Models\MailAccount;
+use App\Models\User;
 use App\Services\MailboxService;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Auth;
@@ -21,6 +22,27 @@ class AdminMailboxController extends Controller
 {
     public function __construct(private MailboxService $mailbox)
     {
+    }
+
+    public function recipients(Request $request)
+    {
+        $data = $request->validate(['search' => ['required', 'string', 'min:2', 'max:100']]);
+        $search = str_replace(['\\', '%', '_'], ['\\\\', '\\%', '\\_'], trim($data['search']));
+        $users = User::query()
+            ->whereNotNull('email')
+            ->where(function ($query) use ($search) {
+                $query->where('email', 'like', "%{$search}%")
+                    ->orWhere('first_name', 'like', "%{$search}%")
+                    ->orWhere('last_name', 'like', "%{$search}%");
+            })
+            ->orderBy('first_name')->limit(15)
+            ->get(['id', 'first_name', 'last_name', 'email']);
+
+        return response()->json(['users' => $users->map(fn ($user) => [
+            'id' => $user->id,
+            'name' => trim($user->first_name . ' ' . $user->last_name),
+            'email' => $user->email,
+        ])]);
     }
 
     public function folders(string $accountId)
@@ -91,6 +113,19 @@ class AdminMailboxController extends Controller
                 (bool) $data['value']
             ),
         ]));
+    }
+
+    public function move(Request $request, string $accountId, int $uid)
+    {
+        $account = $this->find($accountId);
+        $data = $request->validate([
+            'folder' => ['required', 'string', 'max:255'],
+            'destination' => ['required', 'string', 'max:255', 'different:folder'],
+        ]);
+        return $this->guard(function () use ($account, $data, $uid) {
+            $this->mailbox->moveMessage($account, $data['folder'], $uid, $data['destination']);
+            return response()->json(['message' => 'Bericht verplaatst.']);
+        });
     }
 
     public function send(Request $request, string $accountId)

@@ -1,0 +1,269 @@
+<?php
+namespace App\Http\Controllers;
+use App\Models\ConnectOrganization;
+use App\Models\ConnectMember;
+use App\Models\ConnectDevice;
+use App\Models\ConnectAllowedDevice;
+use App\Services\ConnectRoster;
+use App\Support\DeviceInfo;
+use Illuminate\Http\Request;
+use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Facades\Hash;
+use Illuminate\Support\Facades\Mail;
+use Stripe\StripeClient;
+use App\Models\ConnectQuoteRequest;
+use App\Models\Map;
+use App\Models\RouteMap;
+use App\Models\Mission;
+class ConnectController extends Controller {
+    private function manager(Request $r, ConnectOrganization $organization): ConnectMember {
+        $member = $organization->members()->where('user_id', $r->user()->id)->where('status', 'active')->whereIn('role', ['owner', 'admin'])->first();
+        abort_unless($member, 403, 'Je hebt geen beheerrechten voor deze organisatie.'); return $member;
+    }
+    public function index(Request $r) {
+        return response()->json(['organizations' => ConnectOrganization::whereHas('members', fn ($q) => $q->where('user_id', $r->user()->id)->where('status', 'active')->whereIn('role', ['owner', 'admin']))->get()]);
+    }
+    public function access(Request $r) {
+        $memberships = ConnectMember::with('organization')->where('user_id', $r->user()->id)->where('status', 'active')->get();
+        return response()->json(['enterprise' => $memberships->contains(fn ($m) => $m->organization?->licensed()), 'memberships' => $memberships->map(fn ($m) => ['organization' => $m->organization, 'role' => $m->role, 'licensed' => (bool) $m->organization?->licensed()])->values()]);
+    }
+    public function requestQuote(Request $r) {
+        $data = $r->validate(['company_name'=>'required|string|max:190','contact_name'=>'required|string|max:190','email'=>'required|email|max:190','billing_email'=>'nullable|email|max:190','phone'=>'nullable|string|max:50','seat_count'=>'required|integer|min:1|max:100000','purpose'=>'nullable|string|max:190','requirements'=>'nullable|string|max:5000']);
+        $data['user_id'] = $r->user()->id; $quote = ConnectQuoteRequest::create($data);
+        try { Mail::to('gianni@milmap.nl')->send(new \App\Mail\ConnectQuoteRequestMail($quote->toArray())); } catch (\Throwable $e) { report($e); }
+        return response()->json(['message'=>'Je offerteaanvraag is verstuurd. We nemen snel contact met je op.','id'=>$quote->id], 201);
+    }
+    public function show(Request $r, ConnectOrganization $organization) {
+        $manager = $this->manager($r, $organization);
+        $organization->load('licenses');
+        $members = $organization->members()->orderBy('first_name')->get();
+        $devices = ConnectDevice::whereIn('user_id', $members->where('status', 'active')->pluck('user_id')->filter())->with('user:id,first_name,last_name,email')->orderByDesc('last_seen_at')->get();
+        $userIds = $members->pluck('user_id')->filter()->values();
+        $mapCounts = Map::selectRaw('owner_id, COUNT(*) as c')->whereIn('owner_id', $userIds)->groupBy('owner_id')->pluck('c','owner_id');
+        $routeCounts = RouteMap::selectRaw('owner_id, COUNT(*) as c')->whereIn('owner_id', $userIds)->groupBy('owner_id')->pluck('c','owner_id');
+        $missionCounts = Mission::selectRaw('owner_id, COUNT(*) as c')->whereIn('owner_id', $userIds)->groupBy('owner_id')->pluck('c','owner_id');
+        $members->each(function ($member) use ($mapCounts, $routeCounts, $missionCounts) { $member->setAttribute('stats', ['maps' => (int) ($mapCounts[$member->user_id] ?? 0), 'route_maps' => (int) ($routeCounts[$member->user_id] ?? 0), 'missions' => (int) ($missionCounts[$member->user_id] ?? 0)]); });
+        return response()->json(['organization' => $organization, 'role' => $manager->role, 'licensed' => $organization->licensed(),
+            'occupied_seats' => $organization->occupiedSeats(), 'occupied_devices' => $organization->occupiedDevices(), 'members' => $members, 'devices' => $devices, 'allowed_devices' => $this->allowedDevices($organization),
+            'analytics' => ['maps' => $mapCounts->sum(), 'route_maps' => $routeCounts->sum(), 'missions' => $missionCounts->sum()]]);
+    }
+    public function upgradeLicense(Request $r, ConnectOrganization $organization) {
+        $this->manager($r, $organization);
+        abort(403, 'Extra licenties moeten eerst worden aangeschaft. Neem contact op met MilMap of gebruik de betaalpagina.');
+    }
+    public function checkoutSeats(Request $r, ConnectOrganization $organization) {
+        $this->manager($r, $organization);
+        $data = $r->validate(['additional_seats' => 'required|integer|min:1|max:100000']);
+        $price = config('billing.stripe_price_connect_seat_monthly');
+        abort_unless($price, 503, 'De Connect-seatprijs is nog niet geconfigureerd.');
+        $owner = $organization->members()->where('role', 'owner')->with('user')->first()?->user;
+        abort_unless($owner, 422, 'Er is geen eigenaar aan deze organisatie gekoppeld.');
+        $session = (new StripeClient(['api_key' => config('billing.stripe_secret')]))->checkout->sessions->create([
+            'mode' => 'subscription', 'line_items' => [['price' => $price, 'quantity' => (int) $data['additional_seats']]],
+            'customer_email' => $owner->email, 'billing_address_collection' => 'required', 'locale' => 'auto',
+            'success_url' => rtrim(config('connect.url'), '/').'/?checkout=success',
+            'cancel_url' => rtrim(config('connect.url'), '/').'/?checkout=cancelled',
+            'metadata' => ['connect_organization_id' => (string) $organization->id, 'additional_seats' => (string) $data['additional_seats']],
+            'subscription_data' => ['metadata' => ['connect_organization_id' => (string) $organization->id, 'additional_seats' => (string) $data['additional_seats']]],
+        ]);
+        return response()->json(['checkout_url' => $session->url]);
+    }
+    public function invoiceRequest(Request $r, ConnectOrganization $organization) {
+        $this->manager($r, $organization);
+        $data = $r->validate(['additional_seats' => 'required|integer|min:1|max:100000', 'accepted' => 'accepted']);
+        $user = $r->user();
+        $quote = ConnectQuoteRequest::create(['user_id' => $user->id, 'company_name' => $organization->name, 'contact_name' => trim(($user->first_name ?? '').' '.($user->last_name ?? '')), 'email' => $user->email, 'billing_email' => $user->email, 'seat_count' => (int) $organization->seat_limit + (int) $data['additional_seats'], 'purpose' => 'Extra Connect-licenties op factuur', 'requirements' => 'Betalingsverplichting geaccepteerd via Connect.']);
+        try { Mail::to('gianni@milmap.nl')->send(new \App\Mail\ConnectQuoteRequestMail($quote->toArray())); } catch (\Throwable $e) { report($e); }
+        return response()->json(['message' => 'Je factuuraanvraag is ontvangen. MilMap neemt contact met je op.'], 201);
+    }
+    public function invite(Request $r, ConnectOrganization $organization, ConnectRoster $roster) {
+        $manager = $this->manager($r, $organization);
+        $data = $r->validate(['members' => 'required|array|min:1|max:500', 'members.*.first_name' => 'required|string|max:100',
+            'members.*.last_name' => 'required|string|max:100', 'members.*.email' => 'required|email|max:255',
+            'members.*.tags' => 'sometimes|array|max:20', 'members.*.tags.*' => 'required|string|max:80', 'members.*.role' => 'sometimes|in:member,admin']);
+        if ($manager->role !== 'owner') foreach ($data['members'] as $row) abort_if(($row['role'] ?? 'member') !== 'member', 403);
+        return response()->json($roster->invite($organization, $data['members']), 201);
+    }
+    public function update(Request $r, ConnectOrganization $organization, ConnectMember $member) {
+        $manager = $this->manager($r, $organization); abort_unless($member->organization_id === $organization->id, 404);
+        abort_if($member->role === 'owner' || ($member->role === 'admin' && $manager->role !== 'owner'), 403);
+        $data = $r->validate(['first_name' => 'sometimes|string|max:100', 'last_name' => 'sometimes|string|max:100', 'email' => 'sometimes|email|max:255', 'tags' => 'required|array|max:20', 'tags.*' => 'required|string|max:80', 'role' => 'required|in:member,admin']);
+        if (array_key_exists('email', $data) && strtolower($data['email']) !== strtolower($member->email)) {
+            abort_if($member->status !== 'pending', 422, 'Het e-mailadres van een actief account kan niet vanuit Connect worden aangepast.');
+            $data['email'] = strtolower(trim($data['email']));
+            abort_if(ConnectMember::where('organization_id', $organization->id)->where('email', $data['email'])->where('id', '<>', $member->id)->whereIn('status', ['active', 'pending'])->exists(), 422, 'Dit e-mailadres staat al in de organisatie.');
+            $data['token_hash'] = null;
+            $data['expires_at'] = null;
+            $data['mail_sent_at'] = null;
+        }
+        abort_if($data['role'] === 'admin' && $manager->role !== 'owner', 403); $member->update($data); return response()->json($member);
+    }
+    public function welcome(Request $r, ConnectOrganization $organization, ConnectMember $member) {
+        $manager = $this->manager($r, $organization);
+        abort_unless($member->organization_id === $organization->id && $member->user_id, 404);
+        $password = bin2hex(random_bytes(6));
+        $user = $member->user;
+        $user->forceFill(['password' => Hash::make($password)])->save();
+        Mail::to($user->email)->send(new \App\Mail\ConnectWelcome($organization->name, $member->first_name, $user->email, $password));
+        return response()->json(['message' => 'Nieuw wachtwoord en welkomstmail verstuurd.']);
+    }
+    public function remove(Request $r, ConnectOrganization $organization, ConnectMember $member) {
+        $manager = $this->manager($r, $organization); abort_unless($member->organization_id === $organization->id, 404);
+        abort_if($member->role === 'owner' || ($member->role === 'admin' && $manager->role !== 'owner'), 403);
+        DB::transaction(function () use ($organization, $member) {
+            ConnectOrganization::whereKey($organization->id)->lockForUpdate()->firstOrFail();
+            $member->update(['status' => 'removed', 'token_hash' => null]);
+        }); return response()->noContent();
+    }
+    public function resend(Request $r, ConnectOrganization $organization, ConnectMember $member) {
+        $manager = $this->manager($r, $organization); abort_unless($member->organization_id === $organization->id, 404);
+        abort_if($member->status !== 'pending' || ($member->role === 'admin' && $manager->role !== 'owner'), 403);
+        // A new token invalidates the old invitation; transaction preserves the seat reservation.
+        return response()->json(app(\App\Services\ConnectResend::class)->send($organization, $member));
+    }
+    public function preview(Request $r) {
+        $data = $r->validate(['token' => 'required|string|size:64']);
+        $member = ConnectMember::where('token_hash', hash('sha256', $data['token']))->with('organization')->firstOrFail();
+        abort_unless($member->status === 'pending' && $member->expires_at > now(), 410);
+        return response()->json(['organization' => $member->organization->name, 'first_name' => $member->first_name, 'licensed' => $member->organization->licensed()]);
+    }
+    public function accept(Request $r, ConnectRoster $roster) {
+        $data = $r->validate(['token' => 'required|string|size:64']);
+        $member = $roster->accept($r->user(), $data['token']); return response()->json(['organization' => $member->organization->name]);
+    }
+    public function revokeDevice(Request $r, ConnectOrganization $organization, ConnectDevice $device) {
+        $this->manager($r, $organization);
+        abort_unless($organization->members()->where('user_id', $device->user_id)->where('status', 'active')->exists(), 404);
+        DB::transaction(function () use ($device) {
+            $device->update(['revoked_at' => now()]);
+            DB::table('personal_access_tokens')->where('connect_device_id', $device->id)->where('tokenable_id', $device->user_id)->where('tokenable_type', \App\Models\User::class)->delete();
+        }); return response()->noContent();
+    }
+    /** Toegestane apparaten met status: gekoppeld = er is al een installatie met dit UDID in deze organisatie. */
+    private function allowedDevices(ConnectOrganization $organization) {
+        $seen = ConnectDevice::where('organization_id', $organization->id)->whereNotNull('vendor_id')->get()->keyBy(fn ($d) => strtolower($d->vendor_id));
+        return ConnectAllowedDevice::where('organization_id', $organization->id)->orderBy('name')->get()->map(function ($a) use ($seen) {
+            $d = $seen->get(strtolower($a->udid));
+            return ['id' => $a->id, 'name' => $a->name, 'udid' => $a->udid, 'linked' => (bool) $d, 'last_seen_at' => $d?->last_seen_at,
+                'device_id' => $d?->id, 'connected' => (bool) $d?->is_connected, 'app_version' => $d?->app_version, 'model' => $d?->model, 'update_pending' => (bool) $d?->update_requested_at];
+        });
+    }
+    public function importAllowedDevices(Request $r, ConnectOrganization $organization) {
+        $this->manager($r, $organization);
+        $data = $r->validate(['devices' => 'required|array|min:1|max:500', 'devices.*.name' => 'required|string|max:120', 'devices.*.udid' => ['required', 'string', 'regex:/^[A-Za-z0-9-]{8,64}$/']]);
+        $rows = collect($data['devices'])->map(fn ($d) => ['name' => trim($d['name']), 'udid' => strtoupper(trim($d['udid']))])->unique('udid')->values();
+        $new = $rows->reject(fn ($d) => ConnectAllowedDevice::where('organization_id', $organization->id)->where('udid', $d['udid'])->exists())->count();
+        $total = ConnectAllowedDevice::where('organization_id', $organization->id)->count() + $new;
+        abort_if($total > $organization->seat_limit, 422, "Je kunt maximaal {$organization->seat_limit} apparaten vooraf toestaan (licentieplaatsen); met deze upload kom je op {$total}.");
+        DB::transaction(function () use ($rows, $organization) {
+            foreach ($rows as $d) ConnectAllowedDevice::updateOrCreate(['organization_id' => $organization->id, 'udid' => $d['udid']], ['name' => $d['name']]);
+        });
+        return response()->json(['imported' => $rows->count(), 'new' => $new, 'allowed_devices' => $this->allowedDevices($organization)]);
+    }
+    public function createMdmToken(Request $r, ConnectOrganization $organization) {
+        $this->manager($r, $organization);
+        $token = 'mmc_' . \Illuminate\Support\Str::random(40);
+        $organization->forceFill(['mdm_token_hash' => hash('sha256', $token), 'mdm_token_prefix' => substr($token, 0, 8), 'mdm_token_created_at' => now(), 'mdm_token_last_used_at' => null])->save();
+        return response()->json(['token' => $token, 'organization' => $organization->fresh()], 201);
+    }
+    public function revokeMdmToken(Request $r, ConnectOrganization $organization) {
+        $this->manager($r, $organization);
+        $organization->forceFill(['mdm_token_hash' => null, 'mdm_token_prefix' => null, 'mdm_token_created_at' => null, 'mdm_token_last_used_at' => null])->save();
+        return response()->noContent();
+    }
+    private function mdmOrganization(Request $r): ConnectOrganization {
+        $token = (string) $r->bearerToken();
+        $org = $token !== '' ? ConnectOrganization::where('mdm_token_hash', hash('sha256', $token))->first() : null;
+        abort_unless($org, 401, 'Ongeldig MDM-token.');
+        $org->forceFill(['mdm_token_last_used_at' => now()])->saveQuietly();
+        return $org;
+    }
+    public function mdmList(Request $r) {
+        $org = $this->mdmOrganization($r);
+        return response()->json(['devices' => ConnectAllowedDevice::where('organization_id', $org->id)->orderBy('name')->get(['name', 'udid']), 'seat_limit' => $org->seat_limit]);
+    }
+    public function mdmAdd(Request $r) {
+        $org = $this->mdmOrganization($r);
+        abort_unless($org->licensed(), 403, 'De licentie van deze organisatie is niet actief.');
+        $data = $r->validate(['udid' => ['required', 'string', 'regex:/^[A-Za-z0-9-]{8,64}$/'], 'name' => 'nullable|string|max:120']);
+        $udid = strtoupper(trim($data['udid']));
+        $existing = ConnectAllowedDevice::where('organization_id', $org->id)->where('udid', $udid)->first();
+        if (! $existing) {
+            $count = ConnectAllowedDevice::where('organization_id', $org->id)->count();
+            abort_if($count >= $org->seat_limit, 422, "Alle {$org->seat_limit} licentieplaatsen zijn in gebruik.");
+        }
+        $name = trim($data['name'] ?? '') ?: ($existing?->name ?? $udid);
+        $device = ConnectAllowedDevice::updateOrCreate(['organization_id' => $org->id, 'udid' => $udid], ['name' => $name]);
+        return response()->json(['device' => ['name' => $device->name, 'udid' => $device->udid], 'created' => ! $existing], $existing ? 200 : 201);
+    }
+    public function mdmRemove(Request $r, string $udid) {
+        $org = $this->mdmOrganization($r);
+        ConnectAllowedDevice::where('organization_id', $org->id)->whereRaw('LOWER(udid) = ?', [strtolower($udid)])->delete();
+        return response()->noContent();
+    }
+    public function deleteAllowedDevice(Request $r, ConnectOrganization $organization, ConnectAllowedDevice $allowedDevice) {
+        $this->manager($r, $organization);
+        abort_unless((int) $allowedDevice->organization_id === (int) $organization->id, 404);
+        $allowedDevice->delete(); return response()->noContent();
+    }
+    /**
+     * Publiek: huisstijl voor het inlogscherm op een zakelijk apparaat. De app stuurt het
+     * apparaat-ID (Capacitor Device.getId); alleen naam + logo + achtergrond komen terug,
+     * en alleen als de organisatie een actieve licentie heeft. Onbekend ID → 404 (geen lek
+     * over welke ID's bestaan, zelfde antwoord als "geen zakelijk apparaat").
+     */
+    public function deviceBranding(Request $r) {
+        $data = $r->validate(['device_id' => ['required', 'string', 'regex:/^[A-Za-z0-9-]{8,64}$/']]);
+        $allowed = ConnectAllowedDevice::whereRaw('LOWER(udid) = ?', [strtolower($data['device_id'])])->with('organization')->get()
+            ->first(fn ($a) => $a->organization?->licensed());
+        abort_unless($allowed, 404);
+        $o = $allowed->organization;
+        return response()->json(['organization' => ['name' => $o->name, 'logo_url' => $o->logo_url, 'login_background_url' => $o->login_background_url]]);
+    }
+    public function updateDeviceRestriction(Request $r, ConnectOrganization $organization) {
+        $this->manager($r, $organization);
+        $data = $r->validate(['restrict_to_allowed_devices' => 'required|boolean']);
+        $organization->update($data);
+        return response()->json(['organization' => $organization->fresh()]);
+    }
+    public function updateBranding(Request $r, ConnectOrganization $organization) {
+        $this->manager($r, $organization);
+        $r->validate([
+            'logo' => 'nullable|file|mimes:png,jpg,jpeg,webp,svg|max:2048',
+            'login_background' => 'nullable|file|mimes:png,jpg,jpeg,webp|max:6144',
+            'remove_logo' => 'nullable|boolean', 'remove_login_background' => 'nullable|boolean',
+        ]);
+        $disk = \Illuminate\Support\Facades\Storage::disk('public');
+        foreach (['logo' => 'logo_path', 'login_background' => 'login_background_path'] as $field => $column) {
+            $old = $organization->getRawOriginal($column);
+            if ($r->hasFile($field)) {
+                $file = $r->file($field);
+                if (strtolower($file->getClientOriginalExtension()) === 'svg' || str_contains((string) $file->getMimeType(), 'svg')) {
+                    // SVG kan scripts bevatten: strip actieve inhoud voor opslag.
+                    $svg = (string) file_get_contents($file->getRealPath());
+                    $svg = preg_replace('#<\s*(script|foreignObject|iframe|object|embed)\b.*?<\s*/\s*\1\s*>#is', '', $svg);
+                    $svg = preg_replace('#<\s*(script|foreignObject|iframe|object|embed)\b[^>]*/?>#is', '', $svg);
+                    $svg = preg_replace('#\son[a-z]+\s*=\s*("[^"]*"|\'[^\']*\'|[^\s>]+)#i', '', $svg);
+                    $svg = preg_replace('#(href|xlink:href)\s*=\s*("|\')\s*(javascript|data):[^"\']*\2#i', '', $svg);
+                    $path = "connect/{$organization->id}/" . \Illuminate\Support\Str::random(40) . '.svg';
+                    $disk->put($path, $svg);
+                    $organization->{$column} = $path;
+                } else {
+                    $organization->{$column} = $file->store("connect/{$organization->id}", 'public');
+                }
+            } elseif ($r->boolean("remove_{$field}")) {
+                $organization->{$column} = null;
+            } else continue;
+            if ($old) $disk->delete($old);
+        }
+        $organization->save();
+        return response()->json(['organization' => $organization->fresh()]);
+    }
+    public function requestDeviceUpdate(Request $r, ConnectOrganization $organization, ConnectDevice $device) {
+        $this->manager($r, $organization);
+        abort_unless($organization->members()->where('user_id', $device->user_id)->where('status', 'active')->exists(), 404);
+        abort_unless($device->is_connected, 422, 'Dit apparaat is niet ingelogd; een update kan alleen worden aangevraagd voor een ingelogd apparaat.');
+        $device->update(['update_requested_at' => now()]);
+        return response()->json(['message' => 'Update aangevraagd. De app haalt hem op zodra ze online is en geopend wordt.']);
+    }
+}

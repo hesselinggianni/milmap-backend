@@ -283,6 +283,25 @@ class MailboxService
     /**
      * Set or clear a server-side flag (Seen | Flagged | Answered | Deleted).
      */
+    public function moveMessage(MailAccount $account, string $folderPath, int $uid, string $destination): void
+    {
+        $client = $this->client($account);
+        try {
+            $target = $client->getFolderByPath($destination) ?: $client->getFolder($destination);
+            if (!$target) throw new RuntimeException('Doelmap niet gevonden.');
+            $folder = $client->getFolderByPath($folderPath) ?: $client->getFolder($folderPath);
+            $message = $folder->query()->getMessageByUid($uid);
+            if (!$message) throw new RuntimeException('Bericht niet gevonden.');
+            if (!$message->move($target->path, false)) throw new RuntimeException('Bericht kon niet verplaatst worden.');
+        } catch (RuntimeException $e) {
+            throw $e;
+        } catch (Throwable $e) {
+            throw new RuntimeException('Verplaatsen mislukt: ' . $this->cleanError($e->getMessage()));
+        } finally {
+            $client->disconnect();
+        }
+    }
+
     public function setFlag(MailAccount $account, string $folderPath, int $uid, string $flag, bool $value): array
     {
         $allowed = ['Seen', 'Flagged', 'Answered', 'Deleted'];
@@ -331,6 +350,7 @@ class MailboxService
 
         $email = new Email();
         $email->from(new Address($account->email, $account->from_name ?: $account->name));
+        $email->replyTo(config('mail.admin_reply_to', 'support@milmap.nl'));
 
         foreach ($this->normaliseRecipients($data['to'] ?? []) as $addr) {
             $email->addTo($addr);

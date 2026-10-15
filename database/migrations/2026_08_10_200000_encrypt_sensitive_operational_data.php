@@ -1,6 +1,7 @@
 <?php
 
 use Illuminate\Database\Migrations\Migration;
+use Illuminate\Database\Schema\Blueprint;
 use Illuminate\Support\Facades\Crypt;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Schema;
@@ -65,8 +66,10 @@ return new class extends Migration
             if (!Schema::hasTable($tabel)) continue;
             foreach ($kolommen as $kolom => $type) {
                 if (!Schema::hasColumn($tabel, $kolom)) continue;
-                // NULL toestaan blijft zoals het was; alleen het type groeit.
-                DB::statement("ALTER TABLE `{$tabel}` MODIFY `{$kolom}` {$type} NULL");
+                Schema::table($tabel, function (Blueprint $table) use ($kolom, $type) {
+                    $method = $type === 'LONGTEXT' ? 'longText' : 'text';
+                    $table->$method($kolom)->nullable()->change();
+                });
             }
         }
 

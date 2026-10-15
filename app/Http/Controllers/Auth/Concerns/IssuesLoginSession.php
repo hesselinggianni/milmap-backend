@@ -48,6 +48,16 @@ trait IssuesLoginSession
             'last_used_ip' => $request->ip(),
         ])->save();
 
+        try {
+            app(\App\Services\ConnectDeviceRegistry::class)->record($request, $newToken->accessToken, true);
+        } catch (\Throwable $e) {
+            $newToken->accessToken->delete();
+            throw $e;
+        }
+
+        // Nodig voor apparaatgebonden Connect-rechten in de login-respons.
+        $user->withAccessToken($newToken->accessToken);
+
         $token = $newToken->plainTextToken;
 
         $this->sendLoginNotification($request, $user);

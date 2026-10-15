@@ -12,6 +12,7 @@
         "laravel/reverb": "^1.10",
         "laravel/sanctum": "^4.0",
         "laravel/tinker": "^2.9",
+        "maxmind-db/reader": "^1.11",
         "mollie/laravel-cashier-mollie": "^2.0",
         "mollie/laravel-mollie": "^3.0",
         "pusher/pusher-php-server": "^7.2",

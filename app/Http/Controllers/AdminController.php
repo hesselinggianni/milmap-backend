@@ -15,6 +15,9 @@ use Illuminate\Support\Facades\Log;
 use Illuminate\Support\Facades\Mail;
 use App\Mail\ResetPasswordMail;
 use App\Mail\AccountClosedMail;
+use App\Models\Conversation;
+use App\Models\Message;
+use App\Events\MessageCreated;
 
 class AdminController extends Controller
 {
@@ -52,7 +55,13 @@ class AdminController extends Controller
                 ->groupBy('owner_id')
                 ->pluck('c', 'owner_id');
 
-            $users = $baseUsers->map(function ($user) use ($routeMapCounts, $missionCounts, $onlineThreshold, $activeSubs) {
+            $mobileDevices = \App\Models\ConnectDevice::connected()
+                ->whereIn('platform', ['ios', 'android'])
+                ->orderByDesc('last_seen_at')
+                ->get(['user_id', 'installation_id', 'platform', 'name', 'model', 'os_version', 'app_version', 'last_seen_at'])
+                ->groupBy('user_id');
+
+            $users = $baseUsers->map(function ($user) use ($routeMapCounts, $missionCounts, $onlineThreshold, $activeSubs, $mobileDevices) {
                 $lastSeen = $user->last_seen_at
                     ? \Illuminate\Support\Carbon::parse($user->last_seen_at)
                     : null;
@@ -77,6 +86,15 @@ class AdminController extends Controller
                     'email'            => $user->email,
                     'is_admin'         => (bool) $user->is_admin,
                     'is_demo'          => (bool) $user->is_demo,
+                    'mobile_devices'   => $mobileDevices->get($user->id, collect())->map(fn ($device) => [
+                        'platform' => $device->platform,
+                        'installation_id' => $device->installation_id,
+                        'name' => $device->name,
+                        'model' => \App\Support\DeviceInfo::modelName($device->model),
+                        'os_version' => $device->os_version,
+                        'app_version' => $device->app_version,
+                        'last_seen_at' => $device->last_seen_at,
+                    ])->values()->all(),
                     'maps_count'       => (int) $user->maps_count,
                     'route_maps_count' => (int) ($routeMapCounts[$user->id] ?? 0),
                     'missions_count'   => (int) ($missionCounts[$user->id] ?? 0),
@@ -370,6 +388,35 @@ class AdminController extends Controller
     }
 
     /**
+     * Apparaten waarop een gebruiker de app heeft gebruikt (iPhone/iPad/Android),
+     * met model, OS- en appversie en laatst actief. "ingelogd" = er is nog een
+     * niet-verlopen token aan het apparaat gekoppeld.
+     */
+    public function getUserDevices($userId)
+    {
+        $user = User::findOrFail($userId);
+        $devices = \App\Models\ConnectDevice::where('user_id', $user->id)
+            ->orderByDesc('last_seen_at')
+            ->get()
+            ->map(fn ($d) => [
+                'id'           => $d->id,
+                'platform'     => $d->platform,
+                'model'        => $d->model,
+                'model_name'   => \App\Support\DeviceInfo::modelName($d->model),
+                'os_version'   => $d->os_version,
+                'app_version'  => $d->app_version,
+                'browser'      => $d->name,
+                'identifier'   => $d->vendor_id ?: null,
+                'logged_in'    => $d->is_connected,
+                'revoked'      => (bool) $d->revoked_at,
+                'last_seen_at' => optional($d->last_seen_at)->toIso8601String(),
+                'first_seen_at'=> optional($d->created_at)->toIso8601String(),
+            ]);
+
+        return response()->json(['data' => $devices]);
+    }
+
+    /**
      * Get full detail for a single user (profile, maps, teams, billing).
      */
     public function getUser($userId)
@@ -400,6 +447,8 @@ class AdminController extends Controller
                     'email_verified_at' => $user->email_verified_at,
                     'created_at'        => $user->created_at,
                     'updated_at'        => $user->updated_at,
+                    'last_seen_at'      => $user->last_seen_at,
+                    'archived_at'       => $user->archived_at,
                     'plan'              => $user->plan(),
                     'subscribed'        => $user->subscribed(),
                     'trial_ends_at'     => $user->trial_ends_at,
@@ -421,6 +470,9 @@ class AdminController extends Controller
                 }),
                 // Partneraanmelding (partners.milmap.nl) — zo ziet de admin op
                 // de gebruikerskaart direct of iemand partner is/wil worden.
+                'connect_organizations' => class_exists(\App\Models\ConnectOrganization::class) && \Illuminate\Support\Facades\Schema::hasTable('connect_members')
+                    ? \App\Models\ConnectOrganization::with('licenses')->whereHas('members', fn ($q) => $q->where('user_id', $user->id))->get(['id', 'name', 'status', 'seat_limit', 'monthly_price_cents', 'currency', 'starts_at', 'ends_at'])
+                    : [],
                 'partner' => $user->partner ? [
                     'id'                     => $user->partner->id,
                     'status'                 => $user->partner->status,
@@ -522,6 +574,12 @@ class AdminController extends Controller
             // klant door voor een account dat niet meer bestaat. Zelfde aanpak
             // als bij zelf-verwijderen (AccountDeletionController::cancelStripe).
             $hadAbonnement = $this->cancelStripeSubscriptions($user);
+
+            // Daarna de Stripe-klant opruimen, zelfde regel als na de bedenktijd
+            // bij zelf-verwijderen: nooit iets betaald → klant verwijderen;
+            // wel betaald → klant blijft als administratie, maar alles stop
+            // (abonnementen opgezegd, betaalmethodes ontkoppeld).
+            app(\App\Services\StripeCustomerCleanup::class)->purgeOrDeactivate($user->stripe_id, $user->id);
 
             // Delete user (this cascades to maps and routemaps due to foreign key constraints)
             $user->delete();
@@ -679,6 +737,62 @@ class AdminController extends Controller
         }
     }
 
+    /** Maak vanuit het admin-gebruikersprofiel een Connect-licentie aan. */
+    public function createConnectOrganization(Request $request, $userId)
+    {
+        $data = $request->validate([
+            'name' => 'required|string|max:160',
+            'seats' => 'required|integer|min:1|max:100000',
+            'monthly_price' => 'required|numeric|min:0|max:10000000',
+            'months' => 'required|integer|min:1|max:120',
+        ]);
+
+        $user = User::findOrFail($userId);
+        abort_if($user->isArchived(), 422, 'Een gearchiveerd account kan geen Connect-eigenaar worden.');
+        abort_if(! \Illuminate\Support\Facades\Schema::hasTable('connect_organizations'), 503, 'Connect-migratie ontbreekt op de server.');
+        abort_if(\App\Models\ConnectOrganization::whereHas('members', fn ($q) => $q->where('user_id', $user->id)->where('role', 'owner')->where('status', 'active'))->exists(), 422, 'Deze gebruiker heeft al een Connect-organisatie.');
+
+        $organization = \Illuminate\Support\Facades\DB::transaction(function () use ($data, $user) {
+            User::whereKey($user->id)->lockForUpdate()->firstOrFail();
+            abort_if(\App\Models\ConnectOrganization::whereHas('members', fn ($q) => $q->where('user_id', $user->id)->where('role', 'owner')->where('status', 'active'))->exists(), 422, 'Deze gebruiker heeft al een Connect-organisatie.');
+            $organization = \App\Models\ConnectOrganization::create([
+                'name' => $data['name'], 'seat_limit' => $data['seats'],
+                'monthly_price_cents' => (int) round(((float) $data['monthly_price']) * 100),
+                'monthly_price_per_seat_cents' => (int) round(((float) $data['monthly_price']) * 100 / max(1, (int) $data['seats'])), 'currency' => 'EUR',
+                'status' => 'active', 'starts_at' => now(), 'ends_at' => now()->addMonthsNoOverflow($data['months']),
+            ]);
+            \App\Models\ConnectMember::create([
+                'organization_id' => $organization->id, 'user_id' => $user->id, 'first_name' => $user->first_name ?: 'Beheerder',
+                'last_name' => $user->last_name ?: '', 'email' => mb_strtolower($user->email), 'role' => 'owner', 'status' => 'active', 'tags' => [], 'accepted_at' => now(),
+            ]);
+            app(\App\Services\ConnectLicensing::class)->preserveExisting($organization);
+            return $organization->load('licenses');
+        });
+        return response()->json(['message' => 'Connect-organisatie aangemaakt.', 'organization' => $organization], 201);
+    }
+
+    /** Voeg een apart enterprise-product met een eigen looptijd toe. */
+    public function addConnectLicense(Request $request, $userId, $organizationId)
+    {
+        $data = $request->validate([
+            'name' => 'required|string|max:160', 'seats' => 'required|integer|min:1|max:100000',
+            'monthly_price' => 'required|numeric|min:0|max:10000000', 'months' => 'required|integer|min:1|max:120',
+            'request_id' => 'required|uuid',
+        ]);
+        $user = User::findOrFail($userId);
+        abort_if($user->isArchived(), 422, 'Een gearchiveerd account kan geen licentie krijgen.');
+        $organization = \App\Models\ConnectOrganization::whereKey($organizationId)
+            ->whereHas('members', fn ($q) => $q->where('user_id', $user->id)->where('role', 'owner')->where('status', 'active'))->firstOrFail();
+        abort_unless($organization->status === 'active', 422, 'De Connect-organisatie is niet actief.');
+        $license = app(\App\Services\ConnectLicensing::class)->add($organization, [
+            'name' => $data['name'], 'seat_count' => $data['seats'],
+            'monthly_price_cents' => (int) round(((float) $data['monthly_price']) * 100), 'currency' => $organization->currency,
+            'starts_at' => now(), 'ends_at' => now()->addMonthsNoOverflow($data['months']),
+            'source_reference' => 'admin:'.$organization->id.':'.$data['request_id'],
+        ]);
+        return response()->json(['message' => 'Enterprise-licentie toegevoegd.', 'license' => $license, 'organization' => $organization->fresh()->load('licenses')], 201);
+    }
+
     /**
      * POST /api/v1/admin/users/{userId}/verify-email
      * Markeer het e-mailadres van een gebruiker handmatig als geverifieerd (bv.
@@ -725,7 +839,7 @@ class AdminController extends Controller
         return response()->json([
             'from_address'  => config('mail.from.address'),
             'from_name'     => config('mail.from.name'),
-            'reply_to'      => config('mail.admin_mail', config('mail.from.address')),
+            'reply_to'      => config('mail.admin_reply_to', 'support@milmap.nl'),
         ]);
     }
 
@@ -755,7 +869,7 @@ class AdminController extends Controller
             Mail::html($html, function ($m) use ($user, $data) {
                 $m->to($user->email, $user->name ?: null)
                   ->subject($data['subject'])
-                  ->replyTo(config('mail.admin_mail', config('mail.from.address')));
+                  ->replyTo(config('mail.admin_reply_to', 'support@milmap.nl'));
             });
         } catch (\Throwable $e) {
             Log::error('[admin] handmatige mail naar gebruiker mislukt: ' . $e->getMessage());
@@ -765,6 +879,32 @@ class AdminController extends Controller
         Log::info("[admin] handmatige mail verstuurd naar user {$user->id} ({$user->email}) door admin " . (Auth::id() ?? '?'));
 
         return response()->json(['message' => 'E-mail verstuurd naar ' . $user->email], 200);
+    }
+
+    /** Send a support chat message to a user; delivered through the normal chat channel. */
+    public function sendUserChat(Request $request, $userId)
+    {
+        abort_unless(Auth::user()?->is_admin, 403);
+        $data = $request->validate(['body' => ['required', 'string', 'max:5000']]);
+        $user = User::findOrFail($userId);
+        $admin = Auth::user();
+        $conversation = Conversation::query()
+            ->where('type', 'direct')
+            ->whereHas('participants', fn ($q) => $q->where('users.id', $admin->id))
+            ->whereHas('participants', fn ($q) => $q->where('users.id', $user->id))
+            ->first();
+        if (!$conversation) {
+            $conversation = Conversation::create(['type' => 'direct', 'created_by' => $admin->id]);
+            $conversation->participants()->attach([$admin->id, $user->id]);
+        }
+        $message = Message::create([
+            'conversation_id' => $conversation->id, 'sender_id' => $admin->id,
+            'ciphertext' => $data['body'], 'ciphertext_self' => $data['body'],
+            'encryption' => 'none', 'type' => 'text',
+        ]);
+        $conversation->update(['last_message_at' => $message->created_at]);
+        try { broadcast(new MessageCreated($message))->toOthers(); } catch (\Throwable $e) { Log::warning('[admin-chat] broadcast failed: '.$e->getMessage()); }
+        return response()->json(['message' => $message->forViewer($user->id)], 201);
     }
 
     /**

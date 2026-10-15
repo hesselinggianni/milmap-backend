@@ -93,6 +93,7 @@ class ReportController extends Controller
     public function store(Request $request)
     {
         $validated = $request->validate([
+            'client_request_id' => 'nullable|string|max:100',
             'map_id' => 'nullable|uuid',
             // Vrije string i.p.v. vaste enum: gebruikers kunnen eigen
             // meldingsformulieren (categorieën) aanmaken, net als `type` al vrij is.
@@ -117,7 +118,7 @@ class ReportController extends Controller
             'status' => 'nullable|string|in:active,resolved,archived',
         ]);
 
-        $report = Report::create([
+        $attributes = [
             'map_id' => $validated['map_id'] ?? null,
             'user_id' => Auth::id(),
             'category' => $validated['category'],
@@ -139,9 +140,13 @@ class ReportController extends Controller
             'description' => $validated['description'] ?? null,
             'metadata' => $validated['metadata'] ?? null,
             'status' => $validated['status'] ?? 'active',
-        ]);
+        ];
 
-        $this->logRevision($report, 'created');
+        // firstOrCreate handles a concurrent retry using the unique index.
+        $report = !empty($validated['client_request_id'])
+            ? Report::firstOrCreate(['user_id' => Auth::id(), 'client_request_id' => $validated['client_request_id']], $attributes)
+            : Report::create($attributes);
+        if ($report->wasRecentlyCreated) $this->logRevision($report, 'created');
 
         return response()->json($report, 201);
     }

@@ -231,6 +231,8 @@ class AppEventController extends Controller
         usort($byPlatform, fn ($a, $b) => $b['total'] <=> $a['total']);
 
         // ── Per land (ISO-2) ──
+        $countryMetric = $request->query('country_metric') === 'visitors' ? 'visitors' : 'events';
+        $countryCount = $countryMetric === 'visitors' ? 'COUNT(DISTINCT visitor_hash)' : 'COUNT(*)';
         $countryMap = [];
         $addCountry = function ($rows) use (&$countryMap) {
             foreach ($rows as $r) {
@@ -238,8 +240,8 @@ class AppEventController extends Controller
                 $countryMap[$c] = ($countryMap[$c] ?? 0) + (int) $r->total;
             }
         };
-        if ($includeApp)  $addCountry($appBase()->select('country', DB::raw('COUNT(*) as total'))->groupBy('country')->get());
-        if ($includeSite) $addCountry($siteBase()->select('country', DB::raw('COUNT(*) as total'))->groupBy('country')->get());
+        if ($includeApp)  $addCountry($appBase()->select('country', DB::raw($countryCount . ' as total'))->groupBy('country')->get());
+        if ($includeSite) $addCountry($siteBase()->select('country', DB::raw($countryCount . ' as total'))->groupBy('country')->get());
         arsort($countryMap);
         $byCountry = [];
         foreach (array_slice($countryMap, 0, 25, true) as $code => $total) {
@@ -317,6 +319,7 @@ class AppEventController extends Controller
             'top_actions' => $topActions,
             'by_platform' => $byPlatform,
             'by_country'  => $byCountry,
+            'country_metric' => $countryMetric,
             'audience'    => $audience,
             'daily'       => $daily,
             'flow'        => $flow,

@@ -100,6 +100,18 @@ class ClientErrorController extends Controller
                 return true;
             }
 
+            // Niet (meer) ingelogd — de app stuurt zelf naar het inlogscherm.
+            if ((int) $status === 401) {
+                return true;
+            }
+
+            // E-mailadres nog niet bevestigd: de verificatiemuur doet precies
+            // wat hij moet. Oude builds (vóór het front-endfilter) vuren op
+            // /verify-email nog chat/routemaps-calls af die hier 403 op krijgen.
+            if (str_contains(($data['response'] ?? '') . ' ' . $message, '"code":"email_verification_required"')) {
+                return true;
+            }
+
             // Een fout wachtwoord of een verlopen code bij inloggen, e-mail
             // bevestigen of het opheffen van je account is normaal gebruik.
             if ((int) $status === 422

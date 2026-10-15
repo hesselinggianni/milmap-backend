@@ -9,14 +9,18 @@ use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Http;
 use Tests\TestCase;
 
-/**
- * Geïsoleerde test voor SocialPublisher. GEEN RefreshDatabase (die zou de
- * dev-DB wissen) — alleen veilige SELECTs + een teruggedraaide transactie voor
- * de Pinterest-account-rij. Draai alléén dit bestand:
- *   php artisan test tests/Unit/SocialPublisherTest.php
- */
+/** Publisher tests use a fresh in-memory database and never publish externally. */
 class SocialPublisherTest extends TestCase
 {
+    protected function setUp(): void
+    {
+        parent::setUp();
+        config(['database.default' => 'sqlite', 'database.connections.sqlite.database' => ':memory:']);
+        DB::purge('sqlite');
+        (require database_path('migrations/2026_07_12_130001_create_social_accounts_table.php'))->up();
+        Http::preventStrayRequests();
+    }
+
     private function makePost(): SocialPost
     {
         // Niet opgeslagen model — imageUrl() werkt op image_path zonder DB.
@@ -49,10 +53,6 @@ class SocialPublisherTest extends TestCase
 
     public function test_pinterest_zonder_koppeling_valt_terug_op_manual(): void
     {
-        // Aanname: geen pinterest-account in de dev-DB (veilige SELECT).
-        if (SocialAccount::where('platform', 'pinterest')->exists()) {
-            $this->markTestSkipped('Er bestaat al een pinterest-account in deze DB.');
-        }
         $res = (new SocialPublisher())->publish($this->makePost(), 'pinterest');
         $this->assertSame('manual', $res['state']);
     }
@@ -84,7 +84,7 @@ class SocialPublisherTest extends TestCase
                     && $body['link'] === 'https://www.milmap.nl';
             });
         } finally {
-            DB::rollBack(); // dev-DB blijft ongewijzigd
+            DB::rollBack();
         }
     }
 }

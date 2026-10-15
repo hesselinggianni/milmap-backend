@@ -115,4 +115,7 @@ return [
 
     'admin_mail' => env('ADMIN_MAIL', 'support@milmap.nl'),
 
+    // Replies to outgoing admin mail belong in the support inbox.
+    'admin_reply_to' => 'support@milmap.nl',
+
 ];

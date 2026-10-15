@@ -14,6 +14,10 @@ return new class extends Migration
     public function up(): void
     {
         // Alles vóór het "/@"-segment behouden → `/map/:id/@…` wordt `/map/:id`.
+        if (DB::getDriverName() === 'sqlite') {
+            DB::update("UPDATE app_events SET name = substr(name, 1, instr(name, '/@') - 1) WHERE type = ? AND name LIKE ?", ['route', '%/@%']);
+            return;
+        }
         DB::update(
             "UPDATE app_events SET name = SUBSTRING_INDEX(name, '/@', 1) WHERE type = ? AND name LIKE ?",
             ['route', '%/@%']

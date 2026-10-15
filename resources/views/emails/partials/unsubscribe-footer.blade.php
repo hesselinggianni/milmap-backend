@@ -10,9 +10,9 @@
 
 @isset($unsubscribeUrl)
   @if($unsubscribeUrl)
-    <p style="margin:28px 0 0;font-size:11px;color:#64748b;line-height:1.6;text-align:center;">
+    <p style="margin:28px 0 0;font-size:11px;color:#6b7280;line-height:1.6;text-align:center;">
       {{ $unsubLine ?? __('mail.unsubscribe.line') }}<br>
-      <a href="{{ $unsubscribeUrl }}" style="color:#64748b;text-decoration:underline;">{{ $unsubLabel ?? __('mail.unsubscribe.label') }}</a>
+      <a href="{{ $unsubscribeUrl }}" style="color:#6b7280;text-decoration:underline;">{{ $unsubLabel ?? __('mail.unsubscribe.label') }}</a>
     </p>
   @endif
 @endisset

@@ -262,20 +262,45 @@ class MapWaypointController extends Controller
         $file = $request->file('image');
         $ext  = strtolower($file->getClientOriginalExtension() ?: $file->extension());
         $name = Str::uuid() . '.' . $ext;
-        $path = $file->storeAs("waypoints/{$waypoint->id}", $name, 'public');
+        try {
+            $path = $file->storeAs("waypoints/{$waypoint->id}", $name, 'public');
+        } catch (\Throwable $e) {
+            report($e);
+            abort(503, 'De foto kon niet worden opgeslagen. Probeer het opnieuw.');
+        }
+        // De public-disk geeft bij een schrijffout standaard false terug.
+        // Maak dan geen fotorecord met een leeg pad.
+        if (! $path) {
+            \Illuminate\Support\Facades\Log::error('Waypoint-foto kon niet worden opgeslagen', [
+                'map_id' => $mapId, 'waypoint_id' => $waypoint->id,
+            ]);
+            abort(503, 'De foto kon niet worden opgeslagen. Probeer het opnieuw.');
+        }
 
-        $image = $waypoint->images()->create([
-            'user_id'       => Auth::id(),
-            'path'          => $path,
-            'original_name' => $file->getClientOriginalName(),
-            'mime'          => $file->getClientMimeType(),
-            'size'          => $file->getSize(),
-        ]);
+        try {
+            $image = $waypoint->images()->create([
+                'user_id'       => Auth::id(),
+                'path'          => $path,
+                'original_name' => $file->getClientOriginalName(),
+                'mime'          => $file->getClientMimeType(),
+                'size'          => $file->getSize(),
+            ]);
+        } catch (\Throwable $e) {
+            // Geen verweesd bestand achterlaten als de database niet opslaat.
+            try { Storage::disk('public')->delete($path); } catch (\Throwable $cleanupError) { report($cleanupError); }
+            throw $e;
+        }
 
         UserUpload::record(Auth::id(), $path, (int) $file->getSize(), $file->getClientMimeType(), 'waypoint');
 
         $waypoint->load('images');
-        broadcast(new MapWaypointChanged($mapId, $waypoint->toClientArray(), 'updated', Auth::id()))->toOthers();
+        try {
+            broadcast(new MapWaypointChanged($mapId, $waypoint->toClientArray(), 'updated', Auth::id()))->toOthers();
+        } catch (\Illuminate\Broadcasting\BroadcastException $e) {
+            // De foto is opgeslagen. Een storing in live-updates mag geen 500
+            // veroorzaken, anders uploadt de gebruiker dezelfde foto opnieuw.
+            report($e);
+        }
 
         return response()->json([
             'image'     => $image->toApiArray(),

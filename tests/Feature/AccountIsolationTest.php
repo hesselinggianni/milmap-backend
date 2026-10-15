@@ -44,6 +44,7 @@ class AccountIsolationTest extends TestCase
         });
         Schema::create('missions', function (Blueprint $t) {
             $t->uuid('id')->primary(); $t->integer('owner_id'); $t->json('map')->nullable();
+            $t->string('map_ref_id')->nullable()->storedAs("json_extract(map, '$.id')");
             $t->string('name')->default('Mission'); $t->string('status')->default('planning');
             $t->string('linked_team_id')->nullable(); $t->timestamps(); $t->softDeletes();
         });
@@ -53,6 +54,7 @@ class AccountIsolationTest extends TestCase
         (require database_path('migrations/2026_09_18_140000_create_map_layer_prefs_table.php'))->up();
         (require database_path('migrations/2026_07_22_130000_create_activities_table.php'))->up();
         (require database_path('migrations/2026_08_10_100200_add_garmin_fields_to_activities_table.php'))->up();
+        (require database_path('migrations/2026_09_26_120000_add_map_id_to_activities_table.php'))->up();
         Schema::table('activities', fn (Blueprint $t) => $t->text('notes')->nullable());
         (require database_path('migrations/2026_09_20_110000_encrypt_activity_private_data.php'))->up();
         DB::table('users')->insert([['id' => 10], ['id' => 20], ['id' => 30]]);
@@ -196,6 +198,35 @@ class AccountIsolationTest extends TestCase
         $this->assertDatabaseMissing('activities', ['user_id' => 20, 'points_ciphertext' => null]);
         $this->assertNull(DB::table('activities')->where('user_id', 20)->value('points'));
         DB::disableQueryLog();
+    }
+
+    public function test_activity_list_can_be_scoped_to_one_map(): void
+    {
+        $otherMap = (string) Str::uuid();
+        DB::table('maps')->insert(['id' => $otherMap, 'owner_id' => '20', 'title' => 'Other']);
+
+        \App\Models\Activity::create([
+            'user_id' => 20, 'map_id' => $this->mapId, 'title' => 'Active map track', 'type' => 'walk',
+            'started_at' => now(), 'distance_m' => 10, 'moving_time_s' => 5, 'elapsed_time_s' => 5,
+            'points' => [['lat' => 52.1, 'lon' => 5.2], ['lat' => 52.2, 'lon' => 5.3]],
+        ]);
+        \App\Models\Activity::create([
+            'user_id' => 20, 'map_id' => $otherMap, 'title' => 'Other map track', 'type' => 'walk',
+            'started_at' => now()->subMinute(), 'distance_m' => 10, 'moving_time_s' => 5, 'elapsed_time_s' => 5,
+            'points' => [['lat' => 53.1, 'lon' => 6.2], ['lat' => 53.2, 'lon' => 6.3]],
+        ]);
+        \App\Models\Activity::create([
+            'user_id' => 10, 'map_id' => $this->mapId, 'title' => 'Foreign user same map', 'type' => 'walk',
+            'started_at' => now()->subMinutes(2), 'distance_m' => 10, 'moving_time_s' => 5, 'elapsed_time_s' => 5,
+            'points' => [['lat' => 54.1, 'lon' => 7.2], ['lat' => 54.2, 'lon' => 7.3]],
+        ]);
+
+        $this->getJson('/api/v1/activities?map_id='.$this->mapId)
+            ->assertOk()
+            ->assertJsonCount(1, 'activities')
+            ->assertJsonPath('activities.0.title', 'Active map track')
+            ->assertJsonPath('activities.0.map_id', $this->mapId)
+            ->assertJsonMissingPath('activities.0.points');
     }
 
     public function test_realtime_channels_use_same_policy_and_string_owner_id_works(): void

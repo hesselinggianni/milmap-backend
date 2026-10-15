@@ -1,4 +1,4 @@
-@extends('emails.layout')
+@extends('emails.layout-minimal')
 
 @section('title', $title ?? 'MilMap')
 
@@ -15,13 +15,13 @@
         @break
 
       @case('heading')
-        <h1 style="margin:0 0 16px;font-size:22px;line-height:1.25;font-weight:700;color:#ffffff;">
+        <h1 style="margin:0 0 16px;font-size:22px;line-height:1.25;font-weight:700;color:#01163d;">
           {{ $b['text'] ?? '' }}
         </h1>
         @break
 
       @case('paragraph')
-        <p style="margin:0 0 16px;font-size:14px;line-height:1.6;color:#cbd5e1;">
+        <p style="margin:0 0 16px;font-size:17px;line-height:1.7;color:#4b5563;">
           {!! nl2br(e($b['text'] ?? '')) !!}
         </p>
         @break
@@ -62,7 +62,7 @@
         @break
 
       @case('list')
-        <ul style="margin:0 0 22px;padding-left:18px;color:#cbd5e1;font-size:14px;line-height:1.8;">
+        <ul style="margin:0 0 22px;padding-left:18px;color:#4b5563;font-size:17px;line-height:1.8;">
           @foreach (($b['items'] ?? []) as $item)
             <li>{{ $item }}</li>
           @endforeach
@@ -70,7 +70,7 @@
         @break
 
       @case('divider')
-        <div style="height:1px;line-height:1px;font-size:0;background:#1e293b;margin:20px 0;">&nbsp;</div>
+        <div style="height:1px;line-height:1px;font-size:0;background:#e5e7eb;margin:20px 0;">&nbsp;</div>
         @break
 
       @case('spacer')

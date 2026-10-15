@@ -38,12 +38,16 @@ class LoginCodeController extends Controller
             ], 200);
         }
 
+        // Alleen lokale development vanaf loopback mag de uurlimiet overslaan.
+        $localDevelopment = app()->environment('local')
+            && in_array($request->ip(), ['127.0.0.1', '::1'], true);
+
         // Rate limiting: max 5 codes per IP per uur (zelfde limiet als admin).
         $recentCodes = UserLoginCode::where('ip_address', $request->ip())
             ->where('created_at', '>', Carbon::now()->subHour())
             ->count();
 
-        if ($recentCodes >= 5) {
+        if (!$localDevelopment && $recentCodes >= 5) {
             return response()->json([
                 'message' => 'Too many requests. Please try again later.',
                 'error' => 'rate_limit',

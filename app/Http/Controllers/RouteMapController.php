@@ -112,7 +112,10 @@ class RouteMapController extends Controller
             $this->authorize('view', $map);
         }
 
-        $routeMaps = RouteMap::with(['owner', 'map'])
+        // Via een deellink is de bezoeker anoniem: van de eigenaar alleen de
+        // weergavevelden meesturen, geen e-mail/Stripe/instellingen.
+        $owner = $shareToken ? 'owner:id,first_name,last_name,avatar_path' : 'owner';
+        $routeMaps = RouteMap::with([$owner, 'map'])
             ->where('map_id', $mapId)
             ->get();
 

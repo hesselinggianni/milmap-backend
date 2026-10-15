@@ -13,6 +13,11 @@ return new class extends Migration
 {
     public function up(): void
     {
+        if (DB::getDriverName() === 'sqlite') {
+            DB::update("UPDATE app_events SET name = CASE WHEN rtrim(name, '/') = '' THEN '/' ELSE rtrim(name, '/') END WHERE type = 'route' AND name LIKE '%/'");
+            DB::update("UPDATE site_events SET path = CASE WHEN rtrim(path, '/') = '' THEN '/' ELSE rtrim(path, '/') END WHERE path LIKE '%/'");
+            return;
+        }
         // Paden die alléén uit slashes bestaan ('//', '///') eerst naar '/',
         // anders zou TRIM(TRAILING '/') ze tot een lege string strippen.
         DB::update("UPDATE app_events SET name = '/' WHERE type = 'route' AND name REGEXP '^/+$' AND name != '/'");

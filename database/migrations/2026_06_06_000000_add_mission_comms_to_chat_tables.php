@@ -2,7 +2,6 @@
 
 use Illuminate\Database\Migrations\Migration;
 use Illuminate\Database\Schema\Blueprint;
-use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Schema;
 
 /**
@@ -42,8 +41,9 @@ return new class extends Migration
         });
 
         // Group messages have no single recipient ciphertext — make it nullable.
-        // Raw SQL avoids the doctrine/dbal requirement of ->change().
-        DB::statement('ALTER TABLE messages MODIFY ciphertext TEXT NULL');
+        Schema::table('messages', function (Blueprint $table) {
+            $table->text('ciphertext')->nullable()->change();
+        });
     }
 
     public function down(): void
@@ -53,7 +53,9 @@ return new class extends Migration
         });
 
         // Restore NOT NULL (only safe if no group messages remain).
-        DB::statement('ALTER TABLE messages MODIFY ciphertext TEXT NOT NULL');
+        Schema::table('messages', function (Blueprint $table) {
+            $table->text('ciphertext')->nullable(false)->change();
+        });
 
         Schema::table('conversations', function (Blueprint $table) {
             $table->dropForeign(['mission_id']);

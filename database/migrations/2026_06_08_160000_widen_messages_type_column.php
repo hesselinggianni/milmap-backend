@@ -1,7 +1,8 @@
 <?php
 
 use Illuminate\Database\Migrations\Migration;
-use Illuminate\Support\Facades\DB;
+use Illuminate\Database\Schema\Blueprint;
+use Illuminate\Support\Facades\Schema;
 
 return new class extends Migration
 {
@@ -20,14 +21,15 @@ return new class extends Migration
      */
     public function up(): void
     {
-        DB::statement("ALTER TABLE messages MODIFY type VARCHAR(32) NOT NULL DEFAULT 'text'");
+        Schema::table('messages', function (Blueprint $table) {
+            $table->string('type', 32)->default('text')->change();
+        });
     }
 
     public function down(): void
     {
-        DB::statement(
-            "ALTER TABLE messages MODIFY type " .
-            "ENUM('text','location','mission','image','file') NOT NULL DEFAULT 'text'"
-        );
+        Schema::table('messages', function (Blueprint $table) {
+            $table->enum('type', ['text', 'location', 'mission', 'image', 'file'])->default('text')->change();
+        });
     }
 };

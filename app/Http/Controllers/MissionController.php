@@ -9,6 +9,14 @@ use Illuminate\Support\Facades\Auth;
 
 class MissionController extends Controller
 {
+    /** Toegestane bijlagen bij een O-group-veld (geen svg/html/scripts). */
+    private const OGROUP_FILE_EXTENSIONS = [
+        'jpg', 'jpeg', 'png', 'gif', 'webp', 'heic',
+        'pdf', 'txt', 'csv',
+        'doc', 'docx', 'xls', 'xlsx', 'ppt', 'pptx', 'odt', 'ods', 'odp',
+        'gpx', 'kml', 'kmz', 'geojson', 'zip',
+    ];
+
     /**
      * List all missions the user can see: ones they own plus ones they were
      * invited to and accepted.
@@ -140,6 +148,7 @@ class MissionController extends Controller
             'time' => $data['time'] ?? null,
             'ogroup' => $data['ogroup'] ?? null,
             'map' => $data['map'] ?? null,
+            'area' => $data['area'] ?? null,
             'logo' => $data['logo'] ?? null,
             'game_mode' => $data['game_mode'] ?? 'standard',
             'exercise_site_id' => $data['exercise_site_id'] ?? null,
@@ -360,13 +369,17 @@ class MissionController extends Controller
             abort(403, 'You do not have permission to edit this mission');
         }
 
+        // Whitelist op extensie: het bestand komt op de PUBLIEKE disk en wordt
+        // met deze extensie geserveerd. Zonder whitelist kon een .php/.html/.svg
+        // geüpload worden (code-executie resp. stored XSS op het API-domein).
         $request->validate([
-            'file' => 'required|file|max:10240', // 10MB, zelfde limiet als waypoint-foto's
+            'file' => 'required|file|max:10240' // 10MB, zelfde limiet als waypoint-foto's
+                . '|extensions:' . implode(',', self::OGROUP_FILE_EXTENSIONS),
         ]);
 
         $file = $request->file('file');
-        $ext  = strtolower($file->getClientOriginalExtension() ?: $file->extension() ?: '');
-        $name = \Illuminate\Support\Str::uuid() . ($ext ? ".{$ext}" : '');
+        $ext  = strtolower($file->getClientOriginalExtension());
+        $name = \Illuminate\Support\Str::uuid() . ".{$ext}";
         $path = $file->storeAs("ogroup/{$mission->id}", $name, 'public');
 
         \App\Models\UserUpload::record($userId, $path, (int) $file->getSize(), $file->getClientMimeType(), 'ogroup');
@@ -450,6 +463,7 @@ class MissionController extends Controller
             'ogroup' => $mission->ogroup,
             'template_info' => $mission->template_info,
             'map' => $mission->map,
+            'area' => $mission->area,
             // Oefening-modus: laat de client het eigen ExercisePanel tonen.
             'game_mode' => $mission->game_mode,
             'exercise_site_id' => $mission->exercise_site_id,
