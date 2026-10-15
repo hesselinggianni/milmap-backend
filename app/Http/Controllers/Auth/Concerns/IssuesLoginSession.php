@@ -60,7 +60,8 @@ trait IssuesLoginSession
 
         $token = $newToken->plainTextToken;
 
-        $this->sendLoginNotification($request, $user);
+        // Na de respons: een trage SMTP-/ip-api-verbinding mag de login niet laten time-outen.
+        dispatch(fn () => $this->sendLoginNotification($request, $user))->afterResponse();
 
         return response()->json([
             'message' => 'Logged in successfully.',
