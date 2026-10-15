@@ -8,4 +8,7 @@ return [
         'trim',
         explode(',', (string) env('GEOBLOCK_COUNTRIES', 'IR,IQ,RU,CN,KP,AF'))
     ))),
+
+    // Zet op true zodra de site écht achter Cloudflare staat (CF-IPCountry is dan betrouwbaar).
+    'trust_cloudflare' => (bool) env('GEOBLOCK_TRUST_CLOUDFLARE', false),
 ];

@@ -19,6 +19,10 @@ class BlockCountries
         if (! $blocked) {
             return false;
         }
+        // Zonder Cloudflare is CF-IPCountry door de client te vervalsen: dan alleen het IP vertrouwen.
+        if (! config('geoblock.trust_cloudflare')) {
+            $request->headers->remove('CF-IPCountry');
+        }
         $country = GeoIp::country($request);
 
         return $country !== null && in_array($country, $blocked, true);
