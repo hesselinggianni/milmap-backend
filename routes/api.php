@@ -82,6 +82,9 @@ use App\Http\Middleware\RequiresPremium;
 /* Auth group */
 
 Route::prefix('v1')->middleware(['api'])->group(function () {
+    // Frontend-gate: is dit land uitgesloten? (zelf nooit geblokkeerd)
+    Route::get('/geo/status', fn (\Illuminate\Http\Request $r) => response()->json(['blocked' => \App\Http\Middleware\BlockCountries::isBlocked($r)]));
+
     Route::post('/register', [RegisterController::class, 'store'])
         ->middleware('throttle:10,1');
 

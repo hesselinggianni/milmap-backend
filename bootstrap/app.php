@@ -22,6 +22,7 @@ return Application::configure(basePath: dirname(__DIR__))
         $middleware->append(\App\Http\Middleware\SecurityHeaders::class);
 
         $middleware->group('api', [
+            \App\Http\Middleware\BlockCountries::class,
             \App\Http\Middleware\PrivateApiResponse::class,
             \Laravel\Sanctum\Http\Middleware\EnsureFrontendRequestsAreStateful::class,
             'throttle:api',
