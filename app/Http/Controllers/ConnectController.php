@@ -29,7 +29,7 @@ class ConnectController extends Controller {
     }
     public function requestQuote(Request $r) {
         $data = $r->validate(['company_name'=>'required|string|max:190','contact_name'=>'required|string|max:190','email'=>'required|email|max:190','billing_email'=>'nullable|email|max:190','phone'=>'nullable|string|max:50','seat_count'=>'required|integer|min:1|max:100000','purpose'=>'nullable|string|max:190','requirements'=>'nullable|string|max:5000']);
-        $data['user_id'] = $r->user()->id; $quote = ConnectQuoteRequest::create($data);
+        $data['user_id'] = $r->user('sanctum')?->id; $quote = ConnectQuoteRequest::create($data);
         try { Mail::to('gianni@milmap.nl')->send(new \App\Mail\ConnectQuoteRequestMail($quote->toArray())); } catch (\Throwable $e) { report($e); }
         return response()->json(['message'=>'Je offerteaanvraag is verstuurd. We nemen snel contact met je op.','id'=>$quote->id], 201);
     }
@@ -54,8 +54,8 @@ class ConnectController extends Controller {
     public function checkoutSeats(Request $r, ConnectOrganization $organization) {
         $this->manager($r, $organization);
         $data = $r->validate(['additional_seats' => 'required|integer|min:1|max:100000']);
-        $price = config('billing.stripe_price_connect_seat_monthly');
-        abort_unless($price, 503, 'De Connect-seatprijs is nog niet geconfigureerd.');
+        $price = \App\Http\Controllers\AdminBillingController::effectiveMap()['connect_seat_monthly'] ?? null;
+        abort_unless($price, 503, 'De Connect-seatprijs is nog niet gekoppeld (admin → Billing).');
         $owner = $organization->members()->where('role', 'owner')->with('user')->first()?->user;
         abort_unless($owner, 422, 'Er is geen eigenaar aan deze organisatie gekoppeld.');
         $session = (new StripeClient(['api_key' => config('billing.stripe_secret')]))->checkout->sessions->create([

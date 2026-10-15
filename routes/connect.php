@@ -2,6 +2,8 @@
 use App\Http\Controllers\ConnectController;
 use Illuminate\Support\Facades\Route;
 Route::prefix('v1/connect')->group(function () {
+    // Offerte aanvragen kan ook zonder account (connect.milmap.nl/start).
+    Route::post('quote-requests', [ConnectController::class, 'requestQuote'])->middleware('throttle:5,10');
     Route::post('invitations/preview', [ConnectController::class, 'preview'])->middleware('throttle:30,1');
     Route::get('device-branding', [ConnectController::class, 'deviceBranding'])->middleware('throttle:30,1');
     // MDM-koppeling: Bearer organisatie-token (geen gebruikerslogin).
@@ -14,7 +16,6 @@ Route::prefix('v1/connect')->group(function () {
         Route::post('invitations/accept', [ConnectController::class, 'accept'])->middleware('throttle:20,1');
         Route::get('organizations', [ConnectController::class, 'index']);
         Route::get('access', [ConnectController::class, 'access']);
-        Route::post('quote-requests', [ConnectController::class, 'requestQuote'])->middleware('throttle:5,10');
         Route::get('organizations/{organization}', [ConnectController::class, 'show']);
         Route::post('organizations/{organization}/license/upgrade', [ConnectController::class, 'upgradeLicense'])->middleware('throttle:10,1');
         Route::post('organizations/{organization}/license/checkout', [ConnectController::class, 'checkoutSeats'])->middleware('throttle:10,1');
