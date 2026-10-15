@@ -272,7 +272,7 @@ Route::prefix('v1')->middleware(['api'])->group(function () {
     // Partnerportaal — ingelogd als milmap-user mét partnerprofiel. Bewust
     // buiten de EnsureEmailVerified/EnsureNotViewOnly-groep: een net
     // aangemaakte partner moet zijn status kunnen zien.
-    Route::middleware(['auth:sanctum', 'partner'])->prefix('partner')->group(function () {
+    Route::middleware(['auth:sanctum', \App\Http\Middleware\TrackConnectDevice::class, 'partner'])->prefix('partner')->group(function () {
         // Partnerovereenkomst: accepteren → code per mail → bevestigen.
         Route::get ('/agreement',          [\App\Http\Controllers\PartnerAgreementController::class, 'status']);
         Route::post('/agreement/accept',   [\App\Http\Controllers\PartnerAgreementController::class, 'accept'])->middleware('throttle:10,1');
@@ -411,7 +411,7 @@ Route::prefix('v1')->middleware(['api'])->group(function () {
 
 
 Route::prefix('v1')->middleware(['api'])->group(function () {
-    Route::middleware(['auth:sanctum', \App\Http\Middleware\TrackLastSeen::class, \App\Http\Middleware\EnsureEmailVerified::class, \App\Http\Middleware\EnsureNotViewOnly::class])->group(function () {
+    Route::middleware(['auth:sanctum', \App\Http\Middleware\TrackConnectDevice::class, \App\Http\Middleware\TrackLastSeen::class, \App\Http\Middleware\EnsureEmailVerified::class, \App\Http\Middleware\EnsureNotViewOnly::class])->group(function () {
 
         /* User group */
 
@@ -1142,3 +1142,5 @@ Route::prefix('v1')->middleware(['api', 'deploy.token'])->group(function () {
     Route::delete('/deploy/todos/{id}', [TodoController::class, 'deployDestroy']);
     Route::post  ('/deploy/todos/{id}/run-log', [TodoController::class, 'deployRunLog']);
 });
+
+require __DIR__.'/connect.php';

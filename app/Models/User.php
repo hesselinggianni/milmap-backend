@@ -239,6 +239,10 @@ class User extends Authenticatable implements HasLocalePreference
             return self::tierForPrice($sub->stripe_price);
         }
 
+        if ($this->activeConnectMembership()) {
+            return 'team'; // Enterprise inherits the existing team feature matrix.
+        }
+
         // Meeliften: geen eigen abonnement maar wél actief lid van een team dat
         // door een team-abonnement wordt gevoed → erf het team-plan.
         if ($this->activeTeamMembership()) {
@@ -333,7 +337,7 @@ class User extends Authenticatable implements HasLocalePreference
      */
     public function isViewOnly(): bool
     {
-        return (bool) $this->view_only && ! $this->subscribed();
+        return (bool) $this->view_only && ! $this->subscribed() && ! $this->activeConnectMembership();
     }
 
     // ── Gratis proefperiode + premium-toegang ───────────────────────
@@ -388,7 +392,7 @@ class User extends Authenticatable implements HasLocalePreference
      */
     public function hasPremiumAccess(): bool
     {
-        return $this->onAppTrial() || $this->subscribed() || $this->activeTeamMembership() !== null;
+        return $this->onAppTrial() || $this->subscribed() || $this->activeTeamMembership() !== null || $this->activeConnectMembership() !== null;
     }
 
     /**
@@ -464,6 +468,32 @@ class User extends Authenticatable implements HasLocalePreference
      * register). Stuurt de app precies genoeg om de trial-badge te tonen en de
      * premium-UI op slot te zetten zonder losse call.
      */
+    public function activeConnectMembership(): ?ConnectMember
+    {
+        // Keep older isolated fixtures and rolling deployments usable before the migration runs.
+        if (! $this->id || ! \Illuminate\Support\Facades\Schema::hasTable('connect_members')) return null;
+        $member = ConnectMember::where('user_id', $this->id)->where('status', 'active')
+            ->whereHas('organization', fn ($q) => $q->withActiveLicense())
+            ->with('organization')->first();
+        if ($member && $member->organization?->restrict_to_allowed_devices && ! $this->onAllowedConnectDevice($member->organization)) return null;
+        return $member;
+    }
+
+    /**
+     * Organisaties met "alleen toegestane apparaten": het Connect-recht geldt enkel als de
+     * huidige sessie op een apparaat uit hun lijst draait. Zonder sessie-context (queue,
+     * admin, cron) wordt niet beperkt.
+     */
+    private function onAllowedConnectDevice(ConnectOrganization $org): bool
+    {
+        $token = method_exists($this, 'currentAccessToken') ? $this->currentAccessToken() : null;
+        if (! $token || ! isset($token->id)) return true;
+        $deviceId = $token->connect_device_id ?? null;
+        $vendor = $deviceId ? ConnectDevice::whereKey($deviceId)->value('vendor_id') : null;
+        if (! $vendor) return false;
+        return ConnectAllowedDevice::where('organization_id', $org->id)->whereRaw('LOWER(udid) = ?', [strtolower($vendor)])->exists();
+    }
+
     public function premiumState(): array
     {
         $membership = $this->activeTeamMembership();
@@ -488,6 +518,7 @@ class User extends Authenticatable implements HasLocalePreference
             'map_limit'       => $this->hasPremiumAccess() ? null : self::FREE_MAP_LIMIT,
             'mission_limit'   => $this->hasPremiumAccess() ? null : self::FREE_MISSION_LIMIT,
             'features'        => $this->entitlements(),
+            'organization'    => ($org = $this->activeConnectMembership()?->organization) ? ['id' => $org->id, 'name' => $org->name, 'via' => 'enterprise'] : null,
             'team'            => $team,   // null tenzij je meelift op een team
         ];
     }

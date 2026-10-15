@@ -1010,6 +1010,24 @@ class BillingController extends Controller
         return response()->json(['received' => true]);
     }
 
+    private function onConnectCheckoutCompleted(object $session): void
+    {
+        $metadata = $session->metadata ?? null;
+        $orgId = (int) ($metadata->connect_organization_id ?? 0);
+        $seats = (int) ($metadata->additional_seats ?? 0);
+        if ($orgId < 1 || $seats < 1 || (($session->payment_status ?? null) !== 'paid')) return;
+        $org = \App\Models\ConnectOrganization::find($orgId);
+        if ($org && $org->ends_at && $org->ends_at->isFuture()) {
+            app(\App\Services\ConnectLicensing::class)->add($org, [
+                'name' => 'Enterprise-uitbreiding', 'seat_count' => $seats,
+                'monthly_price_cents' => max(0, (int) ($session->amount_total ?? 0)),
+                'currency' => strtoupper($session->currency ?? $org->currency),
+                'starts_at' => now(), 'ends_at' => $org->ends_at,
+                'source_reference' => 'stripe:'.$session->id,
+            ]);
+        }
+    }
+
     // ── Partnersysteem-webhooks ────────────────────────────────────
 
     /**
@@ -1067,6 +1085,10 @@ class BillingController extends Controller
 
     private function onCheckoutCompleted(object $session): void
     {
+        if (isset($session->metadata->connect_organization_id)) {
+            $this->onConnectCheckoutCompleted($session);
+            return;
+        }
         $userId    = $session->metadata->user_id ?? null;
         $isNewUser = ($session->metadata->is_new_user ?? 'false') === 'true';
         $planKey   = $session->metadata->plan ?? 'pro_monthly';
