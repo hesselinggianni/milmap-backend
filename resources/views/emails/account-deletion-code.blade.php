@@ -1,20 +1,8 @@
-@extends('emails.layout')
-
+@extends('emails.layout-minimal')
 @section('title', __('mail.account_deletion_code.title') . ' — Milmap')
-
 @section('body')
-  <h2 style="margin:0 0 8px;font-size:20px;font-weight:700;color:#f8fafc;">
-    {{ __('mail.account_deletion_code.title') }}
-  </h2>
-  <p style="margin:0 0 24px;font-size:14px;color:#cbd5e1;line-height:1.6;">
-    {{ __('mail.account_deletion_code.intro', ['minutes' => $minutes]) }}
-  </p>
-
-  <div style="margin:0 0 24px;padding:18px;text-align:center;background:#0f172a;border:1px solid #1e293b;border-radius:12px;">
-    <span style="font-size:30px;letter-spacing:8px;font-weight:700;color:#f8fafc;">{{ $code }}</span>
-  </div>
-
-  <p style="margin:0;font-size:13px;color:#94a3b8;line-height:1.6;">
-    {{ __('mail.account_deletion_code.footer') }}
-  </p>
+  <h1 style="margin:0 0 40px;font-size:34px;line-height:1.2;font-weight:800;color:#01163d;letter-spacing:-0.02em;">{{ __('mail.account_deletion_code.title') }}</h1>
+  <p style="margin:0 0 36px;">{{ __('mail.account_deletion_code.intro', ['minutes' => $minutes]) }}</p>
+  <p style="margin:0 0 36px;font-size:44px;line-height:1.2;font-weight:800;color:#01163d;letter-spacing:6px;">{{ $code }}</p>
+  <p style="margin:0;">{{ __('mail.account_deletion_code.footer') }}</p>
 @endsection

@@ -668,6 +668,7 @@ Route::prefix('v1')->middleware(['api'])->group(function () {
         Route::get('/missions/{id}', [MissionController::class, 'show']);
         Route::put('/missions/{id}', [MissionController::class, 'update']);
         Route::post('/missions/{id}/dispatch-warning-order', [MissionController::class, 'dispatchWarningOrder']);
+        Route::post('/missions/{id}/ogroup/upload', [MissionController::class, 'uploadOgroupFile']);
         Route::delete('/missions/{id}', [MissionController::class, 'destroy']);
 
         // ── Mission briefing + presentation ──────────────────────────

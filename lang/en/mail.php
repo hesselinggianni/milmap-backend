@@ -13,6 +13,7 @@
  */
 
 return [
+    'minimal_footer' => 'For questions, contact support@milmap.nl',
     'account_closed' => [
         'subject' => 'Your account has been closed — Milmap',
         'title' => 'Your account has been closed',
@@ -252,7 +253,8 @@ return [
         'title' => 'New sign-in detected',
         'subtitle' => 'Someone signed in to your Milmap account',
         'eyebrow' => 'Account',
-        'intro' => 'Hello :name, someone has just signed in to your account with the details below.',
+        'greeting' => 'Hi :name,',
+        'intro' => 'We\'re notifying you by email of a new sign-in to your Milmap account:',
         'table_title' => 'Sign-in details',
         'time' => 'Time',
         'ip' => 'IP address',

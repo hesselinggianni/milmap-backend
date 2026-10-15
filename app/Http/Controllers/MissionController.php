@@ -344,6 +344,40 @@ class MissionController extends Controller
     }
 
     /**
+     * Upload een bestand voor een "bestand"-veld in een custom O-group-
+     * template (zie ogroupTemplateModel.js, veldtype "file"). Slaat alleen het
+     * bestand op en geeft { url, name } terug — het invoegen in
+     * ogroup.values.<fase>.fields.<veld> gebeurt via de gewone missie-update
+     * (PUT /api/v1/missions/{id}), net als bij elk ander veldtype.
+     * POST /api/v1/missions/{id}/ogroup/upload
+     */
+    public function uploadOgroupFile(Request $request, $id)
+    {
+        $mission = Mission::findOrFail($id);
+        $userId = (int) Auth::id();
+
+        if (!$mission->canEdit($userId)) {
+            abort(403, 'You do not have permission to edit this mission');
+        }
+
+        $request->validate([
+            'file' => 'required|file|max:10240', // 10MB, zelfde limiet als waypoint-foto's
+        ]);
+
+        $file = $request->file('file');
+        $ext  = strtolower($file->getClientOriginalExtension() ?: $file->extension() ?: '');
+        $name = \Illuminate\Support\Str::uuid() . ($ext ? ".{$ext}" : '');
+        $path = $file->storeAs("ogroup/{$mission->id}", $name, 'public');
+
+        \App\Models\UserUpload::record($userId, $path, (int) $file->getSize(), $file->getClientMimeType(), 'ogroup');
+
+        return response()->json([
+            'url'  => \Illuminate\Support\Facades\Storage::disk('public')->url($path),
+            'name' => $file->getClientOriginalName(),
+        ], 201);
+    }
+
+    /**
      * Delete a mission (owner only).
      * DELETE /api/v1/missions/{id}
      */

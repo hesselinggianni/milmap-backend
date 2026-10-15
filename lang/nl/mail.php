@@ -13,6 +13,7 @@
  */
 
 return [
+    'minimal_footer' => 'Vragen? Neem contact op via support@milmap.nl',
     'account_closed' => [
         'subject' => 'Uw account is gesloten — Milmap',
         'title' => 'Uw account is gesloten',
@@ -252,7 +253,8 @@ return [
         'title' => 'Nieuwe inlog gedetecteerd',
         'subtitle' => 'Er is ingelogd op uw Milmap account',
         'eyebrow' => 'Account',
-        'intro' => 'Hallo :name, er is zojuist ingelogd op uw account met de onderstaande gegevens.',
+        'greeting' => 'Hoi :name,',
+        'intro' => 'Hierbij laten we je weten dat er is ingelogd op je Milmap-account:',
         'table_title' => 'Inloggegevens',
         'time' => 'Tijdstip',
         'ip' => 'IP-adres',
