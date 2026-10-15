@@ -1086,6 +1086,8 @@ Route::prefix('v1')->middleware(['api'])->group(function () {
             Route::get('/admin/users/{userId}', [AdminController::class, 'getUser']);
             Route::delete('/admin/users/{userId}', [AdminController::class, 'deleteUser']);
             Route::post('/admin/users/{userId}/reset-password', [AdminController::class, 'resetUserPassword']);
+            Route::post('/admin/users/{userId}/connect-organization', [AdminController::class, 'createConnectOrganization']);
+            Route::post('/admin/users/{userId}/connect-organizations/{organizationId}/licenses', [AdminController::class, 'addConnectLicense']);
             // Gratis (premium-)toegang toekennen/verlengen + handmatig e-mail verifiëren.
             Route::post('/admin/users/{userId}/grant-access', [AdminController::class, 'grantAccess']);
             Route::post('/admin/users/{userId}/verify-email', [AdminController::class, 'verifyUserEmail']);
