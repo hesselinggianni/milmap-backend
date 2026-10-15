@@ -160,6 +160,47 @@ class ConnectController extends Controller {
         });
         return response()->json(['imported' => $rows->count(), 'new' => $new, 'allowed_devices' => $this->allowedDevices($organization)]);
     }
+    public function createMdmToken(Request $r, ConnectOrganization $organization) {
+        $this->manager($r, $organization);
+        $token = 'mmc_' . \Illuminate\Support\Str::random(40);
+        $organization->forceFill(['mdm_token_hash' => hash('sha256', $token), 'mdm_token_prefix' => substr($token, 0, 8), 'mdm_token_created_at' => now(), 'mdm_token_last_used_at' => null])->save();
+        return response()->json(['token' => $token, 'organization' => $organization->fresh()], 201);
+    }
+    public function revokeMdmToken(Request $r, ConnectOrganization $organization) {
+        $this->manager($r, $organization);
+        $organization->forceFill(['mdm_token_hash' => null, 'mdm_token_prefix' => null, 'mdm_token_created_at' => null, 'mdm_token_last_used_at' => null])->save();
+        return response()->noContent();
+    }
+    private function mdmOrganization(Request $r): ConnectOrganization {
+        $token = (string) $r->bearerToken();
+        $org = $token !== '' ? ConnectOrganization::where('mdm_token_hash', hash('sha256', $token))->first() : null;
+        abort_unless($org, 401, 'Ongeldig MDM-token.');
+        $org->forceFill(['mdm_token_last_used_at' => now()])->saveQuietly();
+        return $org;
+    }
+    public function mdmList(Request $r) {
+        $org = $this->mdmOrganization($r);
+        return response()->json(['devices' => ConnectAllowedDevice::where('organization_id', $org->id)->orderBy('name')->get(['name', 'udid']), 'seat_limit' => $org->seat_limit]);
+    }
+    public function mdmAdd(Request $r) {
+        $org = $this->mdmOrganization($r);
+        abort_unless($org->licensed(), 403, 'De licentie van deze organisatie is niet actief.');
+        $data = $r->validate(['udid' => ['required', 'string', 'regex:/^[A-Za-z0-9-]{8,64}$/'], 'name' => 'nullable|string|max:120']);
+        $udid = strtoupper(trim($data['udid']));
+        $existing = ConnectAllowedDevice::where('organization_id', $org->id)->where('udid', $udid)->first();
+        if (! $existing) {
+            $count = ConnectAllowedDevice::where('organization_id', $org->id)->count();
+            abort_if($count >= $org->seat_limit, 422, "Alle {$org->seat_limit} licentieplaatsen zijn in gebruik.");
+        }
+        $name = trim($data['name'] ?? '') ?: ($existing?->name ?? $udid);
+        $device = ConnectAllowedDevice::updateOrCreate(['organization_id' => $org->id, 'udid' => $udid], ['name' => $name]);
+        return response()->json(['device' => ['name' => $device->name, 'udid' => $device->udid], 'created' => ! $existing], $existing ? 200 : 201);
+    }
+    public function mdmRemove(Request $r, string $udid) {
+        $org = $this->mdmOrganization($r);
+        ConnectAllowedDevice::where('organization_id', $org->id)->whereRaw('LOWER(udid) = ?', [strtolower($udid)])->delete();
+        return response()->noContent();
+    }
     public function deleteAllowedDevice(Request $r, ConnectOrganization $organization, ConnectAllowedDevice $allowedDevice) {
         $this->manager($r, $organization);
         abort_unless((int) $allowedDevice->organization_id === (int) $organization->id, 404);

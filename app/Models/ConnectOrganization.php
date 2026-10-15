@@ -8,7 +8,7 @@ class ConnectOrganization extends Model
 {
     protected $fillable = ['restrict_to_allowed_devices', 'logo_path', 'login_background_path', 'name', 'status', 'seat_limit', 'monthly_price_cents', 'monthly_price_per_seat_cents', 'currency', 'starts_at', 'ends_at'];
     protected $casts = ['restrict_to_allowed_devices' => 'boolean', 'starts_at' => 'datetime', 'ends_at' => 'datetime', 'seat_limit' => 'integer', 'monthly_price_cents' => 'integer', 'monthly_price_per_seat_cents' => 'integer'];
-    protected $hidden = ['logo_path', 'login_background_path'];
+    protected $hidden = ['logo_path', 'login_background_path', 'mdm_token_hash'];
     protected $appends = ['logo_url', 'login_background_url'];
     private function publicUrl(?string $path): ?string
     {
