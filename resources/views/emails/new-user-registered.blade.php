@@ -1,75 +1,44 @@
-@extends('emails.layout')
+@extends('emails.layout-minimal')
 @section('title', __('mail.new_user_registered.page_title'))
 @section('body')
-
-  <table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0" style="margin-bottom:24px;">
-    <tr>
-      <td style="vertical-align:top;width:56px;">
-        <div style="width:48px;height:48px;background:#1a2433;border:1px solid #2a3a52;
-                    border-radius:10px;text-align:center;line-height:48px;">
-          <svg xmlns="http://www.w3.org/2000/svg" width="22" height="22" viewBox="0 0 24 24"
-               fill="none" stroke="#2b7fff" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"
-               style="display:inline-block;vertical-align:middle;">
-            <path d="M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/>
-            <path d="M19 8v6"/><path d="M22 11h-6"/>
-          </svg>
-        </div>
-      </td>
-      <td style="vertical-align:middle;padding-left:14px;">
-        <h1 style="margin:0 0 3px;font-size:20px;font-weight:700;color:#f8fafc;letter-spacing:-0.01em;line-height:1.2;">
-          {{ __('mail.new_user_registered.title') }}
-        </h1>
-        <p style="margin:0;font-size:13px;color:#94a3b8;">{{ __('mail.new_user_registered.subtitle') }}</p>
-      </td>
-    </tr>
+  <h1 style="margin:0 0 40px;font-size:34px;line-height:1.2;font-weight:800;color:#01163d;letter-spacing:-0.02em;">
+    {{ __('mail.new_user_registered.title') }}
+  </h1>
+  <p style="margin:0 0 36px;">{{ __('mail.new_user_registered.subtitle') }}</p>
+  <table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0" style="border-top:1px solid #e5e7eb;">
+<tr>
+  <td style="padding:12px 0;width:34%;font-size:14px;color:#6b7280;border-bottom:1px solid #e5e7eb;">{{ __('mail.new_user_registered.email') }}</td>
+  <td style="padding:12px 0;font-size:15px;font-weight:600;color:#01163d;border-bottom:1px solid #e5e7eb;">{{ $user->email }}</td>
+</tr>
+<tr>
+  <td style="padding:12px 0;width:34%;font-size:14px;color:#6b7280;border-bottom:1px solid #e5e7eb;">{{ __('mail.new_user_registered.id') }}</td>
+  <td style="padding:12px 0;font-size:15px;font-weight:600;color:#01163d;border-bottom:1px solid #e5e7eb;font-family:monospace;">{{ $user->id }}</td>
+</tr>
+<tr>
+  <td style="padding:12px 0;width:34%;font-size:14px;color:#6b7280;border-bottom:1px solid #e5e7eb;">{{ __('mail.new_user_registered.date') }}</td>
+  <td style="padding:12px 0;font-size:15px;font-weight:600;color:#01163d;border-bottom:1px solid #e5e7eb;">{{ now() }}</td>
+</tr>
+<tr>
+  <td style="padding:12px 0;width:34%;font-size:14px;color:#6b7280;border-bottom:1px solid #e5e7eb;">{{ __('mail.new_user_registered.registered_via') }}</td>
+  <td style="padding:12px 0;font-size:15px;font-weight:600;color:#01163d;border-bottom:1px solid #e5e7eb;word-break:break-all;">{{ !empty($sourceUrl) ? $sourceUrl : __('mail.new_user_registered.unknown') }}</td>
+</tr>
+@if(!empty($referrer))
+<tr>
+  <td style="padding:12px 0;width:34%;font-size:14px;color:#6b7280;border-bottom:1px solid #e5e7eb;">{{ __('mail.new_user_registered.referrer') }}</td>
+  <td style="padding:12px 0;font-size:15px;font-weight:600;color:#01163d;border-bottom:1px solid #e5e7eb;word-break:break-all;">{{ $referrer ?? '' }}</td>
+</tr>
+@endif
+@if(!empty($useCase))
+<tr>
+  <td style="padding:12px 0;width:34%;font-size:14px;color:#6b7280;border-bottom:1px solid #e5e7eb;">{{ __('mail.new_user_registered.use_case') }}</td>
+  <td style="padding:12px 0;font-size:15px;font-weight:600;color:#01163d;border-bottom:1px solid #e5e7eb;">{{ $useCase ?? '' }}</td>
+</tr>
+@endif
+@if(!empty($interests))
+<tr>
+  <td style="padding:12px 0;width:34%;font-size:14px;color:#6b7280;border-bottom:1px solid #e5e7eb;">{{ __('mail.new_user_registered.interests') }}</td>
+  <td style="padding:12px 0;font-size:15px;font-weight:600;color:#01163d;border-bottom:1px solid #e5e7eb;">{{ implode(', ', $interests ?? []) }}</td>
+</tr>
+@endif
   </table>
-
-  <div style="height:1px;background:#1e293b;margin:0 0 24px;"></div>
-
-  <table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0"
-         style="border:1px solid #1e293b;border-radius:8px;overflow:hidden;">
-    <tr>
-      <td colspan="2" style="padding:10px 16px;background:#0d1320;border-bottom:1px solid #1e293b;
-                 font-size:10px;font-weight:700;letter-spacing:0.1em;text-transform:uppercase;color:#7e8a9c;">
-        {{ __('mail.new_user_registered.table_title') }}
-      </td>
-    </tr>
-    <tr>
-      <td style="padding:11px 16px;width:30%;font-size:12.5px;color:#94a3b8;border-bottom:1px solid #1a2433;font-weight:500;">{{ __('mail.new_user_registered.email') }}</td>
-      <td style="padding:11px 16px;font-size:13px;color:#f8fafc;border-bottom:1px solid #1a2433;">{{ $user->email }}</td>
-    </tr>
-    <tr>
-      <td style="padding:11px 16px;font-size:12.5px;color:#94a3b8;border-bottom:1px solid #1a2433;font-weight:500;">{{ __('mail.new_user_registered.id') }}</td>
-      <td style="padding:11px 16px;font-size:13px;color:#f8fafc;border-bottom:1px solid #1a2433;font-family:monospace;">{{ $user->id }}</td>
-    </tr>
-    <tr>
-      <td style="padding:11px 16px;font-size:12.5px;color:#94a3b8;border-bottom:1px solid #1a2433;font-weight:500;">{{ __('mail.new_user_registered.date') }}</td>
-      <td style="padding:11px 16px;font-size:13px;color:#f8fafc;border-bottom:1px solid #1a2433;">{{ now() }}</td>
-    </tr>
-    <tr>
-      <td style="padding:11px 16px;font-size:12.5px;color:#94a3b8;{{ !empty($referrer) ? 'border-bottom:1px solid #1a2433;' : '' }}font-weight:500;">{{ __('mail.new_user_registered.registered_via') }}</td>
-      <td style="padding:11px 16px;font-size:13px;color:#f8fafc;{{ !empty($referrer) ? 'border-bottom:1px solid #1a2433;' : '' }}word-break:break-all;">{{ !empty($sourceUrl) ? $sourceUrl : __('mail.new_user_registered.unknown') }}</td>
-    </tr>
-    @if(!empty($referrer))
-    <tr>
-      <td style="padding:11px 16px;font-size:12.5px;color:#94a3b8;{{ (!empty($useCase) || !empty($interests)) ? 'border-bottom:1px solid #1a2433;' : '' }}font-weight:500;">{{ __('mail.new_user_registered.referrer') }}</td>
-      <td style="padding:11px 16px;font-size:13px;color:#f8fafc;{{ (!empty($useCase) || !empty($interests)) ? 'border-bottom:1px solid #1a2433;' : '' }}word-break:break-all;">{{ $referrer }}</td>
-    </tr>
-    @endif
-    {{-- Antwoorden uit de start-funnel. Ontbreken bij een directe registratie
-         of een uitnodiging; dan tonen we de rijen helemaal niet. --}}
-    @if(!empty($useCase))
-    <tr>
-      <td style="padding:11px 16px;font-size:12.5px;color:#94a3b8;{{ !empty($interests) ? 'border-bottom:1px solid #1a2433;' : '' }}font-weight:500;">{{ __('mail.new_user_registered.use_case') }}</td>
-      <td style="padding:11px 16px;font-size:13px;color:#f8fafc;{{ !empty($interests) ? 'border-bottom:1px solid #1a2433;' : '' }}">{{ $useCase }}</td>
-    </tr>
-    @endif
-    @if(!empty($interests))
-    <tr>
-      <td style="padding:11px 16px;font-size:12.5px;color:#94a3b8;font-weight:500;">{{ __('mail.new_user_registered.interests') }}</td>
-      <td style="padding:11px 16px;font-size:13px;color:#f8fafc;">{{ implode(', ', $interests) }}</td>
-    </tr>
-    @endif
-  </table>
-
 @endsection
