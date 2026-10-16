@@ -745,6 +745,7 @@ class AdminController extends Controller
             'seats' => 'required|integer|min:1|max:100000',
             'monthly_price' => 'required|numeric|min:0|max:10000000',
             'months' => 'required|integer|min:1|max:120',
+            'trial_days' => 'nullable|integer|min:1|max:365',
         ]);
 
         $user = User::findOrFail($userId);
@@ -759,13 +760,14 @@ class AdminController extends Controller
                 'name' => $data['name'], 'seat_limit' => $data['seats'],
                 'monthly_price_cents' => (int) round(((float) $data['monthly_price']) * 100),
                 'monthly_price_per_seat_cents' => (int) round(((float) $data['monthly_price']) * 100 / max(1, (int) $data['seats'])), 'currency' => 'EUR',
-                'status' => 'active', 'starts_at' => now(), 'ends_at' => now()->addMonthsNoOverflow($data['months']),
+                'status' => 'active', 'starts_at' => now(), 'ends_at' => ! empty($data['trial_days']) ? now()->addDays($data['trial_days']) : now()->addMonthsNoOverflow($data['months']),
             ]);
             \App\Models\ConnectMember::create([
                 'organization_id' => $organization->id, 'user_id' => $user->id, 'first_name' => $user->first_name ?: 'Beheerder',
                 'last_name' => $user->last_name ?: '', 'email' => mb_strtolower($user->email), 'role' => 'owner', 'status' => 'active', 'tags' => [], 'accepted_at' => now(),
             ]);
             app(\App\Services\ConnectLicensing::class)->preserveExisting($organization);
+            if (! empty($data['trial_days'])) $organization->licenses()->update(['is_trial' => true, 'name' => 'Proeflicentie']);
             return $organization->load('licenses');
         });
         return response()->json(['message' => 'Connect-organisatie aangemaakt.', 'organization' => $organization], 201);
@@ -793,7 +795,7 @@ class AdminController extends Controller
         $data = $request->validate([
             'name' => 'required|string|max:160', 'seats' => 'required|integer|min:1|max:100000',
             'monthly_price' => 'required|numeric|min:0|max:10000000', 'months' => 'required|integer|min:1|max:120',
-            'request_id' => 'required|uuid',
+            'request_id' => 'required|uuid', 'trial_days' => 'nullable|integer|min:1|max:365',
         ]);
         $user = User::findOrFail($userId);
         abort_if($user->isArchived(), 422, 'Een gearchiveerd account kan geen licentie krijgen.');
@@ -803,8 +805,8 @@ class AdminController extends Controller
         $license = app(\App\Services\ConnectLicensing::class)->add($organization, [
             'name' => $data['name'], 'seat_count' => $data['seats'],
             'monthly_price_cents' => (int) round(((float) $data['monthly_price']) * 100), 'currency' => $organization->currency,
-            'starts_at' => now(), 'ends_at' => now()->addMonthsNoOverflow($data['months']),
-            'source_reference' => 'admin:'.$organization->id.':'.$data['request_id'],
+            'starts_at' => now(), 'ends_at' => ! empty($data['trial_days']) ? now()->addDays($data['trial_days']) : now()->addMonthsNoOverflow($data['months']),
+            'is_trial' => ! empty($data['trial_days']), 'source_reference' => 'admin:'.$organization->id.':'.$data['request_id'],
         ]);
         return response()->json(['message' => 'Enterprise-licentie toegevoegd.', 'license' => $license, 'organization' => $organization->fresh()->load('licenses')], 201);
     }
