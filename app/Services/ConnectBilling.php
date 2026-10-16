@@ -22,11 +22,11 @@ class ConnectBilling {
             ConnectOrganization::whereKey($org->id)->lockForUpdate()->firstOrFail();
             $existing=ConnectOrder::where('organization_id',$org->id)->where('request_id',$data['request_id'])->first();
             if ($existing) {
-                abort_unless($existing->seats===$data['seats'] && $existing->term_months===$data['term_months'] && $existing->payment_method===$data['payment_method'],409,'Deze bestelreferentie hoort bij een andere bestelling.');
+                abort_unless($existing->seats===$data['seats'] && $existing->term_months===$data['term_months'] && $existing->payment_method===$data['payment_method'] && (bool)$existing->auto_renew===(bool)($data['auto_renew'] ?? true),409,'Deze bestelreferentie hoort bij een andere bestelling.');
                 return $existing;
             }
             return ConnectOrder::create(['organization_id'=>$org->id,'ordered_by'=>$actorId,'request_id'=>$data['request_id'],
-                'seats'=>$data['seats'],'term_months'=>$data['term_months'],'payment_method'=>$data['payment_method'],
+                'seats'=>$data['seats'],'term_months'=>$data['term_months'],'payment_method'=>$data['payment_method'],'auto_renew'=>(bool)($data['auto_renew'] ?? true),
                 'unit_monthly_cents'=>$quote['unit_monthly_cents'],'total_cents'=>$quote['unit_monthly_cents']*$data['seats']*$data['term_months'],
                 'currency'=>$quote['currency'],'billing_details'=>$data['billing_details']]);
         });
@@ -41,9 +41,9 @@ class ConnectBilling {
             $customerId=$customer->id; $org->forceFill(['stripe_customer_id'=>$customerId])->save();
         }
         $stripe->customers->update($customerId,['name'=>$data['billing_details']['company_name'],'email'=>$data['billing_details']['email'],'address'=>$data['billing_details']['address']],['idempotency_key'=>'connect-customer-details-'.$order->id]);
-        $metadata=['connect_order_id'=>(string)$order->id,'connect_organization_id'=>(string)$org->id,'seats'=>(string)$order->seats,'term_months'=>(string)$order->term_months];
-        $priceData=['currency'=>strtolower($order->currency),'product'=>$quote['product'],'unit_amount'=>$order->unit_monthly_cents*$order->term_months,
-            'recurring'=>['interval'=>'month','interval_count'=>$order->term_months]];
+        $metadata=['connect_order_id'=>(string)$order->id,'connect_organization_id'=>(string)$org->id,'seats'=>(string)$order->seats,'term_months'=>(string)$order->term_months,'auto_renew'=>$order->auto_renew?'1':'0'];
+        $priceData=['currency'=>strtolower($order->currency),'product'=>$this->productFor($org),'unit_amount'=>$order->unit_monthly_cents*$order->term_months,
+            'recurring'=>$order->term_months===12 ? ['interval'=>'year','interval_count'=>1] : ['interval'=>'month','interval_count'=>$order->term_months]];
         if (in_array($quote['tax_behavior'],['inclusive','exclusive'])) $priceData['tax_behavior']=$quote['tax_behavior'];
         $item=['price_data'=>$priceData,'quantity'=>$order->seats];
         if ($order->payment_method==='direct') {
@@ -57,6 +57,7 @@ class ConnectBilling {
         } else {
             $subscription=$order->stripe_subscription_id ? $stripe->subscriptions->retrieve($order->stripe_subscription_id,['expand'=>['latest_invoice']]) : $stripe->subscriptions->create(['customer'=>$customerId,'items'=>[$item],'collection_method'=>'send_invoice','days_until_due'=>14,
                 'metadata'=>$metadata,'expand'=>['latest_invoice']],['idempotency_key'=>'connect-invoice-subscription-'.$order->id]);
+            if (!$order->auto_renew && !$order->stripe_subscription_id) $stripe->subscriptions->update($subscription->id,['cancel_at_period_end'=>true],['idempotency_key'=>'connect-norenew-'.$order->id]);
             $order->update(['stripe_subscription_id'=>$subscription->id,'status'=>'awaiting_payment']);
             $invoice=$subscription->latest_invoice;
             if (is_string($invoice)) $invoice=$stripe->invoices->retrieve($invoice,[]);
@@ -66,6 +67,14 @@ class ConnectBilling {
         }
         app(ConnectManagement::class)->audit($org->id,'order.created','ConnectOrder',$order->id,['seats'=>$order->seats,'term_months'=>$order->term_months,'payment_method'=>$order->payment_method]);
         return $order->fresh()->load('invoices');
+    }
+    /** Eigen Stripe-product per klant (custom abonnement), eenmalig via de API aangemaakt. */
+    protected function productFor(ConnectOrganization $org): string {
+        if ($org->stripe_product_id) return $org->stripe_product_id;
+        $product=$this->stripe()->products->create(['name'=>'MilMap Connect — '.$org->name,'description'=>'Connect-seats (accounts en apparaten) voor '.$org->name,
+            'metadata'=>['connect_organization_id'=>(string)$org->id,'connect_organization_uuid'=>(string)$org->uuid]],['idempotency_key'=>'connect-product-'.$org->id]);
+        $org->forceFill(['stripe_product_id'=>$product->id])->save();
+        return $product->id;
     }
     public function cancel(ConnectOrder $order): void {
         abort_unless($order->stripe_subscription_id,422,'Er is nog geen actief abonnement bij deze bestelling.');
@@ -101,6 +110,7 @@ class ConnectBilling {
         if ($type==='checkout.session.completed') {
             abort_unless(!$order->stripe_checkout_id || $order->stripe_checkout_id===$object->id,409);
             $order->update(['stripe_checkout_id'=>$object->id,'stripe_subscription_id'=>$subscriptionId,'status'=>$order->status==='paid' ? 'paid' : 'awaiting_payment']);
+            if (!$order->auto_renew && $subscriptionId) $this->stripe()->subscriptions->update($subscriptionId,['cancel_at_period_end'=>true],['idempotency_key'=>'connect-norenew-'.$order->id]);
             return true; // Checkout completion alone never grants capacity.
         }
         if (str_starts_with($type,'invoice.')) {
