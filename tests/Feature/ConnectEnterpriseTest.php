@@ -130,4 +130,13 @@ class ConnectEnterpriseTest extends TestCase {
         $this->assertNotNull(\Laravel\Sanctum\PersonalAccessToken::find($second->id));
         $this->assertSame(2,$org->fresh()->usedLicenses());
     }
+    public function test_udid_device_login_is_optional_per_organization(): void {
+        $owner=$this->user('udid-owner@test.nl'); $org=$this->organization($owner,5);
+        \App\Models\ConnectAllowedDevice::create(['organization_id'=>$org->id,'name'=>'iPad','udid'=>'00008020-001234567890002E','platform'=>'ios']);
+        $this->postJson('/api/v1/connect/device-login',['device_id'=>'00008020-001234567890002E'])->assertUnauthorized();
+        $org->update(['device_login_mode'=>'udid']);
+        $this->postJson('/api/v1/connect/device-login/status',['device_id'=>'00008020-001234567890002E'])->assertOk();
+        $this->withHeaders(['X-Milmap-Installation'=>(string)Str::uuid()])->postJson('/api/v1/connect/device-login',['device_id'=>'00008020-001234567890002E'])->assertOk()->assertJsonStructure(['token']);
+        $this->postJson('/api/v1/connect/device-login',['device_id'=>'00008020-0012345678900000'])->assertUnauthorized();
+    }
 }

@@ -6,7 +6,7 @@ use Illuminate\Database\Eloquent\Builder;
 
 class ConnectOrganization extends Model
 {
-    protected $fillable = ['contact_name', 'contact_email', 'billing_email', 'stripe_price_id', 'management_policy', 'restrict_to_allowed_devices', 'logo_path', 'login_background_path', 'name', 'status', 'seat_limit', 'monthly_price_cents', 'monthly_price_per_seat_cents', 'currency', 'starts_at', 'ends_at'];
+    protected $fillable = ['device_login_mode', 'contact_name', 'contact_email', 'billing_email', 'stripe_price_id', 'management_policy', 'restrict_to_allowed_devices', 'logo_path', 'login_background_path', 'name', 'status', 'seat_limit', 'monthly_price_cents', 'monthly_price_per_seat_cents', 'currency', 'starts_at', 'ends_at'];
     protected $attributes = ['restrict_to_allowed_devices' => true];
     protected $casts = ['management_policy' => 'array', 'restrict_to_allowed_devices' => 'boolean', 'starts_at' => 'datetime', 'ends_at' => 'datetime', 'seat_limit' => 'integer', 'monthly_price_cents' => 'integer', 'monthly_price_per_seat_cents' => 'integer'];
     protected $hidden = ['logo_path', 'login_background_path', 'mdm_token_hash'];

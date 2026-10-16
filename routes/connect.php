@@ -42,6 +42,7 @@ Route::prefix('v1/connect')->group(function () {
         Route::delete('organizations/{organization}/devices/{device}', [ConnectController::class, 'revokeDevice']);
         Route::post('organizations/{organization}/devices/{device}/update', [ConnectController::class, 'requestDeviceUpdate'])->middleware('throttle:20,1');
         Route::put('organizations/{organization}/account', [ConnectController::class, 'updateAccount'])->middleware('throttle:20,1');
+        Route::put('organizations/{organization}/device-login-mode', [ConnectController::class, 'updateDeviceLoginMode']);
         Route::put('organizations/{organization}/device-restriction', [ConnectController::class, 'updateDeviceRestriction']);
         Route::post('organizations/{organization}/branding', [ConnectController::class, 'updateBranding'])->middleware('throttle:20,1');
         Route::post('organizations/{organization}/allowed-devices', [ConnectController::class, 'importAllowedDevices'])->middleware('throttle:10,1');

@@ -44,6 +44,17 @@ class ConnectDeviceLogin
         return $device;
     }
 
+    /** Optionele modus: iOS-apparaat logt in met alleen zijn UDID (de organisatie koos 'udid' i.p.v. een geheime binding). */
+    public function resolveUdid(string $udid): ConnectAllowedDevice
+    {
+        abort_unless(preg_match('/^[A-Za-z0-9-]{8,64}$/', $udid), 401, 'Ongeldig apparaat.');
+        $device = ConnectAllowedDevice::whereRaw('LOWER(udid) = ?', [strtolower($udid)])->where('platform', 'ios')->first();
+        abort_unless($device && $device->organization?->licensed() && $device->organization->device_login_mode === 'udid', 401, 'Dit apparaat logt in met een apparaatbinding.');
+        if (!$device->user_id || !$device->binding_hash) { $this->provision($device); $device->refresh(); }
+        abort_unless($this->active($device), 401, 'Apparaat niet actief.');
+        return $device;
+    }
+
     public function active(ConnectAllowedDevice $device): bool
     {
         return $device->binding_hash && $device->user_id && $device->organization?->licensed()

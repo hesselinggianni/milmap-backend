@@ -238,6 +238,13 @@ class ConnectController extends Controller {
         app(\App\Services\ConnectManagement::class)->audit($organization->id, 'account.updated', 'ConnectOrganization', $organization->id, ['fields' => array_keys($data)]);
         return response()->json(['organization' => $organization->fresh()]);
     }
+    public function updateDeviceLoginMode(Request $r, ConnectOrganization $organization) {
+        $this->manager($r, $organization);
+        $data = $r->validate(['device_login_mode' => 'required|in:binding,udid']);
+        $organization->update($data);
+        app(\App\Services\ConnectManagement::class)->audit($organization->id, 'device_login_mode.updated', 'ConnectOrganization', $organization->id, $data);
+        return response()->json(['organization' => $organization->fresh()]);
+    }
     public function updateDeviceRestriction(Request $r, ConnectOrganization $organization) {
         $this->manager($r, $organization);
         $data = $r->validate(['restrict_to_allowed_devices' => 'required|boolean']);
