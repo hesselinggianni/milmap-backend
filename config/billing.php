@@ -36,6 +36,8 @@ return [
     // Meter-prijs (€2) per seat bóven de inbegrepen seats — team-abonnement.
     'stripe_price_team_extra_seat' => env('STRIPE_PRICE_TEAM_EXTRA_SEAT'),
     'stripe_price_connect_seat_monthly' => env('STRIPE_PRICE_CONNECT_SEAT_MONTHLY'),
+    // Nederlandse btw (procent) voor Connect-bestellingen; totaal wordt incl. btw getoond en afgerekend.
+    'vat_percent' => (int) env('BILLING_VAT_PERCENT', 21),
 
     /*
     |--------------------------------------------------------------------------

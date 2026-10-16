@@ -2,7 +2,8 @@
 namespace App\Services;
 use App\Models\{ConnectOrder, ConnectOrderInvoice, ConnectOrganization};
 use App\Http\Controllers\AdminBillingController;
-use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Facades\{Cache, DB, Log};
+use App\Models\Setting;
 use Illuminate\Support\Carbon;
 use Stripe\StripeClient;
 class ConnectBilling {
@@ -13,7 +14,57 @@ class ConnectBilling {
         abort_unless($priceId,503,'Er is nog geen Connect-prijs gekoppeld aan deze organisatie.');
         $price=$this->stripe()->prices->retrieve($priceId,[]);
         abort_unless($price->active && $price->type==='recurring' && $price->recurring->interval==='month' && $price->recurring->interval_count===1 && $price->unit_amount>0,503,'Connect vereist een actieve vaste maandprijs per seat.');
-        return ['price_id'=>$priceId,'product'=>$price->product,'unit_monthly_cents'=>$price->unit_amount,'currency'=>strtoupper($price->currency),'tax_behavior'=>$price->tax_behavior ?? 'unspecified','terms'=>[1,6,12]];
+        // Stripe-prijs 'inclusive' = bedrag incl. btw; 'exclusive'/'unspecified' = zakelijke prijs excl. btw.
+        $inclusive=($price->tax_behavior ?? 'unspecified')==='inclusive';
+        $percent=$this->vatPercent();
+        $taxRateId=$this->taxRateId($inclusive,$percent);
+        return ['price_id'=>$priceId,'product'=>$price->product,'unit_monthly_cents'=>$price->unit_amount,'currency'=>strtoupper($price->currency),
+            'tax_behavior'=>$price->tax_behavior ?? 'unspecified','prices_include_vat'=>$inclusive,'vat_percent'=>$percent,
+            'vat_method'=>$taxRateId ? 'tax_rate' : 'gross_price','tax_rate_id'=>$taxRateId,'terms'=>[1,12]];
+    }
+    public function vatPercent(): int { return max(0, min(100, (int) config('billing.vat_percent', 21))); }
+    /** Afronden van een positieve breuk n/d op hele centen (half naar boven) — identiek aan de checkout-frontend. */
+    private static function roundDiv(int $n, int $d): int { return intdiv(2*$n+$d, 2*$d); }
+    /**
+     * Bedragen voor één bestelling, berekend zoals Stripe ze afrekent:
+     *  - prijs incl. btw: totaal = prijs × seats; btw zit erin;
+     *  - prijs excl. btw + btw-tarief in Stripe: btw = 21% over het regeltotaal;
+     *  - prijs excl. btw zonder btw-tarief (sleutel mist rechten): prijs per seat incl. btw afgerond, × seats.
+     * @return array{unit_term_cents:int,unit_term_incl_cents:int,excl_cents:int,vat_cents:int,incl_cents:int}
+     */
+    public static function amounts(int $unitMonthly, int $months, int $seats, bool $inclusive, string $method, int $percent): array {
+        $unitTerm=$unitMonthly*$months;
+        if ($inclusive) {
+            $incl=$unitTerm*$seats; $vat=self::roundDiv($incl*$percent,100+$percent);
+            return ['unit_term_cents'=>$unitTerm,'unit_term_incl_cents'=>$unitTerm,'excl_cents'=>$incl-$vat,'vat_cents'=>$vat,'incl_cents'=>$incl];
+        }
+        if ($method==='tax_rate') {
+            $excl=$unitTerm*$seats; $vat=self::roundDiv($excl*$percent,100);
+            return ['unit_term_cents'=>$unitTerm,'unit_term_incl_cents'=>self::roundDiv($unitTerm*(100+$percent),100),'excl_cents'=>$excl,'vat_cents'=>$vat,'incl_cents'=>$excl+$vat];
+        }
+        $unitIncl=self::roundDiv($unitTerm*(100+$percent),100); $incl=$unitIncl*$seats; $vat=self::roundDiv($incl*$percent,100+$percent);
+        return ['unit_term_cents'=>$unitTerm,'unit_term_incl_cents'=>$unitIncl,'excl_cents'=>$incl-$vat,'vat_cents'=>$vat,'incl_cents'=>$incl];
+    }
+    /**
+     * Btw-tarief in Stripe (eenmalig aangemaakt en bewaard), zodat de factuur de btw apart vermeldt.
+     * Heeft de API-sleutel geen rechten op tax rates, dan null: het bedrag incl. btw wordt dan in de prijs verwerkt.
+     */
+    protected function taxRateId(bool $inclusive, int $percent): ?string {
+        if ($percent<=0) return null;
+        $key=($inclusive?'inclusive':'exclusive').'_'.$percent;
+        $saved=Setting::get('connect_vat_tax_rates',[]);
+        if (is_array($saved) && !empty($saved[$key])) return $saved[$key];
+        if (Cache::get('connect_vat_tax_rate_unavailable')) return null;
+        try {
+            $rate=$this->stripe()->taxRates->create(['display_name'=>'Btw','description'=>"Nederlandse btw {$percent}% (MilMap Connect)",'percentage'=>$percent,
+                'inclusive'=>$inclusive,'country'=>'NL','jurisdiction'=>'NL','tax_type'=>'vat'],['idempotency_key'=>'connect-vat-'.$key]);
+        } catch (\Stripe\Exception\ApiErrorException $e) {
+            Log::warning('Connect: btw-tarief kon niet in Stripe worden aangemaakt; btw wordt in de prijs verwerkt',['error'=>$e->getMessage()]);
+            Cache::put('connect_vat_tax_rate_unavailable',true,now()->addMinutes(10));
+            return null;
+        }
+        Setting::put('connect_vat_tax_rates',array_merge(is_array($saved)?$saved:[],[$key=>$rate->id]));
+        return $rate->id;
     }
     public function order(ConnectOrganization $org, int $actorId, array $data): ConnectOrder {
         try {
@@ -26,7 +77,10 @@ class ConnectBilling {
     protected function placeOrder(ConnectOrganization $org, int $actorId, array $data): ConnectOrder {
         $quote=$this->quote($org);
         abort_unless((int)$data['expected_unit_monthly_cents']===$quote['unit_monthly_cents'] && $data['expected_currency']===$quote['currency'],409,'De seatprijs is gewijzigd. Ververs de checkout en controleer het nieuwe bedrag.');
-        $order=DB::transaction(function () use ($org,$actorId,$data,$quote) {
+        $amounts=self::amounts($quote['unit_monthly_cents'],(int)$data['term_months'],(int)$data['seats'],$quote['prices_include_vat'],$quote['vat_method'],$quote['vat_percent']);
+        // Wat de klant zag (totaal incl. btw) moet gelijk zijn aan wat Stripe afrekent.
+        abort_if((int)($data['expected_total_incl_cents'] ?? 0)!==$amounts['incl_cents'],409,'Het totaalbedrag is gewijzigd. Ververs de checkout en controleer het nieuwe bedrag.');
+        $order=DB::transaction(function () use ($org,$actorId,$data,$quote,$amounts) {
             ConnectOrganization::whereKey($org->id)->lockForUpdate()->firstOrFail();
             $existing=ConnectOrder::where('organization_id',$org->id)->where('request_id',$data['request_id'])->first();
             if ($existing) {
@@ -35,10 +89,13 @@ class ConnectBilling {
             }
             return ConnectOrder::create(['organization_id'=>$org->id,'ordered_by'=>$actorId,'request_id'=>$data['request_id'],
                 'seats'=>$data['seats'],'term_months'=>$data['term_months'],'payment_method'=>$data['payment_method'],'auto_renew'=>(bool)($data['auto_renew'] ?? true),
-                'unit_monthly_cents'=>$quote['unit_monthly_cents'],'total_cents'=>$quote['unit_monthly_cents']*$data['seats']*$data['term_months'],
+                'unit_monthly_cents'=>$quote['unit_monthly_cents'],'total_cents'=>$amounts['excl_cents'],
+                'vat_percent'=>$quote['vat_percent'],'vat_cents'=>$amounts['vat_cents'],'total_incl_cents'=>$amounts['incl_cents'],'vat_method'=>$quote['vat_method'],
                 'currency'=>$quote['currency'],'billing_details'=>$data['billing_details']]);
         });
         if ($order->stripe_checkout_id || ($order->stripe_subscription_id && $order->invoices()->exists())) return $order->load('invoices');
+        // Herhaalde aanvraag terwijl de btw-afhandeling intussen wijzigde: niet afrekenen met een ander totaal.
+        abort_if($order->vat_method!==$quote['vat_method'],409,'Het totaalbedrag is gewijzigd. Ververs de checkout en controleer het nieuwe bedrag.');
         $stripe=$this->stripe();
         // A stable idempotency key also protects retries after Stripe accepted
         // a request but the network/DB write failed before the response arrived.
@@ -50,10 +107,16 @@ class ConnectBilling {
         }
         $stripe->customers->update($customerId,['name'=>$data['billing_details']['company_name'],'email'=>$data['billing_details']['email'],'address'=>$data['billing_details']['address']],['idempotency_key'=>'connect-customer-details-'.$order->id.'-'.substr(md5(json_encode($data['billing_details'])),0,10)]);
         $metadata=['connect_order_id'=>(string)$order->id,'connect_organization_id'=>(string)$org->id,'seats'=>(string)$order->seats,'term_months'=>(string)$order->term_months,'auto_renew'=>$order->auto_renew?'1':'0'];
-        $priceData=['currency'=>strtolower($order->currency),'product'=>$this->productFor($org),'unit_amount'=>$order->unit_monthly_cents*$order->term_months,
+        // Btw: met een btw-tarief rekent Stripe de btw zelf (en toont die op de factuur); zonder tarief
+        // gaat de prijs per seat incl. btw mee. In beide gevallen is het afgerekende totaal = total_incl_cents.
+        $withRate=$order->vat_method==='tax_rate' && $quote['tax_rate_id'];
+        $inclusive=$quote['prices_include_vat'] || !$withRate;
+        $unitAmount=$quote['prices_include_vat'] || $withRate ? $order->unit_monthly_cents*$order->term_months
+            : self::amounts($order->unit_monthly_cents,$order->term_months,$order->seats,false,'gross_price',$order->vat_percent)['unit_term_incl_cents'];
+        $priceData=['currency'=>strtolower($order->currency),'product'=>$this->productFor($org,$quote['product']),'unit_amount'=>$unitAmount,'tax_behavior'=>$inclusive?'inclusive':'exclusive',
             'recurring'=>$order->term_months===12 ? ['interval'=>'year','interval_count'=>1] : ['interval'=>'month','interval_count'=>$order->term_months]];
-        if (in_array($quote['tax_behavior'],['inclusive','exclusive'])) $priceData['tax_behavior']=$quote['tax_behavior'];
         $item=['price_data'=>$priceData,'quantity'=>$order->seats];
+        if ($withRate) $item['tax_rates']=[$quote['tax_rate_id']];
         if ($order->payment_method==='direct') {
             $session=$stripe->checkout->sessions->create(['mode'=>'subscription','customer'=>$customerId,'line_items'=>[$item],
                 'billing_address_collection'=>'required','customer_update'=>['address'=>'auto','name'=>'auto'],
@@ -77,10 +140,16 @@ class ConnectBilling {
         return $order->fresh()->load('invoices');
     }
     /** Eigen Stripe-product per klant (custom abonnement), eenmalig via de API aangemaakt. */
-    protected function productFor(ConnectOrganization $org): string {
+    protected function productFor(ConnectOrganization $org, string $fallback): string {
         if ($org->stripe_product_id) return $org->stripe_product_id;
-        $product=$this->stripe()->products->create(['name'=>'MilMap Connect — '.$org->name,'description'=>'Connect-seats (accounts en apparaten) voor '.$org->name,
+        try {
+            $product=$this->stripe()->products->create(['name'=>'MilMap Connect — '.$org->name,'description'=>'Connect-seats (accounts en apparaten) voor '.$org->name,
             'metadata'=>['connect_organization_id'=>(string)$org->id,'connect_organization_uuid'=>(string)$org->uuid]],['idempotency_key'=>'connect-product-'.$org->id.'-'.substr(md5($org->name),0,10)]);
+        } catch (\Stripe\Exception\PermissionException $e) {
+            // Sleutel zonder 'product_write': bestellen moet blijven werken, dan onder het product van de seatprijs.
+            Log::warning('Connect: eigen Stripe-product kon niet worden aangemaakt; seatproduct gebruikt',['organization'=>$org->id,'error'=>$e->getMessage()]);
+            return $fallback;
+        }
         $org->forceFill(['stripe_product_id'=>$product->id])->save();
         return $product->id;
     }

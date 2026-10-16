@@ -6,7 +6,7 @@ class ConnectOrder extends Model {
     use HasUuids;
     protected $guarded = ['id'];
     protected $hidden = ['request_id', 'billing_details'];
-    protected $casts = ['billing_details'=>'encrypted:array','seats'=>'integer','term_months'=>'integer','unit_monthly_cents'=>'integer','total_cents'=>'integer'];
+    protected $casts = ['billing_details'=>'encrypted:array','seats'=>'integer','term_months'=>'integer','unit_monthly_cents'=>'integer','total_cents'=>'integer','vat_percent'=>'integer','vat_cents'=>'integer','total_incl_cents'=>'integer','auto_renew'=>'boolean'];
     public function organization() { return $this->belongsTo(ConnectOrganization::class,'organization_id'); }
     public function invoices() { return $this->hasMany(ConnectOrderInvoice::class,'order_id'); }
 }
