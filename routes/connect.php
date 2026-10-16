@@ -27,6 +27,7 @@ Route::prefix('v1/connect')->group(function () {
         Route::post('organizations/{organization}/resources/transfer', [\App\Http\Controllers\ConnectManagementController::class, 'transfer']);
         Route::get('access', [ConnectController::class, 'access']);
         Route::get('organizations/{organization}/billing/catalog', [\App\Http\Controllers\ConnectBillingController::class, 'catalog']);
+        Route::put('organizations/{organization}/billing/details', [\App\Http\Controllers\ConnectBillingController::class, 'updateDetails'])->middleware('throttle:20,1');
         Route::get('organizations/{organization}/billing/orders', [\App\Http\Controllers\ConnectBillingController::class, 'index']);
         Route::post('organizations/{organization}/billing/orders', [\App\Http\Controllers\ConnectBillingController::class, 'store'])->middleware('throttle:10,1');
         Route::post('organizations/{organization}/billing/orders/{order}/cancel', [\App\Http\Controllers\ConnectBillingController::class, 'cancel'])->middleware('throttle:10,1');

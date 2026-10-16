@@ -666,6 +666,16 @@ class AdminController extends Controller
         try {
             $user = User::findOrFail($userId);
 
+            // Connect-apparaataccounts (@connect.milmap.nl) hebben geen mailbox en
+            // loggen in via apparaatbinding. 422 i.p.v. 403: de admin-client logt
+            // bij een 403 op /api/v1/admin uit, en abort() zou de catch hieronder raken.
+            if ($user->connect_device_account) {
+                return response()->json([
+                    'message' => 'Connect-apparaataccounts gebruiken apparaatlogin en kunnen geen wachtwoord instellen of wijzigen.',
+                    'error' => 'connect_device_account'
+                ], 422);
+            }
+
             // Zelfde flow als de publieke wachtwoord-reset
             // (PasswordResetController::sendResetLink): een custom e-mail met een
             // link naar het frontend-resetscherm. De standaard Laravel-notificatie

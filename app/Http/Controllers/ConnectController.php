@@ -46,7 +46,7 @@ class ConnectController extends Controller {
         $members->each(function ($member) use ($mapCounts, $routeCounts, $missionCounts, $lastSeen) { $member->setAttribute('last_seen_at', $lastSeen[$member->user_id] ?? null); $member->setAttribute('stats', ['maps' => (int) ($mapCounts[$member->user_id] ?? 0), 'route_maps' => (int) ($routeCounts[$member->user_id] ?? 0), 'missions' => (int) ($missionCounts[$member->user_id] ?? 0)]); });
         return response()->json(['organization' => $organization, 'user' => ['name' => trim($r->user()->first_name.' '.$r->user()->last_name), 'email' => $r->user()->email], 'role' => $manager->role, 'licensed' => $organization->licensed(),
             'occupied_seats' => $organization->occupiedSeats(), 'used_licenses' => $organization->usedLicenses(), 'occupied_devices' => $organization->occupiedDevices(), 'members' => $members, 'devices' => $devices, 'allowed_devices' => $this->allowedDevices($organization),
-            'management_policy' => app(\App\Services\ConnectManagement::class)->policy($organization),
+            'management_policy' => app(\App\Services\ConnectManagement::class)->policy($organization), 'billing_details' => $organization->billingProfile($r->user()->email),
             'analytics' => ['maps' => $mapCounts->sum(), 'route_maps' => $routeCounts->sum(), 'missions' => $missionCounts->sum()]]);
     }
     public function upgradeLicense(Request $r, ConnectOrganization $organization) {
@@ -234,7 +234,9 @@ class ConnectController extends Controller {
         $this->manager($r, $organization);
         $data = $r->validate(['name' => 'sometimes|required|string|max:190', 'contact_name' => 'sometimes|nullable|string|max:190',
             'contact_email' => 'sometimes|nullable|email|max:190', 'billing_email' => 'sometimes|nullable|email|max:190']);
-        $organization->update($data);
+        // Factuur-e-mail via de facturatie, zodat de klantgegevens voor facturen meegaan (oudere Connect-versies sturen dit nog hierheen).
+        if (array_key_exists('billing_email', $data)) app(\App\Services\ConnectBilling::class)->updateDetails($organization, ['email' => $data['billing_email']]);
+        $organization->update(\Illuminate\Support\Arr::except($data, ['billing_email']));
         app(\App\Services\ConnectManagement::class)->audit($organization->id, 'account.updated', 'ConnectOrganization', $organization->id, ['fields' => array_keys($data)]);
         return response()->json(['organization' => $organization->fresh()]);
     }

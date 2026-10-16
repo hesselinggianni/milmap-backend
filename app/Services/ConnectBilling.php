@@ -5,9 +5,10 @@ use App\Http\Controllers\AdminBillingController;
 use Illuminate\Support\Facades\{Cache, DB, Log};
 use App\Models\Setting;
 use Illuminate\Support\Carbon;
+use Illuminate\Support\Str;
 use Stripe\StripeClient;
 class ConnectBilling {
-    protected function stripe(): StripeClient { abort_unless(config('billing.stripe_secret'),503,'Stripe is nog niet geconfigureerd.'); return new StripeClient(['api_key'=>config('billing.stripe_secret')]); }
+    protected function stripe(): StripeClient { abort_unless(config('billing.stripe_secret'),503,'Online betalen is nog niet beschikbaar. Probeer het later opnieuw.'); return new StripeClient(['api_key'=>config('billing.stripe_secret')]); }
     public function quote(?ConnectOrganization $org = null): array {
         // Een klantspecifieke Stripe-prijs (admin koppelt die aan de organisatie) gaat voor de algemene seatprijs.
         $priceId = $org?->stripe_price_id ?: (AdminBillingController::effectiveMap()['connect_seat_monthly'] ?? null);
@@ -81,7 +82,9 @@ class ConnectBilling {
         // Wat de klant zag (totaal incl. btw) moet gelijk zijn aan wat Stripe afrekent.
         abort_if((int)($data['expected_total_incl_cents'] ?? 0)!==$amounts['incl_cents'],409,'Het totaalbedrag is gewijzigd. Ververs de checkout en controleer het nieuwe bedrag.');
         $order=DB::transaction(function () use ($org,$actorId,$data,$quote,$amounts) {
-            ConnectOrganization::whereKey($org->id)->lockForUpdate()->firstOrFail();
+            $locked=ConnectOrganization::whereKey($org->id)->lockForUpdate()->firstOrFail();
+            // De ingevulde factuurgegevens worden ook de gegevens van het account (volgende checkout en Connect-account).
+            $this->storeDetails($locked,$data['billing_details']);
             $existing=ConnectOrder::where('organization_id',$org->id)->where('request_id',$data['request_id'])->first();
             if ($existing) {
                 abort_unless($existing->seats===$data['seats'] && $existing->term_months===$data['term_months'] && $existing->payment_method===$data['payment_method'] && (bool)$existing->auto_renew===(bool)($data['auto_renew'] ?? true),409,'Deze bestelreferentie hoort bij een andere bestelling.');
@@ -93,6 +96,7 @@ class ConnectBilling {
                 'vat_percent'=>$quote['vat_percent'],'vat_cents'=>$amounts['vat_cents'],'total_incl_cents'=>$amounts['incl_cents'],'vat_method'=>$quote['vat_method'],
                 'currency'=>$quote['currency'],'billing_details'=>$data['billing_details']]);
         });
+        $org->refresh();
         if ($order->stripe_checkout_id || ($order->stripe_subscription_id && $order->invoices()->exists())) return $order->load('invoices');
         // Herhaalde aanvraag terwijl de btw-afhandeling intussen wijzigde: niet afrekenen met een ander totaal.
         abort_if($order->vat_method!==$quote['vat_method'],409,'Het totaalbedrag is gewijzigd. Ververs de checkout en controleer het nieuwe bedrag.');
@@ -101,11 +105,10 @@ class ConnectBilling {
         // a request but the network/DB write failed before the response arrived.
         $customerId=$org->stripe_customer_id;
         if (!$customerId) {
-            $customer=$stripe->customers->create(['name'=>$data['billing_details']['company_name'],'email'=>$data['billing_details']['email'],
-                'address'=>$data['billing_details']['address'],'metadata'=>['connect_organization_id'=>(string)$org->id]],['idempotency_key'=>'connect-customer-'.$org->id.'-'.substr(md5(json_encode($data['billing_details'])),0,10)]);
-            $customerId=$customer->id; $org->forceFill(['stripe_customer_id'=>$customerId])->save();
-        }
-        $stripe->customers->update($customerId,['name'=>$data['billing_details']['company_name'],'email'=>$data['billing_details']['email'],'address'=>$data['billing_details']['address']],['idempotency_key'=>'connect-customer-details-'.$order->id.'-'.substr(md5(json_encode($data['billing_details'])),0,10)]);
+            $payload=$this->customerPayload($org); $hash=hash('sha256',json_encode($payload));
+            $customer=$stripe->customers->create($payload+['metadata'=>['connect_organization_id'=>(string)$org->id]],['idempotency_key'=>'connect-customer-'.$org->id.'-'.substr($hash,0,20)]);
+            $customerId=$customer->id; $org->forceFill(['stripe_customer_id'=>$customerId,'stripe_customer_details_hash'=>$hash])->save();
+        } else $this->syncCustomer($org,$stripe);
         $metadata=['connect_order_id'=>(string)$order->id,'connect_organization_id'=>(string)$org->id,'seats'=>(string)$order->seats,'term_months'=>(string)$order->term_months,'auto_renew'=>$order->auto_renew?'1':'0'];
         // Btw: met een btw-tarief rekent Stripe de btw zelf (en toont die op de factuur); zonder tarief
         // gaat de prijs per seat incl. btw mee. In beide gevallen is het afgerekende totaal = total_incl_cents.
@@ -125,6 +128,8 @@ class ConnectBilling {
                 'cancel_url'=>rtrim(config('app.frontend_url'),'/').'/checkout/connect?org='.$org->uuid.'&order='.$order->id,
             ],['idempotency_key'=>'connect-checkout-'.$order->id]);
             $order->update(['stripe_checkout_id'=>$session->id,'checkout_url'=>$session->url,'status'=>'awaiting_payment']);
+            // Stripe Checkout mag naam en adres van de klant overschrijven (customer_update auto): de volgende bestelling of wijziging stuurt de accountgegevens daarom opnieuw.
+            $org->forceFill(['stripe_customer_details_hash'=>null])->save();
         } else {
             $subscription=$order->stripe_subscription_id ? $stripe->subscriptions->retrieve($order->stripe_subscription_id,['expand'=>['latest_invoice']]) : $stripe->subscriptions->create(['customer'=>$customerId,'items'=>[$item],'collection_method'=>'send_invoice','days_until_due'=>14,
                 'metadata'=>$metadata,'expand'=>['latest_invoice']],['idempotency_key'=>'connect-invoice-subscription-'.$order->id]);
@@ -138,6 +143,54 @@ class ConnectBilling {
         }
         app(ConnectManagement::class)->audit($org->id,'order.created','ConnectOrder',$order->id,['seats'=>$order->seats,'term_months'=>$order->term_months,'payment_method'=>$order->payment_method]);
         return $order->fresh()->load('invoices');
+    }
+    /**
+     * Factuurgegevens vanuit het Connect-account wijzigen. Opslaan en de Stripe-klant bijwerken gebeuren samen:
+     * weigert Stripe de gegevens, dan blijft alles ongewijzigd en krijgt de beheerder een nette 422.
+     */
+    public function updateDetails(ConnectOrganization $org, array $details): ConnectOrganization {
+        try {
+            $locked=DB::transaction(function () use ($org,$details) {
+                $locked=ConnectOrganization::whereKey($org->id)->lockForUpdate()->firstOrFail();
+                $this->storeDetails($locked,$details);
+                $this->syncCustomer($locked);
+                return $locked;
+            });
+        } catch (\Stripe\Exception\ApiErrorException $e) {
+            Log::error('Connect-factuurgegevens konden niet naar Stripe',['organization'=>$org->id,'error'=>$e->getMessage()]);
+            abort(422,'De factuurgegevens konden niet worden bijgewerkt. Controleer je gegevens en probeer het opnieuw.');
+        }
+        $org->setRawAttributes($locked->getAttributes(),true);
+        return $org;
+    }
+    /** Ingevulde factuurgegevens (ook gedeeltelijk) op de organisatie zetten; het e-mailadres staat in billing_email. */
+    protected function storeDetails(ConnectOrganization $org, array $details): void {
+        $clean=fn ($v) => ($v=trim((string)$v))==='' ? null : $v;
+        $current=$org->billing_details ?: [];
+        $company=array_key_exists('company_name',$details) ? $clean($details['company_name']) : ($current['company_name'] ?? null);
+        $a=$details['address'] ?? null;
+        $address=is_array($a) ? ['line1'=>$clean($a['line1'] ?? ''),'line2'=>$clean($a['line2'] ?? ''),'postal_code'=>$clean($a['postal_code'] ?? ''),'city'=>$clean($a['city'] ?? ''),'country'=>($c=$clean($a['country'] ?? ''))===null ? null : strtoupper($c)] : ($current['address'] ?? null);
+        $org->forceFill(['billing_email'=>array_key_exists('email',$details) ? $clean($details['email']) : $org->billing_email,
+            'billing_details'=>$company===null && $address===null ? null : ['company_name'=>$company,'address'=>$address]])->save();
+    }
+    /** Wat de Stripe-klant krijgt: alleen opgeslagen velden, zodat niets bij Stripe wordt leeggemaakt dat hier nooit is ingevuld. */
+    protected function customerPayload(ConnectOrganization $org): array {
+        $d=$org->billing_details ?: []; $a=$d['address'] ?? null;
+        return array_filter(['name'=>$d['company_name'] ?? null,'email'=>$org->billing_email,
+            'address'=>$a ? ['line1'=>$a['line1'],'line2'=>$a['line2'] ?? '','postal_code'=>$a['postal_code'],'city'=>$a['city'],'country'=>$a['country']] : null],fn ($v) => $v!==null && $v!=='');
+    }
+    /**
+     * Stripe-klant alleen bijwerken als de gegevens afwijken van wat er laatst naartoe is gestuurd (hash op de organisatie).
+     * Elke update krijgt een nieuwe idempotency-sleutel: bijwerken met dezelfde gegevens is vanzelf veilig, en een hergebruikte
+     * sleutel zou Stripe een eerder antwoord laten herhalen zonder de klant bij te werken (bijv. na A→B→A of een herhaalde bestelling).
+     */
+    protected function syncCustomer(ConnectOrganization $org, ?StripeClient $stripe = null): void {
+        if (!$org->stripe_customer_id) return;
+        $payload=$this->customerPayload($org); if (!$payload) return;
+        $hash=hash('sha256',json_encode($payload));
+        if (hash_equals((string)$org->stripe_customer_details_hash,$hash)) return;
+        ($stripe ?? $this->stripe())->customers->update($org->stripe_customer_id,$payload,['idempotency_key'=>'connect-customer-sync-'.$org->id.'-'.Str::uuid()]);
+        $org->forceFill(['stripe_customer_details_hash'=>$hash])->save();
     }
     /** Eigen Stripe-product per klant (custom abonnement), eenmalig via de API aangemaakt. */
     protected function productFor(ConnectOrganization $org, string $fallback): string {
@@ -187,6 +240,8 @@ class ConnectBilling {
         if ($type==='checkout.session.completed') {
             abort_unless(!$order->stripe_checkout_id || $order->stripe_checkout_id===$object->id,409);
             $order->update(['stripe_checkout_id'=>$object->id,'stripe_subscription_id'=>$subscriptionId,'status'=>$order->status==='paid' ? 'paid' : 'awaiting_payment']);
+            // De klant kan in Checkout andere naam/adresgegevens hebben ingevuld: accountgegevens bij de volgende bestelling of wijziging opnieuw sturen.
+            ConnectOrganization::whereKey($order->organization_id)->update(['stripe_customer_details_hash'=>null]);
             if (!$order->auto_renew && $subscriptionId) $this->stripe()->subscriptions->update($subscriptionId,['cancel_at_period_end'=>true],['idempotency_key'=>'connect-norenew-'.$order->id]);
             return true; // Checkout completion alone never grants capacity.
         }

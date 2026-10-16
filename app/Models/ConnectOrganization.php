@@ -8,8 +8,9 @@ class ConnectOrganization extends Model
 {
     protected $fillable = ['device_login_mode', 'contact_name', 'contact_email', 'billing_email', 'stripe_price_id', 'management_policy', 'restrict_to_allowed_devices', 'logo_path', 'login_background_path', 'name', 'status', 'seat_limit', 'monthly_price_cents', 'monthly_price_per_seat_cents', 'currency', 'starts_at', 'ends_at'];
     protected $attributes = ['restrict_to_allowed_devices' => true, 'device_login_mode' => 'udid'];
-    protected $casts = ['management_policy' => 'array', 'restrict_to_allowed_devices' => 'boolean', 'starts_at' => 'datetime', 'ends_at' => 'datetime', 'seat_limit' => 'integer', 'monthly_price_cents' => 'integer', 'monthly_price_per_seat_cents' => 'integer'];
-    protected $hidden = ['logo_path', 'login_background_path', 'mdm_token_hash'];
+    protected $casts = ['management_policy' => 'array', 'billing_details' => 'encrypted:array', 'restrict_to_allowed_devices' => 'boolean', 'starts_at' => 'datetime', 'ends_at' => 'datetime', 'seat_limit' => 'integer', 'monthly_price_cents' => 'integer', 'monthly_price_per_seat_cents' => 'integer'];
+    // Factuurgegevens alleen via beheerders-endpoints (billingProfile()), niet via het organisatie-object dat ook leden zien.
+    protected $hidden = ['logo_path', 'login_background_path', 'mdm_token_hash', 'billing_email', 'billing_details', 'stripe_customer_details_hash'];
     protected $appends = ['logo_url', 'login_background_url'];
     protected static function booted(): void
     {
@@ -29,6 +30,16 @@ class ConnectOrganization extends Model
     }
     public function getLogoUrlAttribute(): ?string { return $this->publicUrl($this->attributes['logo_path'] ?? null); }
     public function getLoginBackgroundUrlAttribute(): ?string { return $this->publicUrl($this->attributes['login_background_path'] ?? null); }
+    /**
+     * Factuurgegevens voor formulieren: opgeslagen waarden, anders organisatienaam, contact- of gebruikersmail en NL.
+     * saved/email_saved geven aan wat echt is opgeslagen, zodat een overzicht geen ingevulde terugvalwaarde als factuurgegeven toont.
+     */
+    public function billingProfile(?string $fallbackEmail = null): array
+    {
+        $d = $this->billing_details ?: []; $a = $d['address'] ?? [];
+        return ['saved' => ! empty($a), 'email_saved' => (bool) $this->billing_email, 'company_name' => ($d['company_name'] ?? null) ?: $this->name, 'email' => $this->billing_email ?: ($this->contact_email ?: (string) $fallbackEmail),
+            'address' => ['line1' => $a['line1'] ?? '', 'line2' => $a['line2'] ?? '', 'postal_code' => $a['postal_code'] ?? '', 'city' => $a['city'] ?? '', 'country' => ($a['country'] ?? null) ?: 'NL']];
+    }
     public function members() { return $this->hasMany(ConnectMember::class, 'organization_id'); }
     public function licenses() { return $this->hasMany(ConnectLicense::class, 'organization_id')->orderByDesc('starts_at')->orderByDesc('id'); }
     public function scopeWithActiveLicense(Builder $query): Builder

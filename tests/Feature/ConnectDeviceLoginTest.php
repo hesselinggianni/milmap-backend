@@ -82,6 +82,18 @@ class ConnectDeviceLoginTest extends TestCase
         $this->assertSame($original, $user->fresh()->password);
         $this->assertNull($user->fresh()->password_set_at);
     }
+    public function test_admin_cannot_send_password_reset_to_device_account(): void {
+        $device = User::findOrFail($this->loginDevice($this->binding())->assertOk()->json('user.id'));
+        $admin = User::create(['first_name'=>'Admin','last_name'=>'Test','email'=>'admin@example.test','password'=>bcrypt('test-password'),'email_verified_at'=>now()]);
+        $admin->forceFill(['is_admin'=>true])->save();
+        auth()->forgetGuards();
+        $this->withHeaders(['Authorization'=>'Bearer '.$admin->createToken('test',['admin'],now()->addHour())->plainTextToken]);
+        // 422 (niet 403): de admin-client logt bij een 403 uit.
+        $this->postJson('/api/v1/admin/users/'.$device->id.'/reset-password')->assertStatus(422)->assertJsonPath('error','connect_device_account');
+        Mail::assertNothingSent();
+        $this->postJson('/api/v1/admin/users/'.$admin->id.'/reset-password')->assertOk();
+        Mail::assertSent(\App\Mail\ResetPasswordMail::class, 1);
+    }
     public function test_android_device_uses_tenant_specific_identity_and_binding(): void {
         $device=ConnectAllowedDevice::create(['organization_id'=>$this->org->id,'name'=>'Android tablet','platform'=>'android','udid'=>'ANDROIDASSET12345']);
         $secret=app(ConnectDeviceLogin::class)->provision($device);
