@@ -23,6 +23,8 @@ trait IssuesLoginSession
 {
     protected function finalizeLogin(Request $request, User $user): JsonResponse
     {
+        abort_if($user->connect_device_account && !$request->attributes->get('connect_binding'), 403, 'Gebruik de geverifieerde apparaatlogin.');
+
         // Gearchiveerd account (>90 dagen ongeverifieerd): geen toegang meer.
         if ($user->isArchived()) {
             throw ValidationException::withMessages([
@@ -40,6 +42,10 @@ trait IssuesLoginSession
         }
 
         $newToken = $user->createToken('API Token', ['user'], now()->addDays(7));
+
+        if ($binding = $request->attributes->get('connect_binding')) {
+            $newToken->accessToken->forceFill(['connect_allowed_device_id' => $binding->id, 'connect_binding_hash' => $binding->binding_hash])->save();
+        }
 
         $newToken->accessToken->forceFill([
             'ip_address'   => $request->ip(),
@@ -61,11 +67,12 @@ trait IssuesLoginSession
         $token = $newToken->plainTextToken;
 
         // Na de respons: een trage SMTP-/ip-api-verbinding mag de login niet laten time-outen.
-        dispatch(fn () => $this->sendLoginNotification($request, $user))->afterResponse();
+        if (!$request->attributes->get('connect_binding')) app()->terminating(fn () => $this->sendLoginNotification($request, $user));
 
         return response()->json([
             'message' => 'Logged in successfully.',
             'user' => array_merge($user->toArray(), [
+                'connect_management' => app(\App\Services\ConnectManagement::class)->context($user),
                 'verification' => $user->verificationState(),
                 'premium'      => $user->premiumState(),
             ]),

@@ -36,6 +36,7 @@ class GarminAuthController extends Controller
         if (! $handoff || ! $handoff->isValid()) {
             return $this->failureRedirect($data['platform'], 'invalid_handoff');
         }
+        abort_unless(app(\App\Services\ConnectManagement::class)->allows(\App\Models\User::findOrFail($handoff->user_id), 'integrations'), 403);
         $handoff->forceFill(['used_at' => now()])->save();
 
         if (! $this->garmin->isConfigured()) {
@@ -69,6 +70,7 @@ class GarminAuthController extends Controller
         if (! $code || ! $oauthState || ! $oauthState->isValid()) {
             return $this->failureRedirect($oauthState->platform ?? 'web', 'invalid_state');
         }
+        abort_unless(app(\App\Services\ConnectManagement::class)->allows(\App\Models\User::findOrFail($oauthState->user_id), 'integrations'), 403);
         $oauthState->forceFill(['used_at' => now()])->save();
 
         try {

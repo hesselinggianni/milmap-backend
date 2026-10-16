@@ -9,6 +9,7 @@ use Illuminate\Database\Eloquent\SoftDeletes;
 class Mission extends Model
 {
     use HasUuids;
+    use \App\Models\Concerns\BelongsToConnectOrganization;
     use SoftDeletes;
 
     protected $table = 'missions';

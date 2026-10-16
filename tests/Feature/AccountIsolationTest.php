@@ -149,7 +149,7 @@ class AccountIsolationTest extends TestCase
         DB::enableQueryLog(); DB::flushQueryLog();
         $this->putJson('/api/v1/workspace/layer-prefs', ['layers' => [['map_id' => $own], ['map_id' => $this->mapId]]])
             ->assertOk()->assertJsonPath('saved', 1);
-        $queries = collect(DB::getQueryLog())->filter(fn ($q) => str_starts_with(strtolower($q['query']), 'select'));
+        $queries = collect(DB::getQueryLog())->filter(fn ($q) => str_starts_with(strtolower($q['query']), 'select') && !str_contains(strtolower($q['query']), 'sqlite_master') && !str_contains(strtolower($q['query']), 'information_schema'));
         $this->assertCount(1, $queries);
         $this->assertDatabaseMissing('map_layer_prefs', ['map_id' => $this->mapId]);
         $this->assertDatabaseHas('map_layer_prefs', ['map_id' => $own, 'user_id' => 20]);

@@ -33,7 +33,7 @@ class BillingController extends Controller
     // 'lifetime' = het verborgen AppSumo lifetime-deal-plan; alleen bereikbaar
     // via de AppSumo-verzilverflow (app.milmap.nl/appsumo), niet als los te
     // kiezen abonnement.
-    public const HIDDEN_PLAN_KEYS = ['lifetime'];
+    public const HIDDEN_PLAN_KEYS = ['lifetime', 'connect_seat_monthly'];
 
     // ── Plan registry ──────────────────────────────────────────────
     // Map our plan keys to Stripe Price IDs. The admin can override the .env
@@ -996,6 +996,8 @@ class BillingController extends Controller
 
         Log::info('Stripe webhook received', ['type' => $event->type]);
 
+        if (app(\App\Services\ConnectBilling::class)->webhook($event->type, $event->data->object)) return response()->json(['received' => true]);
+
         match ($event->type) {
             'checkout.session.completed'     => $this->onCheckoutCompleted($event->data->object),
             'customer.subscription.updated'  => $this->onSubscriptionUpdated($event->data->object),
@@ -1012,6 +1014,7 @@ class BillingController extends Controller
 
     private function onConnectCheckoutCompleted(object $session): void
     {
+        if (($session->payment_status ?? null) !== 'paid') return;
         $metadata = $session->metadata ?? null;
         $orgId = (int) ($metadata->connect_organization_id ?? 0);
         $seats = (int) ($metadata->additional_seats ?? 0);

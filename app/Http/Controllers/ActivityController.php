@@ -106,6 +106,9 @@ class ActivityController extends Controller
     public function shared($id)
     {
         $activity = Activity::with('photos')->findOrFail($id);
+        if ($activity->map_id) app(\App\Services\ConnectManagement::class)->assertPublicResource(Map::find($activity->map_id));
+        $owner = \Illuminate\Support\Facades\Schema::hasTable('users') ? \App\Models\User::find($activity->user_id) : null;
+        abort_if($owner && !app(\App\Services\ConnectManagement::class)->allows($owner, 'public_links'), 403);
         return response()->json(['activity' => $activity->makeHidden(['user_id'])]);
     }
 

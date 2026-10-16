@@ -25,11 +25,11 @@ class ConnectController extends Controller {
     }
     public function access(Request $r) {
         $memberships = ConnectMember::with('organization')->where('user_id', $r->user()->id)->where('status', 'active')->get();
-        return response()->json(['enterprise' => $memberships->contains(fn ($m) => $m->organization?->licensed()), 'memberships' => $memberships->map(fn ($m) => ['organization' => $m->organization, 'role' => $m->role, 'licensed' => (bool) $m->organization?->licensed()])->values()]);
+        return response()->json(['management' => app(\App\Services\ConnectManagement::class)->context($r->user()), 'enterprise' => $memberships->contains(fn ($m) => $m->organization?->licensed()), 'memberships' => $memberships->map(fn ($m) => ['organization' => $m->organization, 'role' => $m->role, 'licensed' => (bool) $m->organization?->licensed()])->values()]);
     }
     public function requestQuote(Request $r) {
         $data = $r->validate(['company_name'=>'required|string|max:190','contact_name'=>'required|string|max:190','email'=>'required|email|max:190','billing_email'=>'nullable|email|max:190','phone'=>'nullable|string|max:50','seat_count'=>'required|integer|min:1|max:100000','purpose'=>'nullable|string|max:190','requirements'=>'nullable|string|max:5000']);
-        $data['user_id'] = $r->user('sanctum')?->id; $quote = ConnectQuoteRequest::create($data);
+        $data['user_id'] = $r->user('sanctum')?->id; $quote = app(\App\Services\ConnectApplication::class)->create($data);
         try { Mail::to('gianni@milmap.nl')->send(new \App\Mail\ConnectQuoteRequestMail($quote->toArray())); } catch (\Throwable $e) { report($e); }
         return response()->json(['message'=>'Je offerteaanvraag is verstuurd. We nemen snel contact met je op.','id'=>$quote->id], 201);
     }
@@ -45,6 +45,7 @@ class ConnectController extends Controller {
         $members->each(function ($member) use ($mapCounts, $routeCounts, $missionCounts) { $member->setAttribute('stats', ['maps' => (int) ($mapCounts[$member->user_id] ?? 0), 'route_maps' => (int) ($routeCounts[$member->user_id] ?? 0), 'missions' => (int) ($missionCounts[$member->user_id] ?? 0)]); });
         return response()->json(['organization' => $organization, 'role' => $manager->role, 'licensed' => $organization->licensed(),
             'occupied_seats' => $organization->occupiedSeats(), 'occupied_devices' => $organization->occupiedDevices(), 'members' => $members, 'devices' => $devices, 'allowed_devices' => $this->allowedDevices($organization),
+            'management_policy' => app(\App\Services\ConnectManagement::class)->policy($organization),
             'analytics' => ['maps' => $mapCounts->sum(), 'route_maps' => $routeCounts->sum(), 'missions' => $missionCounts->sum()]]);
     }
     public function upgradeLicense(Request $r, ConnectOrganization $organization) {
@@ -54,27 +55,10 @@ class ConnectController extends Controller {
     public function checkoutSeats(Request $r, ConnectOrganization $organization) {
         $this->manager($r, $organization);
         $data = $r->validate(['additional_seats' => 'required|integer|min:1|max:100000']);
-        $price = \App\Http\Controllers\AdminBillingController::effectiveMap()['connect_seat_monthly'] ?? null;
-        abort_unless($price, 503, 'De Connect-seatprijs is nog niet gekoppeld (admin → Billing).');
-        $owner = $organization->members()->where('role', 'owner')->with('user')->first()?->user;
-        abort_unless($owner, 422, 'Er is geen eigenaar aan deze organisatie gekoppeld.');
-        $session = (new StripeClient(['api_key' => config('billing.stripe_secret')]))->checkout->sessions->create([
-            'mode' => 'subscription', 'line_items' => [['price' => $price, 'quantity' => (int) $data['additional_seats']]],
-            'customer_email' => $owner->email, 'billing_address_collection' => 'required', 'locale' => 'auto',
-            'success_url' => rtrim(config('connect.url'), '/').'/?checkout=success',
-            'cancel_url' => rtrim(config('connect.url'), '/').'/?checkout=cancelled',
-            'metadata' => ['connect_organization_id' => (string) $organization->id, 'additional_seats' => (string) $data['additional_seats']],
-            'subscription_data' => ['metadata' => ['connect_organization_id' => (string) $organization->id, 'additional_seats' => (string) $data['additional_seats']]],
-        ]);
-        return response()->json(['checkout_url' => $session->url]);
+        return response()->json(['checkout_url' => rtrim(config('app.frontend_url'), '/').'/checkout/connect?org='.$organization->id.'&seats='.$data['additional_seats']]);
     }
     public function invoiceRequest(Request $r, ConnectOrganization $organization) {
-        $this->manager($r, $organization);
-        $data = $r->validate(['additional_seats' => 'required|integer|min:1|max:100000', 'accepted' => 'accepted']);
-        $user = $r->user();
-        $quote = ConnectQuoteRequest::create(['user_id' => $user->id, 'company_name' => $organization->name, 'contact_name' => trim(($user->first_name ?? '').' '.($user->last_name ?? '')), 'email' => $user->email, 'billing_email' => $user->email, 'seat_count' => (int) $organization->seat_limit + (int) $data['additional_seats'], 'purpose' => 'Extra Connect-licenties op factuur', 'requirements' => 'Betalingsverplichting geaccepteerd via Connect.']);
-        try { Mail::to('gianni@milmap.nl')->send(new \App\Mail\ConnectQuoteRequestMail($quote->toArray())); } catch (\Throwable $e) { report($e); }
-        return response()->json(['message' => 'Je factuuraanvraag is ontvangen. MilMap neemt contact met je op.'], 201);
+        return $this->checkoutSeats($r, $organization);
     }
     public function invite(Request $r, ConnectOrganization $organization, ConnectRoster $roster) {
         $manager = $this->manager($r, $organization);
@@ -137,6 +121,8 @@ class ConnectController extends Controller {
         // Silent push: de app logt direct uit i.p.v. pas bij het volgende API-verzoek.
         \App\Services\PushSender::silentToDevice($device, ['action' => 'logout']);
         DB::transaction(function () use ($device) {
+            $binding = ConnectAllowedDevice::where('user_id', $device->user_id)->where('organization_id', $device->organization_id)->lockForUpdate()->first();
+            if ($binding) app(\App\Services\ConnectDeviceLogin::class)->revoke($binding);
             $device->update(['revoked_at' => now()]);
             DB::table('personal_access_tokens')->where('connect_device_id', $device->id)->where('tokenable_id', $device->user_id)->where('tokenable_type', \App\Models\User::class)->delete();
         }); return response()->noContent();
@@ -146,19 +132,19 @@ class ConnectController extends Controller {
         $seen = ConnectDevice::where('organization_id', $organization->id)->whereNotNull('vendor_id')->get()->keyBy(fn ($d) => strtolower($d->vendor_id));
         return ConnectAllowedDevice::where('organization_id', $organization->id)->orderBy('name')->get()->map(function ($a) use ($seen) {
             $d = $seen->get(strtolower($a->udid));
-            return ['id' => $a->id, 'name' => $a->name, 'udid' => $a->udid, 'linked' => (bool) $d, 'last_seen_at' => $d?->last_seen_at,
+            return ['user_id' => $a->user_id, 'assigned_employee' => $a->assigned_employee, 'platform' => $a->platform, 'id' => $a->id, 'name' => $a->name, 'udid' => $a->udid, 'linked' => (bool) $d, 'last_seen_at' => $d?->last_seen_at,
                 'device_id' => $d?->id, 'connected' => (bool) $d?->is_connected, 'app_version' => $d?->app_version, 'model' => $d?->model, 'update_pending' => (bool) $d?->update_requested_at];
         });
     }
     public function importAllowedDevices(Request $r, ConnectOrganization $organization) {
         $this->manager($r, $organization);
-        $data = $r->validate(['devices' => 'required|array|min:1|max:500', 'devices.*.name' => 'required|string|max:120', 'devices.*.udid' => ['required', 'string', 'regex:/^[A-Za-z0-9-]{8,64}$/']]);
-        $rows = collect($data['devices'])->map(fn ($d) => ['name' => trim($d['name']), 'udid' => strtoupper(trim($d['udid']))])->unique('udid')->values();
+        $data = $r->validate(['devices' => 'required|array|min:1|max:500', 'devices.*.platform' => 'sometimes|in:ios,android', 'devices.*.name' => 'required|string|max:120', 'devices.*.udid' => ['required', 'string', 'regex:/^[A-Za-z0-9-]{8,64}$/']]);
+        $rows = collect($data['devices'])->map(fn ($d) => ['name' => trim($d['name']), 'udid' => strtoupper(trim($d['udid'])), 'platform' => $d['platform'] ?? 'ios'])->unique('udid')->values();
         $new = $rows->reject(fn ($d) => ConnectAllowedDevice::where('organization_id', $organization->id)->where('udid', $d['udid'])->exists())->count();
         $total = ConnectAllowedDevice::where('organization_id', $organization->id)->count() + $new;
         abort_if($total > $organization->seat_limit, 422, "Je kunt maximaal {$organization->seat_limit} apparaten vooraf toestaan (licentieplaatsen); met deze upload kom je op {$total}.");
         DB::transaction(function () use ($rows, $organization) {
-            foreach ($rows as $d) ConnectAllowedDevice::updateOrCreate(['organization_id' => $organization->id, 'udid' => $d['udid']], ['name' => $d['name']]);
+            foreach ($rows as $d) ConnectAllowedDevice::updateOrCreate(['organization_id' => $organization->id, 'udid' => $d['udid']], ['name' => $d['name'], 'platform' => $d['platform']]);
         });
         return response()->json(['imported' => $rows->count(), 'new' => $new, 'allowed_devices' => $this->allowedDevices($organization)]);
     }
@@ -182,12 +168,12 @@ class ConnectController extends Controller {
     }
     public function mdmList(Request $r) {
         $org = $this->mdmOrganization($r);
-        return response()->json(['devices' => ConnectAllowedDevice::where('organization_id', $org->id)->orderBy('name')->get(['name', 'udid']), 'seat_limit' => $org->seat_limit]);
+        return response()->json(['devices' => ConnectAllowedDevice::where('organization_id', $org->id)->orderBy('name')->get(['name', 'udid', 'platform']), 'seat_limit' => $org->seat_limit]);
     }
     public function mdmAdd(Request $r) {
         $org = $this->mdmOrganization($r);
         abort_unless($org->licensed(), 403, 'De licentie van deze organisatie is niet actief.');
-        $data = $r->validate(['udid' => ['required', 'string', 'regex:/^[A-Za-z0-9-]{8,64}$/'], 'name' => 'nullable|string|max:120']);
+        $data = $r->validate(['udid' => ['required', 'string', 'regex:/^[A-Za-z0-9-]{8,64}$/'], 'name' => 'nullable|string|max:120', 'platform' => 'sometimes|in:ios,android']);
         $udid = strtoupper(trim($data['udid']));
         $existing = ConnectAllowedDevice::where('organization_id', $org->id)->where('udid', $udid)->first();
         if (! $existing) {
@@ -195,18 +181,25 @@ class ConnectController extends Controller {
             abort_if($count >= $org->seat_limit, 422, "Alle {$org->seat_limit} licentieplaatsen zijn in gebruik.");
         }
         $name = trim($data['name'] ?? '') ?: ($existing?->name ?? $udid);
-        $device = ConnectAllowedDevice::updateOrCreate(['organization_id' => $org->id, 'udid' => $udid], ['name' => $name]);
-        return response()->json(['device' => ['name' => $device->name, 'udid' => $device->udid], 'created' => ! $existing], $existing ? 200 : 201);
+        $device = ConnectAllowedDevice::updateOrCreate(['organization_id' => $org->id, 'udid' => $udid], ['name' => $name, 'platform' => $data['platform'] ?? $existing?->platform ?? 'ios']);
+        return response()->json(['device' => ['name' => $device->name, 'udid' => $device->udid, 'platform' => $device->platform], 'created' => ! $existing], $existing ? 200 : 201);
+    }
+    public function mdmBinding(Request $r, string $udid) {
+        $org = $this->mdmOrganization($r);
+        $device = ConnectAllowedDevice::where('organization_id', $org->id)->whereRaw('LOWER(udid) = ?', [strtolower($udid)])->firstOrFail();
+        $secret = app(\App\Services\ConnectDeviceLogin::class)->provision($device);
+        return response()->json(['device_binding' => $secret])->header('Cache-Control', 'no-store');
     }
     public function mdmRemove(Request $r, string $udid) {
         $org = $this->mdmOrganization($r);
-        ConnectAllowedDevice::where('organization_id', $org->id)->whereRaw('LOWER(udid) = ?', [strtolower($udid)])->delete();
+        $device = ConnectAllowedDevice::where('organization_id', $org->id)->whereRaw('LOWER(udid) = ?', [strtolower($udid)])->first();
+        if ($device) DB::transaction(function () use ($device) { app(\App\Services\ConnectDeviceLogin::class)->revoke($device); $device->delete(); });
         return response()->noContent();
     }
     public function deleteAllowedDevice(Request $r, ConnectOrganization $organization, ConnectAllowedDevice $allowedDevice) {
         $this->manager($r, $organization);
         abort_unless((int) $allowedDevice->organization_id === (int) $organization->id, 404);
-        $allowedDevice->delete(); return response()->noContent();
+        DB::transaction(function () use ($allowedDevice) { app(\App\Services\ConnectDeviceLogin::class)->revoke($allowedDevice); $allowedDevice->delete(); }); return response()->noContent();
     }
     /**
      * Publiek: huisstijl voor het inlogscherm op een zakelijk apparaat. De app stuurt het

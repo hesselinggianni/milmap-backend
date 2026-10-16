@@ -28,6 +28,7 @@ return Application::configure(basePath: dirname(__DIR__))
             'throttle:api',
             \Illuminate\Routing\Middleware\SubstituteBindings::class,
             \App\Http\Middleware\ForceJsonResponse::class,
+            \App\Http\Middleware\EnforceConnectManagement::class,
         ]);
 
         $middleware->alias([

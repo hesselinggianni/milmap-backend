@@ -8,6 +8,7 @@ use Illuminate\Database\Eloquent\SoftDeletes;
 class Map extends Model
 {
     use HasUuids;
+    use \App\Models\Concerns\BelongsToConnectOrganization;
     use SoftDeletes;
 
     protected $table = 'maps';

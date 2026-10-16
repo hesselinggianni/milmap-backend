@@ -8,9 +8,35 @@ use Illuminate\Support\Facades\DB;
 
 class ConnectDeviceRegistry
 {
+    private function recordBound(Request $request, $token, bool $login): void
+    {
+        abort_unless(app(ConnectDeviceLogin::class)->validSession($token), 401);
+        $binding = ConnectAllowedDevice::findOrFail($token->connect_allowed_device_id);
+        $id = $request->header('X-Milmap-Installation');
+        abort_unless(is_string($id) && preg_match('/^[a-f0-9-]{36}$/i', $id), 422, 'Apparaatidentificatie ontbreekt.');
+        DB::transaction(function () use ($request, $token, $login, $binding, $id) {
+            User::whereKey($binding->user_id)->lockForUpdate()->firstOrFail();
+            $device = ConnectDevice::firstOrNew(['user_id' => $binding->user_id, 'installation_id' => strtolower($id)]);
+            if (!$login) abort_unless($device->exists && !$device->revoked_at && (int) $token->connect_device_id === (int) $device->id, 401);
+            if ($login) {
+                // One device account has one active installation. Rebinding revokes older sessions.
+                DB::table('personal_access_tokens')->where('connect_allowed_device_id', $binding->id)->where('id', '!=', $token->id)->delete();
+                ConnectDevice::where('user_id', $binding->user_id)->update(['revoked_at' => now()]);
+            }
+            $device->fill(array_merge(DeviceInfo::hardware($request), ['name' => $binding->name,
+                'organization_id' => $binding->organization_id, 'vendor_id' => $binding->udid,
+                'platform' => DeviceInfo::platform($request), 'last_seen_at' => now(), 'revoked_at' => null]))->save();
+            $token->forceFill(['connect_device_id' => $device->id])->save();
+        });
+    }
+
     public function record(Request $request, $token, bool $login = false): void
     {
         if (!$token || !method_exists($token, 'save') || in_array('admin', $token->abilities ?? [], true)) return;
+        if ($token->connect_allowed_device_id) {
+            $this->recordBound($request, $token, $login);
+            return;
+        }
         $id = $request->header('X-Milmap-Installation');
         if (!is_string($id) || !preg_match('/^[a-f0-9-]{36}$/i', $id)) {
             // Connect's management portal itself does not consume an app-device license.

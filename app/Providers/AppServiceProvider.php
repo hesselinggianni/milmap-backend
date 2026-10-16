@@ -41,6 +41,10 @@ class AppServiceProvider extends ServiceProvider
      */
     public function boot()
     {
+        \Laravel\Sanctum\Sanctum::authenticateAccessTokensUsing(function ($token, bool $valid) {
+            return $valid && app(\App\Services\ConnectDeviceLogin::class)->validSession($token);
+        });
+
         Gate::policy(User::class, UserPolicy::class);
         Gate::policy(Map::class, MapPolicy::class);
 

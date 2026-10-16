@@ -76,6 +76,7 @@ class InvitationService
     public function createInvite($invitable, string $email, ?string $role, User $inviter): array
     {
         $email = mb_strtolower(trim($email));
+        app(ConnectManagement::class)->assertInvitation($invitable, $inviter, $email);
         $role  = in_array($role, ['viewer', 'editor', 'admin'], true) ? $role : 'viewer';
 
         $existingUser = User::where('email', $email)->first();
@@ -133,6 +134,7 @@ class InvitationService
      */
     public function accept(Invitation $invite, User $user): void
     {
+        if ($invite->invitable) app(ConnectManagement::class)->assertInvitation($invite->invitable, $invite->inviter ?? $user, $user->email);
         if (! $invite->isPending()) {
             return;
         }

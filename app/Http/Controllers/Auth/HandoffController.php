@@ -44,14 +44,13 @@ class HandoffController extends Controller
         }
         RateLimiter::hit($ipKey, 300);
 
-        $handoff = AuthHandoffToken::where('token', $data['token'])->first();
-        if (!$handoff || !$handoff->isValid()) {
-            return response()->json(['message' => 'Invalid or expired token.'], 422);
-        }
-
-        // Eenmalig: meteen als gebruikt markeren, vóór het token uitgeven —
-        // een dubbele inwisseling (race/replay) mag nooit twee sessies opleveren.
-        $handoff->forceFill(['used_at' => now()])->save();
+        $handoff = \Illuminate\Support\Facades\DB::transaction(function () use ($data) {
+            $entry = AuthHandoffToken::where('token', $data['token'])->lockForUpdate()->first();
+            if (!$entry || !$entry->isValid()) return null;
+            $entry->forceFill(['used_at' => now()])->save();
+            return $entry;
+        });
+        if (!$handoff) return response()->json(['message' => 'Invalid or expired token.'], 422);
 
         $user = $handoff->user;
         $newToken = $user->createToken('API Token (handoff)', ['user'], now()->addHours(1));
@@ -61,8 +60,11 @@ class HandoffController extends Controller
             'last_used_ip' => $request->ip(),
         ])->save();
 
+        $user->withAccessToken($newToken->accessToken);
+        app(\App\Services\ConnectManagement::class)->forgetContext($user);
         return response()->json([
             'user' => array_merge($user->toArray(), [
+                'connect_management' => app(\App\Services\ConnectManagement::class)->context($user),
                 'verification' => $user->verificationState(),
                 'premium' => $user->premiumState(),
             ]),

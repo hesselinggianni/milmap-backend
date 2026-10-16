@@ -26,33 +26,36 @@ class OtaUpdateController extends Controller
     public function check(Request $request)
     {
         $platform = strtolower((string) $request->input('platform', 'all'));
-        $channel  = (string) $request->input('channel', 'production');
-        // LET OP: `version_name` is de vaste NATIVE marketing-versie (bv. "1.8"),
-        // die blijft ongewijzigd tussen OTA-releases in — vergelijk dus NOOIT
-        // daartegen (dat maakt een nieuwe OTA-bundel met dezelfde marketing-
-        // versie onzichtbaar: "geen update" terwijl er wél een nieuwe bundel is).
-        // `version_build` is de versie-string van de OP DIT MOMENT actieve
-        // web-bundel (native baseline totdat een OTA-update is toegepast) —
-        // dát is het juiste vergelijkingsveld.
-        $current  = (string) $request->input('version_build', $request->input('version_name', ''));
+        $channel = $request->input('channel') ?: $request->input('defaultChannel') ?: 'production';
+        // Installed Capgo protocol: version_name = active OTA bundle;
+        // version_build = native marketing baseline. Desktop sends its active
+        // bundle in version_build and has no version_name.
+        $current = (string) ($request->input('version_name') ?: $request->input('version_build', ''));
+        $native = (string) $request->input('version_build', '');
+        $none = fn () => response()->json(['message' => 'No update available'])
+            ->header('Cache-Control', 'private, no-store, max-age=0');
+        if (!\App\Support\OtaVersion::parts($current)) return $none();
 
-        $build = OtaBuild::query()
-            ->where('active', true)
-            ->where('channel', $channel)
-            ->whereIn('platform', array_unique([$platform, 'all']))
-            ->orderByDesc('id')
-            ->first();
-
-        if (! $build || $build->version === $current) {
-            return response()->json(['message' => 'No update available']);
-        }
+        $build = OtaBuild::query()->where('active', true)->where('channel', $channel)
+            ->whereIn('platform', array_unique([$platform, 'all']))->get()
+            ->filter(function ($build) use ($native) {
+                if (!\App\Support\OtaVersion::parts($build->version)) return false;
+                return !$build->min_native_version || (\App\Support\OtaVersion::parts($native)
+                    && \App\Support\OtaVersion::parts($build->min_native_version)
+                    && \App\Support\OtaVersion::compare($native, $build->min_native_version) >= 0);
+            })
+            ->sort(function ($a, $b) {
+                return \App\Support\OtaVersion::compare($b->version, $a->version) ?: ($b->id <=> $a->id);
+            })->first();
+        // Highest compatible version, never the next step or an older late upload.
+        if (!$build || \App\Support\OtaVersion::compare($build->version, $current) <= 0) return $none();
 
         return response()->json([
             'version'  => $build->version,
             'url'      => Storage::disk('public')->url($build->bundle_path),
             'checksum' => $build->checksum,
             'mandatory' => $build->mandatory,
-        ]);
+        ])->header('Cache-Control', 'private, no-store, max-age=0');
     }
 
     public function publish(Request $request)

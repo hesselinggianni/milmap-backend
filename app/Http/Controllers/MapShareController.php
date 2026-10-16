@@ -198,6 +198,7 @@ class MapShareController extends Controller
         $share = MapShare::where('token', $token)->firstOrFail();
 
         $map = $share->map;
+        app(\App\Services\ConnectManagement::class)->assertPublicResource($map);
 
         // Load route maps (filtered by share config)
         $routeMapsQuery = RouteMap::where('map_id', $map->id);

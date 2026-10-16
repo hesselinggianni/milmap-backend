@@ -21,7 +21,7 @@ Route::get('/login', fn () => response()->json(['message' => 'Unauthenticated.']
 // ontstaat: "Uncaught SyntaxError: Unexpected token '<'".
 Route::get('/{any}', function () {
     return view('welcome');
-})->where('any', '(?!.*\.(?:js|mjs|css|map|json|ico|png|jpe?g|gif|svg|webp|avif|woff2?|ttf|otf|eot|txt|xml|wasm)$).*');
+})->where('any', '(?!api(?:/|$))(?!.*\.(?:js|mjs|css|map|json|ico|png|jpe?g|gif|svg|webp|avif|woff2?|ttf|otf|eot|txt|xml|wasm)$).*');
 
 
 use App\Http\Controllers\WorkSpaceController;

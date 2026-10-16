@@ -48,6 +48,13 @@ class User extends Authenticatable implements HasLocalePreference
      */
     protected static function booted(): void
     {
+        static::deleting(function (User $user) {
+            foreach ([\App\Models\Map::class, \App\Models\RouteMap::class, \App\Models\Mission::class] as $model) {
+                if ($model::withoutGlobalScopes()->withTrashed()->where('owner_id', $user->id)->whereNotNull('connect_organization_id')->exists()) {
+                    abort(409, 'Draag de organisatiegegevens eerst via Connect over voordat dit account wordt verwijderd.');
+                }
+            }
+        });
         static::creating(function (User $u) {
             if (empty($u->share_uuid)) {
                 $u->share_uuid = (string) \Illuminate\Support\Str::uuid();
@@ -105,6 +112,11 @@ class User extends Authenticatable implements HasLocalePreference
      */
     protected $appends = ['avatar_url'];
 
+    public function getConnectManagementAttribute(): array
+    {
+        return app(\App\Services\ConnectManagement::class)->context($this);
+    }
+
     protected function casts(): array
     {
         return [
@@ -116,6 +128,7 @@ class User extends Authenticatable implements HasLocalePreference
             'billing_details'   => 'encrypted:array',
             'billing_synced_at' => 'datetime',
             'trial_ends_at'     => 'datetime',
+            'connect_device_account' => 'boolean',
             'view_only'         => 'boolean',
             'is_demo'           => 'boolean',
             'last_seen_at'      => 'datetime',
@@ -419,7 +432,7 @@ class User extends Authenticatable implements HasLocalePreference
             return true; // basisfuncties zijn altijd beschikbaar
         }
 
-        if (($this->is_admin ?? false) || $this->onAppTrial()) {
+        if (($this->is_admin ?? false) || $this->onAppTrial() || $this->activeConnectMembership()) {
             return true;
         }
 
@@ -497,6 +510,9 @@ class User extends Authenticatable implements HasLocalePreference
     {
         $token = method_exists($this, 'currentAccessToken') ? $this->currentAccessToken() : null;
         if (! $token || ! isset($token->id)) return true;
+        if ($token->connect_allowed_device_id ?? null) {
+            return ConnectAllowedDevice::whereKey($token->connect_allowed_device_id)->where('organization_id', $org->id)->where('user_id', $this->id)->whereNotNull('binding_hash')->exists();
+        }
         $deviceId = $token->connect_device_id ?? null;
         $vendor = $deviceId ? ConnectDevice::whereKey($deviceId)->value('vendor_id') : null;
         if (! $vendor) return false;

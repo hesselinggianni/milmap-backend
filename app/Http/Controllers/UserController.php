@@ -138,6 +138,7 @@ class UserController extends Controller
         // wall kan tonen en de premium-UI op slot kan zetten zonder losse call.
         return response()->json(
             array_merge($user->toArray(), [
+                'connect_management' => app(\App\Services\ConnectManagement::class)->context($user),
                 'verification' => $user->verificationState(),
                 'premium'      => $user->premiumState(),
             ]),
@@ -322,6 +323,8 @@ class UserController extends Controller
         if (!$user) {
             return response()->json(['message' => 'Unauthorized'], 401);
         }
+
+        abort_if($user->connect_device_account, 403, 'Connect-apparaataccounts gebruiken apparaatlogin en kunnen geen wachtwoord instellen of wijzigen.');
 
         $isFirstTimeSet = !$user->password_set_at;
 

@@ -34,6 +34,11 @@ class PushRouteMapToGarmin implements ShouldQueue
             return;
         }
 
+        $user = \App\Models\User::find($this->userId);
+        if (!$user || !app(\App\Services\ConnectManagement::class)->allows($user, 'integrations')) {
+            $routeMap->update(['garmin_push_status' => 'failed', 'garmin_push_error' => 'Koppelingen zijn door de organisatie uitgeschakeld.']);
+            return;
+        }
         $account = GarminAccount::where('user_id', $this->userId)->first();
         if (! $account) {
             $routeMap->update([

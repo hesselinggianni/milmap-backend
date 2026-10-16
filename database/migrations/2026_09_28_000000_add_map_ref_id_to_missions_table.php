@@ -27,7 +27,9 @@ return new class extends Migration
         Schema::table('missions', function (Blueprint $table) {
             $table->string('map_ref_id', 36)
                 ->nullable()
-                ->storedAs("JSON_UNQUOTE(JSON_EXTRACT(`map`, '$.id'))")
+                ->storedAs(Schema::getConnection()->getDriverName() === 'sqlite'
+                    ? "json_extract(map, '$.id')"
+                    : "JSON_UNQUOTE(JSON_EXTRACT(`map`, '$.id'))")
                 ->after('map');
         });
 

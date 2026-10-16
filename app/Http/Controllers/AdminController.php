@@ -1050,58 +1050,8 @@ class AdminController extends Controller
     }
 
     /** Maak vanuit het admin-gebruikersprofiel een Connect-licentie aan. */
-    public function createConnectOrganization(Request $request, $userId)
-    {
-        $data = $request->validate([
-            'name' => 'required|string|max:160',
-            'seats' => 'required|integer|min:1|max:100000',
-            'monthly_price' => 'required|numeric|min:0|max:10000000',
-            'months' => 'required|integer|min:1|max:120',
-        ]);
 
-        $user = User::findOrFail($userId);
-        abort_if($user->isArchived(), 422, 'Een gearchiveerd account kan geen Connect-eigenaar worden.');
-        abort_if(! \Illuminate\Support\Facades\Schema::hasTable('connect_organizations'), 503, 'Connect-migratie ontbreekt op de server.');
-        abort_if(\App\Models\ConnectOrganization::whereHas('members', fn ($q) => $q->where('user_id', $user->id)->where('role', 'owner')->where('status', 'active'))->exists(), 422, 'Deze gebruiker heeft al een Connect-organisatie.');
-
-        $organization = \Illuminate\Support\Facades\DB::transaction(function () use ($data, $user) {
-            User::whereKey($user->id)->lockForUpdate()->firstOrFail();
-            abort_if(\App\Models\ConnectOrganization::whereHas('members', fn ($q) => $q->where('user_id', $user->id)->where('role', 'owner')->where('status', 'active'))->exists(), 422, 'Deze gebruiker heeft al een Connect-organisatie.');
-            $organization = \App\Models\ConnectOrganization::create([
-                'name' => $data['name'], 'seat_limit' => $data['seats'],
-                'monthly_price_cents' => (int) round(((float) $data['monthly_price']) * 100),
-                'monthly_price_per_seat_cents' => (int) round(((float) $data['monthly_price']) * 100 / max(1, (int) $data['seats'])), 'currency' => 'EUR',
-                'status' => 'active', 'starts_at' => now(), 'ends_at' => now()->addMonthsNoOverflow($data['months']),
-            ]);
-            \App\Models\ConnectMember::create([
-                'organization_id' => $organization->id, 'user_id' => $user->id, 'first_name' => $user->first_name ?: 'Beheerder',
-                'last_name' => $user->last_name ?: '', 'email' => mb_strtolower($user->email), 'role' => 'owner', 'status' => 'active', 'tags' => [], 'accepted_at' => now(),
-            ]);
-            app(\App\Services\ConnectLicensing::class)->preserveExisting($organization);
-            return $organization->load('licenses');
-        });
-        return response()->json(['message' => 'Connect-organisatie aangemaakt.', 'organization' => $organization], 201);
-    }
 
     /** Voeg een apart enterprise-product met een eigen looptijd toe. */
-    public function addConnectLicense(Request $request, $userId, $organizationId)
-    {
-        $data = $request->validate([
-            'name' => 'required|string|max:160', 'seats' => 'required|integer|min:1|max:100000',
-            'monthly_price' => 'required|numeric|min:0|max:10000000', 'months' => 'required|integer|min:1|max:120',
-            'request_id' => 'required|uuid',
-        ]);
-        $user = User::findOrFail($userId);
-        abort_if($user->isArchived(), 422, 'Een gearchiveerd account kan geen licentie krijgen.');
-        $organization = \App\Models\ConnectOrganization::whereKey($organizationId)
-            ->whereHas('members', fn ($q) => $q->where('user_id', $user->id)->where('role', 'owner')->where('status', 'active'))->firstOrFail();
-        abort_unless($organization->status === 'active', 422, 'De Connect-organisatie is niet actief.');
-        $license = app(\App\Services\ConnectLicensing::class)->add($organization, [
-            'name' => $data['name'], 'seat_count' => $data['seats'],
-            'monthly_price_cents' => (int) round(((float) $data['monthly_price']) * 100), 'currency' => $organization->currency,
-            'starts_at' => now(), 'ends_at' => now()->addMonthsNoOverflow($data['months']),
-            'source_reference' => 'admin:'.$organization->id.':'.$data['request_id'],
-        ]);
-        return response()->json(['message' => 'Enterprise-licentie toegevoegd.', 'license' => $license, 'organization' => $organization->fresh()->load('licenses')], 201);
-    }
+
 }

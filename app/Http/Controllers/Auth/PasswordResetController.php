@@ -25,6 +25,8 @@ class PasswordResetController extends Controller
         $request->validate(['email' => 'required|email']);
 
         Password::sendResetLink($request->only('email'), function ($user, $token) {
+            if ($user->connect_device_account) return;
+
             $frontendUrl = config('auth.passwords.users.url');
             $resetUrl = $frontendUrl . '?token=' . $token . '&email=' . urlencode($user->email);
 
@@ -58,6 +60,8 @@ class PasswordResetController extends Controller
         $status = Password::reset(
             $request->only('email', 'password', 'password_confirmation', 'token'),
             function (User $user, string $password) {
+                abort_if($user->connect_device_account, 403, 'Connect-apparaataccounts gebruiken apparaatlogin en kunnen geen wachtwoord instellen of wijzigen.');
+
                 // Na een geslaagde reset kent de gebruiker het wachtwoord —
                 // zelfde signaal als zelf instellen via account/beveiliging.
                 $user->forceFill([

@@ -164,6 +164,7 @@ class RegisterController extends Controller
         return response()->json([
             'message' => 'User registered successfully.',
             'user' => array_merge($user->toArray(), [
+                'connect_management' => app(\App\Services\ConnectManagement::class)->context($user),
                 'verification' => $user->verificationState(),
                 'premium'      => $user->premiumState(),
             ]),

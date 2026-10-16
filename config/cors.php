@@ -27,7 +27,7 @@ return [
 
     'allowed_headers' => ['*'],
 
-    'exposed_headers' => ['Content-Disposition', 'X-Milmap-Update-Requested'],
+    'exposed_headers' => ['Content-Disposition', 'X-Milmap-Update-Requested', 'X-Milmap-Management'],
 
     'max_age' => 3600,
 
