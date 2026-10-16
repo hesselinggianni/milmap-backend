@@ -51,7 +51,7 @@ class ConnectDeviceLoginTest extends TestCase
     public function test_verified_login_uses_server_account_and_trusted_udid(): void {
         $secret=$this->binding();
         $this->postJson('/api/v1/connect/device-login/status',['device_binding'=>$secret])->assertOk()->assertJsonPath('managed',true);
-        $res=$this->loginDevice($secret)->assertOk()->assertJsonPath('user.email','18D2D99B@connect.milmap.nl');
+        $res=$this->loginDevice($secret)->assertOk()->assertJsonPath('user.email',strtolower($this->device->udid).'@connect.milmap.nl');
         $this->assertTrue(User::find($res->json('user.id'))->hasPremiumAccess());
         $this->assertSame($this->device->udid,ConnectDevice::first()->vendor_id);
         $this->assertSame($this->org->id,ConnectDevice::first()->organization_id);
@@ -100,10 +100,11 @@ class ConnectDeviceLoginTest extends TestCase
     public function test_prefix_collision_and_preexisting_accounts_never_merge(): void {
         $this->binding();
         $other=ConnectAllowedDevice::create(['organization_id'=>$this->org->id,'name'=>'Other','udid'=>'18D2D99B-DIFFERENT']);
+        User::create(['first_name'=>'Bestaand','last_name'=>'Account','email'=>'18d2d99b-different@connect.milmap.nl','password'=>bcrypt('Password1!'),'email_verified_at'=>now()]);
         try { app(ConnectDeviceLogin::class)->provision($other); $this->fail('Collision accepted'); }
         catch (\Symfony\Component\HttpKernel\Exception\HttpException $e) { $this->assertSame(409,$e->getStatusCode()); }
         $this->assertNull($other->fresh()->user_id);
-        $this->assertSame(1,User::count());
+        $this->assertSame(2,User::count());
     }
     public function test_rotation_invalidates_secret_and_sessions_but_retains_account(): void {
         $secret=$this->binding();$res=$this->loginDevice($secret)->assertOk();

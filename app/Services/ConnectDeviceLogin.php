@@ -15,9 +15,9 @@ class ConnectDeviceLogin
             if (!$device->user_id) {
                 $prefix = $device->platform === 'android'
                     ? 'A'.strtoupper(substr(hash('sha256', $device->organization_id.':'.$device->udid),0,48))
-                    : strtoupper(explode('-', $device->udid, 2)[0]);
-                abort_unless(preg_match('/^[A-Z0-9]{1,64}$/', $prefix), 422);
-                $email = $prefix.'@connect.milmap.nl';
+                    : strtoupper($device->udid);
+                abort_unless(preg_match('/^[A-Z0-9-]{1,64}$/', $prefix), 422);
+                $email = strtolower($prefix).'@connect.milmap.nl';
                 // Never take over an existing account or merge two UDIDs sharing a prefix.
                 abort_if(User::whereRaw('LOWER(email) = ?', [strtolower($email)])->exists(), 409, 'Dit UDID-prefix heeft al een account. Handmatige controle vereist.');
                 $user = User::create(['first_name' => $device->name, 'last_name' => 'Connect',
