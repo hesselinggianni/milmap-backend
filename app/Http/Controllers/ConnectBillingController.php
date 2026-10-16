@@ -8,7 +8,7 @@ class ConnectBillingController extends Controller {
         abort_unless($org->members()->where('user_id',$r->user()->id)->where('status','active')->whereIn('role',['owner','admin'])->exists(),403);
     }
     public function catalog(Request $r, ConnectOrganization $organization, ConnectBilling $billing) {
-        $this->manager($r,$organization); $quote=$billing->quote(); unset($quote['product'],$quote['price_id'],$quote['tax_behavior']);
+        $this->manager($r,$organization); $quote=$billing->quote($organization); unset($quote['product'],$quote['price_id'],$quote['tax_behavior']);
         return response()->json(['organization'=>['id'=>$organization->id,'name'=>$organization->name],'pricing'=>$quote]);
     }
     public function index(Request $r, ConnectOrganization $organization) {

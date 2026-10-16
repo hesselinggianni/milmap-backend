@@ -771,6 +771,22 @@ class AdminController extends Controller
         return response()->json(['message' => 'Connect-organisatie aangemaakt.', 'organization' => $organization], 201);
     }
 
+    /** Koppel een klantspecifieke Stripe-prijs (Connect-product) aan de organisatie; daarmee koopt de klant zijn licentie. */
+    public function setConnectStripePrice(Request $request, $userId, $organizationId)
+    {
+        $data = $request->validate(['price_id' => 'nullable|string|max:100|regex:/^price_[A-Za-z0-9]+$/']);
+        $organization = \App\Models\ConnectOrganization::whereKey($organizationId)
+            ->whereHas('members', fn ($q) => $q->where('user_id', (int) $userId)->where('role', 'owner')->where('status', 'active'))->firstOrFail();
+        if ($data['price_id'] ?? null) {
+            abort_unless(config('billing.stripe_secret'), 503, 'Stripe is nog niet geconfigureerd.');
+            try { $price = (new \Stripe\StripeClient(['api_key' => config('billing.stripe_secret')]))->prices->retrieve($data['price_id'], []); }
+            catch (\Stripe\Exception\InvalidRequestException $e) { abort(422, 'Deze prijs bestaat niet in Stripe.'); }
+            abort_unless($price->active && $price->type === 'recurring' && $price->recurring->interval === 'month' && $price->recurring->interval_count === 1 && $price->unit_amount > 0, 422, 'Gebruik een actieve vaste maandprijs per seat.');
+        }
+        $organization->forceFill(['stripe_price_id' => $data['price_id'] ?? null])->save();
+        return response()->json(['message' => 'Stripe-prijs bijgewerkt.', 'organization' => $organization->fresh()]);
+    }
+
     /** Voeg een apart enterprise-product met een eigen looptijd toe. */
     public function addConnectLicense(Request $request, $userId, $organizationId)
     {

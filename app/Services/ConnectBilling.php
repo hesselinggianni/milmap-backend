@@ -7,15 +7,16 @@ use Illuminate\Support\Carbon;
 use Stripe\StripeClient;
 class ConnectBilling {
     protected function stripe(): StripeClient { abort_unless(config('billing.stripe_secret'),503,'Stripe is nog niet geconfigureerd.'); return new StripeClient(['api_key'=>config('billing.stripe_secret')]); }
-    public function quote(): array {
-        $priceId = AdminBillingController::effectiveMap()['connect_seat_monthly'] ?? null;
-        abort_unless($priceId,503,'De Connect-seatprijs is nog niet ingesteld in MilMap Billing.');
+    public function quote(?ConnectOrganization $org = null): array {
+        // Een klantspecifieke Stripe-prijs (admin koppelt die aan de organisatie) gaat voor de algemene seatprijs.
+        $priceId = $org?->stripe_price_id ?: (AdminBillingController::effectiveMap()['connect_seat_monthly'] ?? null);
+        abort_unless($priceId,503,'Er is nog geen Connect-prijs gekoppeld aan deze organisatie.');
         $price=$this->stripe()->prices->retrieve($priceId,[]);
         abort_unless($price->active && $price->type==='recurring' && $price->recurring->interval==='month' && $price->recurring->interval_count===1 && $price->unit_amount>0,503,'Connect vereist een actieve vaste maandprijs per seat.');
         return ['price_id'=>$priceId,'product'=>$price->product,'unit_monthly_cents'=>$price->unit_amount,'currency'=>strtoupper($price->currency),'tax_behavior'=>$price->tax_behavior ?? 'unspecified','terms'=>[1,6,12]];
     }
     public function order(ConnectOrganization $org, int $actorId, array $data): ConnectOrder {
-        $quote=$this->quote();
+        $quote=$this->quote($org);
         abort_unless((int)$data['expected_unit_monthly_cents']===$quote['unit_monthly_cents'] && $data['expected_currency']===$quote['currency'],409,'De seatprijs is gewijzigd. Ververs de checkout en controleer het nieuwe bedrag.');
         $order=DB::transaction(function () use ($org,$actorId,$data,$quote) {
             ConnectOrganization::whereKey($org->id)->lockForUpdate()->firstOrFail();
@@ -50,7 +51,7 @@ class ConnectBilling {
                 'billing_address_collection'=>'required','customer_update'=>['address'=>'auto','name'=>'auto'],
                 'tax_id_collection'=>['enabled'=>true], 'locale'=>'auto', 'metadata'=>$metadata,'subscription_data'=>['metadata'=>$metadata],
                 'success_url'=>rtrim(config('connect.url'),'/').'/?checkout=success&order='.$order->id,
-                'cancel_url'=>rtrim(config('app.frontend_url'),'/').'/checkout/connect?org='.$org->id.'&order='.$order->id,
+                'cancel_url'=>rtrim(config('app.frontend_url'),'/').'/checkout/connect?org='.$org->uuid.'&order='.$order->id,
             ],['idempotency_key'=>'connect-checkout-'.$order->id]);
             $order->update(['stripe_checkout_id'=>$session->id,'checkout_url'=>$session->url,'status'=>'awaiting_payment']);
         } else {

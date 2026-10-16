@@ -1092,6 +1092,7 @@ Route::prefix('v1')->middleware(['api'])->group(function () {
             Route::put('/admin/users/{userId}/billing-profile', [\App\Http\Controllers\AdminBillingProfileController::class, 'update']);
             Route::get('/admin/users/{userId}/invoices', [\App\Http\Controllers\AdminUserOverviewController::class, 'invoices']);
             Route::post('/admin/users/{userId}/connect-organization', [AdminController::class, 'createConnectOrganization']);
+            Route::put('/admin/users/{userId}/connect-organizations/{organizationId}/stripe-price', [AdminController::class, 'setConnectStripePrice']);
             Route::post('/admin/users/{userId}/connect-organizations/{organizationId}/licenses', [AdminController::class, 'addConnectLicense']);
             Route::delete('/admin/users/{userId}', [AdminController::class, 'deleteUser']);
             Route::post('/admin/users/{userId}/reset-password', [AdminController::class, 'resetUserPassword']);

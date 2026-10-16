@@ -43,7 +43,7 @@ class ConnectController extends Controller {
         $routeCounts = RouteMap::selectRaw('owner_id, COUNT(*) as c')->whereIn('owner_id', $userIds)->groupBy('owner_id')->pluck('c','owner_id');
         $missionCounts = Mission::selectRaw('owner_id, COUNT(*) as c')->whereIn('owner_id', $userIds)->groupBy('owner_id')->pluck('c','owner_id');
         $members->each(function ($member) use ($mapCounts, $routeCounts, $missionCounts) { $member->setAttribute('stats', ['maps' => (int) ($mapCounts[$member->user_id] ?? 0), 'route_maps' => (int) ($routeCounts[$member->user_id] ?? 0), 'missions' => (int) ($missionCounts[$member->user_id] ?? 0)]); });
-        return response()->json(['organization' => $organization, 'role' => $manager->role, 'licensed' => $organization->licensed(),
+        return response()->json(['organization' => $organization, 'user' => ['name' => trim($r->user()->first_name.' '.$r->user()->last_name), 'email' => $r->user()->email], 'role' => $manager->role, 'licensed' => $organization->licensed(),
             'occupied_seats' => $organization->occupiedSeats(), 'occupied_devices' => $organization->occupiedDevices(), 'members' => $members, 'devices' => $devices, 'allowed_devices' => $this->allowedDevices($organization),
             'management_policy' => app(\App\Services\ConnectManagement::class)->policy($organization),
             'analytics' => ['maps' => $mapCounts->sum(), 'route_maps' => $routeCounts->sum(), 'missions' => $missionCounts->sum()]]);
@@ -55,7 +55,7 @@ class ConnectController extends Controller {
     public function checkoutSeats(Request $r, ConnectOrganization $organization) {
         $this->manager($r, $organization);
         $data = $r->validate(['additional_seats' => 'required|integer|min:1|max:100000']);
-        return response()->json(['checkout_url' => rtrim(config('app.frontend_url'), '/').'/checkout/connect?org='.$organization->id.'&seats='.$data['additional_seats']]);
+        return response()->json(['checkout_url' => rtrim(config('app.frontend_url'), '/').'/checkout/connect?org='.$organization->uuid.'&seats='.$data['additional_seats']]);
     }
     public function invoiceRequest(Request $r, ConnectOrganization $organization) {
         return $this->checkoutSeats($r, $organization);
@@ -229,6 +229,14 @@ class ConnectController extends Controller {
         abort_unless($allowed, 404);
         $o = $allowed->organization;
         return response()->json(['organization' => ['name' => $o->name, 'logo_url' => $o->logo_url, 'login_background_url' => $o->login_background_url]]);
+    }
+    public function updateAccount(Request $r, ConnectOrganization $organization) {
+        $this->manager($r, $organization);
+        $data = $r->validate(['name' => 'sometimes|required|string|max:190', 'contact_name' => 'sometimes|nullable|string|max:190',
+            'contact_email' => 'sometimes|nullable|email|max:190', 'billing_email' => 'sometimes|nullable|email|max:190']);
+        $organization->update($data);
+        app(\App\Services\ConnectManagement::class)->audit($organization->id, 'account.updated', 'ConnectOrganization', $organization->id, ['fields' => array_keys($data)]);
+        return response()->json(['organization' => $organization->fresh()]);
     }
     public function updateDeviceRestriction(Request $r, ConnectOrganization $organization) {
         $this->manager($r, $organization);
