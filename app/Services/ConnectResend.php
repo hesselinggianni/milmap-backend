@@ -12,7 +12,7 @@ class ConnectResend {
             $locked = ConnectOrganization::whereKey($org->id)->lockForUpdate()->firstOrFail();
             $member->refresh(); abort_unless($member->status === 'pending', 422);
             abort_unless($locked->licensed(), 422, 'De licentie is niet actief.');
-            abort_if($member->expires_at <= now() && $locked->occupiedSeats() >= $locked->seat_limit, 422, 'Er is geen licentieplaats beschikbaar.');
+            abort_if($member->expires_at <= now() && $locked->usedLicenses() >= $locked->seat_limit, 422, 'Er is geen licentieplaats beschikbaar.');
             $token = Str::random(64); $member->update(['token_hash' => hash('sha256', $token), 'expires_at' => now()->addDays(14), 'mail_sent_at' => null]); return $token;
         });
         try {

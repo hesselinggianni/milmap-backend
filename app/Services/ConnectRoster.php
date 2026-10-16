@@ -24,7 +24,7 @@ class ConnectRoster {
                     throw ValidationException::withMessages(["members.$i.email" => 'Deze gebruiker is al actief of uitgenodigd.']);
                 $new[] = [$row, $email, $member];
             }
-            if ($org->occupiedSeats() + count($new) > $org->seat_limit)
+            if ($org->usedLicenses() + count($new) > $org->seat_limit)
                 throw ValidationException::withMessages(['license' => 'Er zijn onvoldoende licentieplaatsen beschikbaar.']);
             $deliveries = [];
             foreach ($new as [$row, $email, $member]) {
@@ -59,7 +59,7 @@ class ConnectRoster {
             abort_unless(mb_strtolower($user->email) === $member->email, 403, 'Log in met het uitgenodigde e-mailadres.');
             abort_unless($member->status === 'pending' && $member->expires_at > now(), 410, 'De uitnodiging is verlopen of ingetrokken.');
             abort_unless($org->licensed(), 422, 'De enterprise-licentie is niet actief.');
-            abort_if($org->occupiedSeats() > $org->seat_limit, 422, 'Er zijn onvoldoende actieve licenties. Voeg eerst extra licenties toe.');
+            abort_if($org->usedLicenses() > $org->seat_limit, 422, 'Er zijn onvoldoende actieve licenties. Voeg eerst extra licenties toe.');
             $member->update(['user_id' => $user->id, 'status' => 'active', 'accepted_at' => now(), 'token_hash' => null]);
             return $member;
         });

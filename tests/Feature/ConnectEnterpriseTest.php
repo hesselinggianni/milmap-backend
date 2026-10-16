@@ -16,7 +16,7 @@ class ConnectEnterpriseTest extends TestCase {
     protected function setUp(): void { parent::setUp(); Mail::fake(); }
     private function user(string $email): User { return User::create(['first_name'=>'Test','last_name'=>'User','email'=>$email,'password'=>bcrypt('TestPassword1!'),'email_verified_at'=>now(),'trial_ends_at'=>now()->subDay()]); }
     private function organization(User $owner, int $seats=5): ConnectOrganization {
-        $org=ConnectOrganization::create(['name'=>'Test school','seat_limit'=>$seats,'status'=>'active','starts_at'=>now()->subDay(),'ends_at'=>now()->addYear()]);
+        $org=ConnectOrganization::create(['name'=>'Test school','seat_limit'=>$seats,'restrict_to_allowed_devices'=>false,'status'=>'active','starts_at'=>now()->subDay(),'ends_at'=>now()->addYear()]);
         ConnectMember::create(['organization_id'=>$org->id,'user_id'=>$owner->id,'email'=>$owner->email,'first_name'=>'Test','last_name'=>'Owner','role'=>'owner','status'=>'active','tags'=>[]]); return $org;
     }
     private function row(string $email): array { return ['first_name'=>'Sam','last_name'=>'Jansen','email'=>$email,'tags'=>['Klas 1']]; }
@@ -91,7 +91,7 @@ class ConnectEnterpriseTest extends TestCase {
         $this->assertSame(1, ConnectDevice::where('user_id',$owner->id)->count());
     }
     public function test_device_capacity_is_shared_and_logout_frees_a_license(): void {
-        $owner=$this->user('capacity-owner@test.nl'); $student=$this->user('capacity-student@test.nl'); $org=$this->organization($owner,1);
+        $owner=$this->user('capacity-owner@test.nl'); $student=$this->user('capacity-student@test.nl'); $org=$this->organization($owner,3);
         ConnectMember::create(['organization_id'=>$org->id,'user_id'=>$student->id,'email'=>$student->email,'first_name'=>'Sam','last_name'=>'Jansen','role'=>'member','status'=>'active']);
         $registry=app(\App\Services\ConnectDeviceRegistry::class);
         $r=\Illuminate\Http\Request::create('/');$r->headers->set('X-Milmap-Installation',(string)Str::uuid());
@@ -117,4 +117,17 @@ class ConnectEnterpriseTest extends TestCase {
         $this->assertSame(50,$org->fresh()->seat_limit);
     }
 
+    public function test_accounts_and_devices_each_use_a_license_and_login_keeps_one_session(): void {
+        $owner=$this->user('lic-owner@test.nl'); $org=$this->organization($owner,5);
+        $registry=app(\App\Services\ConnectDeviceRegistry::class);
+        $install=(string)Str::uuid();
+        $mk=function() use ($owner,$registry,$install){ $r=\Illuminate\Http\Request::create('/');$r->headers->set('X-Milmap-Installation',$install);
+            $t=$owner->createToken('App',['user'])->accessToken; $registry->record($r,$t,true); return $t; };
+        $first=$mk();
+        $this->assertSame(2,$org->fresh()->usedLicenses());
+        $second=$mk();
+        $this->assertNull(\Laravel\Sanctum\PersonalAccessToken::find($first->id));
+        $this->assertNotNull(\Laravel\Sanctum\PersonalAccessToken::find($second->id));
+        $this->assertSame(2,$org->fresh()->usedLicenses());
+    }
 }

@@ -42,9 +42,10 @@ class ConnectController extends Controller {
         $mapCounts = Map::selectRaw('owner_id, COUNT(*) as c')->whereIn('owner_id', $userIds)->groupBy('owner_id')->pluck('c','owner_id');
         $routeCounts = RouteMap::selectRaw('owner_id, COUNT(*) as c')->whereIn('owner_id', $userIds)->groupBy('owner_id')->pluck('c','owner_id');
         $missionCounts = Mission::selectRaw('owner_id, COUNT(*) as c')->whereIn('owner_id', $userIds)->groupBy('owner_id')->pluck('c','owner_id');
-        $members->each(function ($member) use ($mapCounts, $routeCounts, $missionCounts) { $member->setAttribute('stats', ['maps' => (int) ($mapCounts[$member->user_id] ?? 0), 'route_maps' => (int) ($routeCounts[$member->user_id] ?? 0), 'missions' => (int) ($missionCounts[$member->user_id] ?? 0)]); });
+        $lastSeen = ConnectDevice::selectRaw('user_id, MAX(last_seen_at) as seen')->whereIn('user_id', $userIds)->groupBy('user_id')->pluck('seen', 'user_id');
+        $members->each(function ($member) use ($mapCounts, $routeCounts, $missionCounts, $lastSeen) { $member->setAttribute('last_seen_at', $lastSeen[$member->user_id] ?? null); $member->setAttribute('stats', ['maps' => (int) ($mapCounts[$member->user_id] ?? 0), 'route_maps' => (int) ($routeCounts[$member->user_id] ?? 0), 'missions' => (int) ($missionCounts[$member->user_id] ?? 0)]); });
         return response()->json(['organization' => $organization, 'user' => ['name' => trim($r->user()->first_name.' '.$r->user()->last_name), 'email' => $r->user()->email], 'role' => $manager->role, 'licensed' => $organization->licensed(),
-            'occupied_seats' => $organization->occupiedSeats(), 'occupied_devices' => $organization->occupiedDevices(), 'members' => $members, 'devices' => $devices, 'allowed_devices' => $this->allowedDevices($organization),
+            'occupied_seats' => $organization->occupiedSeats(), 'used_licenses' => $organization->usedLicenses(), 'occupied_devices' => $organization->occupiedDevices(), 'members' => $members, 'devices' => $devices, 'allowed_devices' => $this->allowedDevices($organization),
             'management_policy' => app(\App\Services\ConnectManagement::class)->policy($organization),
             'analytics' => ['maps' => $mapCounts->sum(), 'route_maps' => $routeCounts->sum(), 'missions' => $missionCounts->sum()]]);
     }
@@ -141,8 +142,8 @@ class ConnectController extends Controller {
         $data = $r->validate(['devices' => 'required|array|min:1|max:500', 'devices.*.platform' => 'sometimes|in:ios,android', 'devices.*.name' => 'required|string|max:120', 'devices.*.udid' => ['required', 'string', 'regex:/^[A-Za-z0-9-]{8,64}$/']]);
         $rows = collect($data['devices'])->map(fn ($d) => ['name' => trim($d['name']), 'udid' => strtoupper(trim($d['udid'])), 'platform' => $d['platform'] ?? 'ios'])->unique('udid')->values();
         $new = $rows->reject(fn ($d) => ConnectAllowedDevice::where('organization_id', $organization->id)->where('udid', $d['udid'])->exists())->count();
-        $total = ConnectAllowedDevice::where('organization_id', $organization->id)->count() + $new;
-        abort_if($total > $organization->seat_limit, 422, "Je kunt maximaal {$organization->seat_limit} apparaten vooraf toestaan (licentieplaatsen); met deze upload kom je op {$total}.");
+        $free = max(0, $organization->seat_limit - $organization->usedLicenses());
+        abort_if($new > $free, 422, "Er zijn nog {$free} licenties beschikbaar (accounts en apparaten tellen elk als één); deze upload voegt {$new} nieuwe apparaten toe.");
         DB::transaction(function () use ($rows, $organization) {
             foreach ($rows as $d) ConnectAllowedDevice::updateOrCreate(['organization_id' => $organization->id, 'udid' => $d['udid']], ['name' => $d['name'], 'platform' => $d['platform']]);
         });
@@ -177,8 +178,7 @@ class ConnectController extends Controller {
         $udid = strtoupper(trim($data['udid']));
         $existing = ConnectAllowedDevice::where('organization_id', $org->id)->where('udid', $udid)->first();
         if (! $existing) {
-            $count = ConnectAllowedDevice::where('organization_id', $org->id)->count();
-            abort_if($count >= $org->seat_limit, 422, "Alle {$org->seat_limit} licentieplaatsen zijn in gebruik.");
+            abort_if($org->usedLicenses() >= $org->seat_limit, 422, "Alle {$org->seat_limit} licenties zijn in gebruik.");
         }
         $name = trim($data['name'] ?? '') ?: ($existing?->name ?? $udid);
         $device = ConnectAllowedDevice::updateOrCreate(['organization_id' => $org->id, 'udid' => $udid], ['name' => $name, 'platform' => $data['platform'] ?? $existing?->platform ?? 'ios']);

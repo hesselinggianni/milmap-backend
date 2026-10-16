@@ -69,12 +69,14 @@ class ConnectDeviceRegistry
                 $alreadyConnected = $device->exists && $device->is_connected;
 
                 $usesThisLicense = $alreadyConnected && (int) $device->organization_id === (int) $org->id;
-                abort_if(!$preLicensed && !$usesThisLicense && $org->occupiedDevices() >= $org->seat_limit, 422, 'Alle apparaatlicenties zijn in gebruik. Log uit op een ander apparaat of voeg licenties toe.');
+                abort_if(!$preLicensed && !$usesThisLicense && $org->usedLicenses() >= $org->seat_limit, 422, 'Alle licenties zijn in gebruik (accounts en apparaten tellen elk als één). Log uit op een ander apparaat of voeg licenties toe.');
                 // Once capacity drops, existing devices must also fit within the active licenses.
-                $connectedIds = ConnectDevice::where('organization_id', $org->id)->connected()->whereIn('user_id', $org->members()->where('status', 'active')->select('user_id'))->orderBy('id')->limit($org->seat_limit)->pluck('id');
+                $connectedIds = ConnectDevice::where('organization_id', $org->id)->connected()->whereIn('user_id', $org->members()->where('status', 'active')->select('user_id'))->orderBy('id')->limit(max(0, $org->seat_limit - $org->occupiedSeats()))->pluck('id');
                 abort_if(!$preLicensed && $usesThisLicense && !$connectedIds->contains($device->id), 422, 'De apparaatlicentie is verlopen. Voeg een actieve licentie toe om dit apparaat te gebruiken.');
                 $device->organization_id = $org->id;
             }
+            // Connect-leden hebben maximaal één actieve app-sessie: bij een nieuwe login vervallen de oude.
+            if ($login && $membership) DB::table('personal_access_tokens')->where('tokenable_type', $user->getMorphClass())->where('tokenable_id', $user->id)->whereNotNull('connect_device_id')->where('id', '!=', $token->id)->delete();
             $device->fill(array_merge(['name' => DeviceInfo::device($request->userAgent()), 'platform' => DeviceInfo::platform($request), 'last_seen_at' => now(), 'revoked_at' => null], DeviceInfo::hardware($request)))->save();
             if ((int) $token->connect_device_id !== (int) $device->id) $token->forceFill(['connect_device_id' => $device->id])->save();
         });
