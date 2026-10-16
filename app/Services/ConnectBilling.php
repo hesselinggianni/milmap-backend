@@ -16,6 +16,14 @@ class ConnectBilling {
         return ['price_id'=>$priceId,'product'=>$price->product,'unit_monthly_cents'=>$price->unit_amount,'currency'=>strtoupper($price->currency),'tax_behavior'=>$price->tax_behavior ?? 'unspecified','terms'=>[1,6,12]];
     }
     public function order(ConnectOrganization $org, int $actorId, array $data): ConnectOrder {
+        try {
+            return $this->placeOrder($org,$actorId,$data);
+        } catch (\Stripe\Exception\ApiErrorException $e) {
+            \Log::error('Connect-bestelling mislukt bij Stripe',['organization'=>$org->id,'error'=>$e->getMessage()]);
+            abort(422,'De bestelling kon niet worden verwerkt. Controleer je gegevens en probeer het opnieuw.');
+        }
+    }
+    protected function placeOrder(ConnectOrganization $org, int $actorId, array $data): ConnectOrder {
         $quote=$this->quote($org);
         abort_unless((int)$data['expected_unit_monthly_cents']===$quote['unit_monthly_cents'] && $data['expected_currency']===$quote['currency'],409,'De seatprijs is gewijzigd. Ververs de checkout en controleer het nieuwe bedrag.');
         $order=DB::transaction(function () use ($org,$actorId,$data,$quote) {
@@ -37,10 +45,10 @@ class ConnectBilling {
         $customerId=$org->stripe_customer_id;
         if (!$customerId) {
             $customer=$stripe->customers->create(['name'=>$data['billing_details']['company_name'],'email'=>$data['billing_details']['email'],
-                'address'=>$data['billing_details']['address'],'metadata'=>['connect_organization_id'=>(string)$org->id]],['idempotency_key'=>'connect-customer-'.$org->id]);
+                'address'=>$data['billing_details']['address'],'metadata'=>['connect_organization_id'=>(string)$org->id]],['idempotency_key'=>'connect-customer-'.$org->id.'-'.substr(md5(json_encode($data['billing_details'])),0,10)]);
             $customerId=$customer->id; $org->forceFill(['stripe_customer_id'=>$customerId])->save();
         }
-        $stripe->customers->update($customerId,['name'=>$data['billing_details']['company_name'],'email'=>$data['billing_details']['email'],'address'=>$data['billing_details']['address']],['idempotency_key'=>'connect-customer-details-'.$order->id]);
+        $stripe->customers->update($customerId,['name'=>$data['billing_details']['company_name'],'email'=>$data['billing_details']['email'],'address'=>$data['billing_details']['address']],['idempotency_key'=>'connect-customer-details-'.$order->id.'-'.substr(md5(json_encode($data['billing_details'])),0,10)]);
         $metadata=['connect_order_id'=>(string)$order->id,'connect_organization_id'=>(string)$org->id,'seats'=>(string)$order->seats,'term_months'=>(string)$order->term_months,'auto_renew'=>$order->auto_renew?'1':'0'];
         $priceData=['currency'=>strtolower($order->currency),'product'=>$this->productFor($org),'unit_amount'=>$order->unit_monthly_cents*$order->term_months,
             'recurring'=>$order->term_months===12 ? ['interval'=>'year','interval_count'=>1] : ['interval'=>'month','interval_count'=>$order->term_months]];
@@ -72,7 +80,7 @@ class ConnectBilling {
     protected function productFor(ConnectOrganization $org): string {
         if ($org->stripe_product_id) return $org->stripe_product_id;
         $product=$this->stripe()->products->create(['name'=>'MilMap Connect — '.$org->name,'description'=>'Connect-seats (accounts en apparaten) voor '.$org->name,
-            'metadata'=>['connect_organization_id'=>(string)$org->id,'connect_organization_uuid'=>(string)$org->uuid]],['idempotency_key'=>'connect-product-'.$org->id]);
+            'metadata'=>['connect_organization_id'=>(string)$org->id,'connect_organization_uuid'=>(string)$org->uuid]],['idempotency_key'=>'connect-product-'.$org->id.'-'.substr(md5($org->name),0,10)]);
         $org->forceFill(['stripe_product_id'=>$product->id])->save();
         return $product->id;
     }
