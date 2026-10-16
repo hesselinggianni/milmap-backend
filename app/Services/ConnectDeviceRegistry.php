@@ -56,13 +56,13 @@ class ConnectDeviceRegistry
             $preLicensed = $vendor && ConnectAllowedDevice::whereIn('organization_id', ConnectMember::where('user_id', $user->id)->where('status', 'active')->select('organization_id'))
                 ->whereRaw('LOWER(udid) = ?', [strtolower($vendor)])->exists();
             // Organisatie met 'alleen toegestane apparaten': andere apparaten gebruiken geen plaats
-            // en geen tweeapparatenlimiet; het lid heeft daar enkel zijn eigen abonnement.
+            // en geen eenapparatenlimiet; het lid heeft daar enkel zijn eigen abonnement.
             $membership = $user->activeConnectMembership();
             $restricted = (bool) ConnectOrganization::whereIn('id', ConnectMember::where('user_id', $user->id)->where('status', 'active')->select('organization_id'))->where('restrict_to_allowed_devices', true)->exists();
             if ($restricted && !$preLicensed) $membership = null;
             if (!$restricted && !$preLicensed && ConnectMember::where('user_id', $user->id)->where('status', 'active')->exists()) {
                 $otherDevices = ConnectDevice::where('user_id', $user->id)->connected()->when($device->exists, fn ($q) => $q->where('id', '!=', $device->id))->count();
-                abort_if($otherDevices >= 2, 422, 'Dit account is al op twee apparaten ingelogd. Log eerst uit op een ander apparaat.');
+                abort_if($otherDevices >= 1, 422, 'Dit account is al op een ander apparaat ingelogd. Log eerst uit op dat apparaat.');
             }
             if ($membership) {
                 $org = ConnectOrganization::whereKey($membership->organization_id)->lockForUpdate()->firstOrFail();

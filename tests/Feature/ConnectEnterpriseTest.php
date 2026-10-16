@@ -77,18 +77,18 @@ class ConnectEnterpriseTest extends TestCase {
         $this->deleteJson("/api/v1/connect/organizations/$org->id/devices/$device->id")->assertNoContent();
         $this->assertFalse(DB::table('personal_access_tokens')->where('id',$token->id)->exists());$this->assertNotNull($device->fresh()->revoked_at);
     }
-    public function test_each_account_has_at_most_two_connected_devices(): void {
+    public function test_each_account_has_at_most_one_connected_device(): void {
         $owner=$this->user('device-owner@test.nl'); $org=$this->organization($owner, 50);
         $registry=app(\App\Services\ConnectDeviceRegistry::class);
-        for ($i=0; $i<2; $i++) {
+        for ($i=0; $i<1; $i++) {
             $r=\Illuminate\Http\Request::create('/'); $r->headers->set('X-Milmap-Installation', (string) Str::uuid());
             $registry->record($r, $owner->createToken('App',['user'],now()->addDays(7))->accessToken, true);
         }
-        $this->assertSame(2, $org->occupiedDevices());
+        $this->assertSame(1, $org->occupiedDevices());
         $r=\Illuminate\Http\Request::create('/'); $r->headers->set('X-Milmap-Installation', (string) Str::uuid());
-        try { $registry->record($r, $owner->createToken('App',['user'])->accessToken, true); $this->fail('Third device must be denied'); }
+        try { $registry->record($r, $owner->createToken('App',['user'])->accessToken, true); $this->fail('Second device must be denied'); }
         catch (\Symfony\Component\HttpKernel\Exception\HttpException $e) { $this->assertSame(422,$e->getStatusCode()); }
-        $this->assertSame(2, ConnectDevice::where('user_id',$owner->id)->count());
+        $this->assertSame(1, ConnectDevice::where('user_id',$owner->id)->count());
     }
     public function test_device_capacity_is_shared_and_logout_frees_a_license(): void {
         $owner=$this->user('capacity-owner@test.nl'); $student=$this->user('capacity-student@test.nl'); $org=$this->organization($owner,1);
