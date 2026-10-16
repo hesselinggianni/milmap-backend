@@ -42,12 +42,17 @@ class LoginCodeController extends Controller
         $localDevelopment = app()->environment('local')
             && in_array($request->ip(), ['127.0.0.1', '::1'], true);
 
-        // Rate limiting: max 5 codes per IP per uur (zelfde limiet als admin).
-        $recentCodes = UserLoginCode::where('ip_address', $request->ip())
-            ->where('created_at', '>', Carbon::now()->subHour())
+        // Rate limiting: max 5 codes per e-mailadres per uur, plus een ruime
+        // IP-limiet (30/uur) tegen misbruik zonder gedeelde netwerken te blokkeren.
+        $since = Carbon::now()->subHour();
+        $recentForEmail = UserLoginCode::where('email', $validated['email'])
+            ->where('created_at', '>', $since)
+            ->count();
+        $recentForIp = UserLoginCode::where('ip_address', $request->ip())
+            ->where('created_at', '>', $since)
             ->count();
 
-        if (!$localDevelopment && $recentCodes >= 5) {
+        if (!$localDevelopment && ($recentForEmail >= 5 || $recentForIp >= 30)) {
             return response()->json([
                 'message' => 'Too many requests. Please try again later.',
                 'error' => 'rate_limit',
