@@ -46,6 +46,7 @@ Route::prefix('v1/connect')->group(function () {
         Route::post('organizations/{organization}/allowed-devices', [ConnectController::class, 'importAllowedDevices'])->middleware('throttle:10,1');
         Route::post('organizations/{organization}/mdm-token', [ConnectController::class, 'createMdmToken'])->middleware('throttle:10,1');
         Route::delete('organizations/{organization}/mdm-token', [ConnectController::class, 'revokeMdmToken']);
+        Route::put('organizations/{organization}/allowed-devices/{allowedDevice}', [ConnectController::class, 'updateAllowedDevice']);
         Route::delete('organizations/{organization}/allowed-devices/{allowedDevice}', [ConnectController::class, 'deleteAllowedDevice']);
     });
 });

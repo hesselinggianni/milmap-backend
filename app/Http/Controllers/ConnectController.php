@@ -196,6 +196,21 @@ class ConnectController extends Controller {
         if ($device) DB::transaction(function () use ($device) { app(\App\Services\ConnectDeviceLogin::class)->revoke($device); $device->delete(); });
         return response()->noContent();
     }
+    public function updateAllowedDevice(Request $r, ConnectOrganization $organization, ConnectAllowedDevice $allowedDevice) {
+        $this->manager($r, $organization);
+        abort_unless((int) $allowedDevice->organization_id === (int) $organization->id, 404);
+        $data = $r->validate(['name' => 'required|string|max:120', 'udid' => ['required', 'string', 'regex:/^[A-Za-z0-9-]{8,64}$/']]);
+        $udid = strtoupper(trim($data['udid']));
+        DB::transaction(function () use ($allowedDevice, $organization, $data, $udid) {
+            if ($udid !== strtoupper($allowedDevice->udid)) {
+                abort_if(ConnectAllowedDevice::where('organization_id', $organization->id)->where('udid', $udid)->where('id', '!=', $allowedDevice->id)->exists(), 422, 'Dit apparaat-ID staat al in de lijst.');
+                // Nieuw ID = ander apparaat: de oude koppeling/sessie vervalt.
+                app(\App\Services\ConnectDeviceLogin::class)->revoke($allowedDevice);
+            }
+            $allowedDevice->update(['name' => trim($data['name']), 'udid' => $udid]);
+        });
+        return response()->json(['allowed_devices' => $this->allowedDevices($organization)]);
+    }
     public function deleteAllowedDevice(Request $r, ConnectOrganization $organization, ConnectAllowedDevice $allowedDevice) {
         $this->manager($r, $organization);
         abort_unless((int) $allowedDevice->organization_id === (int) $organization->id, 404);
