@@ -55,6 +55,9 @@ class ConnectDeviceRegistry
             $vendor = DeviceInfo::hardware($request)['vendor_id'] ?? null;
             $preLicensed = $vendor && ConnectAllowedDevice::whereIn('organization_id', ConnectMember::where('user_id', $user->id)->where('status', 'active')->select('organization_id'))
                 ->whereRaw('LOWER(udid) = ?', [strtolower($vendor)])->exists();
+            // Eén apparaat = één licentie: een apparaat dat als organisatieapparaat geregistreerd staat
+            // logt in via zijn apparaatbinding, niet met een persoonlijk account (anders 2 licenties op 1 device).
+            abort_if($preLicensed && $login, 422, 'Dit apparaat is als organisatieapparaat geregistreerd. Verwijder het apparaat-ID uit de registratie in Connect om met een account in te loggen.');
             // Organisatie met 'alleen toegestane apparaten': andere apparaten gebruiken geen plaats
             // en geen eenapparatenlimiet; het lid heeft daar enkel zijn eigen abonnement.
             $membership = $user->activeConnectMembership();
