@@ -12,7 +12,8 @@ class EnforceConnectManagement {
         if (!$user || !$r->is('api/v1/*') || $r->is('api/v1/admin/*')) return $next($r);
         $service = app(ConnectManagement::class);
         $context = $service->context($user);
-        $path = preg_replace('#^api/v1/#', '', $r->path());
+        // Gedecodeerd pad: de router matcht op rawurldecode($path), dus 'upd%61te' mag hier niet langs de regels glippen.
+        $path = preg_replace('#^api/v1/#', '', $r->decodedPath());
         $write = !in_array($r->method(), ['GET', 'HEAD', 'OPTIONS']);
         $deny = fn ($permission) => response()->json(['code' => 'connect_policy_denied', 'permission' => $permission,
             'message' => 'Deze actie wordt beheerd door je organisatie. Neem contact op met je beheerder.', 'connect_management' => $context, 'user_id' => $user->id], 403);
@@ -48,12 +49,18 @@ class EnforceConnectManagement {
         }
         if (!$resource && $r->input('map_id')) $resource = Map::find($r->input('map_id'));
         if (!$resource && $r->input('mission_id')) $resource = Mission::find($r->input('mission_id'));
-        $resourceOrg = $resource?->connectOrganization;
+        // The parent map remains authoritative for routes, including legacy
+        // rows created by external collaborators before ownership inheritance.
+        $resourceOrg = $resource instanceof RouteMap ? $resource->map?->connectOrganization : $resource?->connectOrganization;
         if ($resourceOrg) {
             $internal = ConnectMember::where('organization_id', $resourceOrg->id)->where('user_id', $user->id)->where('status', 'active')->exists();
             if (!$internal && !$service->policy($resourceOrg)['share_external']) return $deny('share_external');
         }
         $permission = null;
+        // Stoppen met live locatie delen moet altijd kunnen (privacy): er is geen recht voor nodig,
+        // ook niet 'delete' of 'share_location'. Alleen het eigen locatierecord wordt verwijderd; de
+        // inactieve-context-blokkade en de share_external-regel van de resource-organisatie blijven gelden.
+        $stopSharing = $r->isMethod('DELETE') && preg_match('#^maps/[^/]+/user-locations/stop-sharing$#', $path);
         if (preg_match('#(?:^|/)(?:export|download)(?:[/.]|$)#', $path)) $permission = 'export';
         elseif ($write && (preg_match('#/(?:shares|share)(?:/|$)#', $path))) $permission = 'public_links';
         elseif ($write && str_contains($path, '/collaborators')) {
@@ -69,10 +76,17 @@ class EnforceConnectManagement {
                 })->exists();
                 if (!$internal) $permission = 'share_external';
             }
+        } elseif ($write && $path === 'user/account/reset') {
+            $permission = 'reset_account';
+        } elseif ($stopSharing) {
+            $permission = null;
+        } elseif ($r->isMethod('POST') && preg_match('#^(?:maps/[^/]+/user-locations/update|missions/[^/]+/tracks)$#', $path)) {
+            // Live locatie op een kaart en live GPS-tracking in een missie: eigen recht, niet 'create'.
+            $permission = 'share_location';
         } elseif ($write && preg_match('#^(maps|routemaps|missions|reports|activities|sites|ogroup-templates|task-templates|exercise-sites|nine-lines|trash|me/media)(/|$)#', $path)) {
             $permission = $r->isMethod('DELETE') ? 'delete' : ($r->isMethod('POST') && !preg_match('#/(restore|reorder|status|sync)(/|$)#', $path) ? 'create' : 'edit');
         }
-        if ($write && !$permission && $context['managed'] && !preg_match('#^(user/(profile|settings|password|sessions)|login(?:/|$)|logout(?:-all)?$|push-token$|auth/|security/|me/notifications/|weather-alerts/access$|invitations/)#', $path)) {
+        if ($write && !$permission && !$stopSharing && $context['managed'] && !preg_match('#^(user/(profile|settings|password|sessions)|login(?:/|$)|logout(?:-all)?$|push-token$|auth/|security/|me/notifications/|weather-alerts/access$|invitations/)#', $path)) {
             $permission = $r->isMethod('DELETE') ? 'delete' : 'edit';
         }
         if ($permission && $context['managed'] && !$service->allows($user, $permission)) return $deny($permission);
@@ -81,7 +95,13 @@ class EnforceConnectManagement {
         // payloads, passwords, locations, files, bindings or tokens.
         $response = $next($r);
         $orgId = $resourceOrg?->id ?? ($context['organization']['id'] ?? null);
-        if ($write && $orgId && $response->getStatusCode() < 400) {
+        // Live locatie stuurt elke paar seconden een ping; dat zou het audit-log laten
+        // overlopen. Per gebruiker + kaart/missie hooguit één regel per uur.
+        $auditThis = true;
+        if ($permission === 'share_location') {
+            try { $auditThis = \Illuminate\Support\Facades\Cache::add('connect_audit_loc:'.$user->id.':'.$path, 1, now()->addHour()); } catch (\Throwable) { $auditThis = true; }
+        }
+        if ($write && $orgId && $auditThis && $response->getStatusCode() < 400) {
             $service->audit($orgId, $r->method().' '.$r->route()->uri(), $resource ? class_basename($resource) : null, $resource?->id);
         }
         $response->headers->set('X-Milmap-Management', base64_encode(json_encode(['user_id' => $user->id] + $service->context($user))));

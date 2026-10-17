@@ -12,8 +12,11 @@ class ConnectManagementController extends Controller {
         $this->manager($r, $organization);
         if ($r->isMethod('PUT')) {
             $rules = ['offline_hours' => 'required|integer|min:0|max:168', 'support_name' => 'nullable|string|max:190', 'support_email' => 'nullable|email|max:190'];
-            foreach ($service::PERMISSIONS as $key) $rules[$key] = 'required|boolean';
+            // reset_account/share_location zijn nieuwer dan oudere portaalbuilds: ontbreken ze, dan blijft
+            // de opgeslagen waarde staan (anders de standaard) — een oude build zet een uitgezet recht nooit stil weer aan.
+            foreach ($service::PERMISSIONS as $key) $rules[$key] = in_array($key, $service::OPTIONAL_PERMISSIONS, true) ? 'sometimes|boolean' : 'required|boolean';
             $data = $r->validate($rules);
+            $data += array_intersect_key($organization->management_policy ?? [], array_flip($service::OPTIONAL_PERMISSIONS));
             DB::transaction(function () use ($organization, $data, $service) {
                 $organization->update(['management_policy' => $data]);
                 $service->audit($organization->id, 'policy.updated', 'ConnectOrganization', (string) $organization->id, ['policy' => $data]);
@@ -25,7 +28,9 @@ class ConnectManagementController extends Controller {
     public function permissions(Request $r, ConnectOrganization $organization, ConnectMember $member, ConnectManagement $service) {
         $manager = $this->manager($r, $organization);
         abort_unless($member->organization_id === $organization->id && $member->role !== 'owner' && ($manager->role === 'owner' || $member->role === 'member'), 403);
-        $rules = ['permissions' => 'required|array:'.implode(',', $service::PERMISSIONS)];
+        // 'present' i.p.v. 'required': alles terug op "Volgt beleid" stuurt een leeg object. Met 'required'
+        // gaf dat 422 en bleef een eerder geblokkeerd recht (bv. share_location) stil hangen.
+        $rules = ['permissions' => 'present|array:'.implode(',', $service::PERMISSIONS)];
         foreach ($service::PERMISSIONS as $key) $rules['permissions.'.$key] = 'sometimes|boolean';
         $data = $r->validate($rules);
         DB::transaction(function () use ($member, $data, $organization, $service) {

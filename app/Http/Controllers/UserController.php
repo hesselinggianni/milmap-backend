@@ -273,6 +273,11 @@ class UserController extends Controller
      * Werkt de persoonlijke voorkeuren (settings-JSON) van de ingelogde
      * gebruiker bij. Alleen bekende sleutels worden gevalideerd en
      * samengevoegd, zodat andere settings behouden blijven.
+     *
+     * `settings` (object): de kaartweergave-voorkeuren (locatieformaat, 2D/3D,
+     * schaallijn, …) worden samengevoegd met wat er al staat. Dit is het
+     * zelfbedieningspad, dus het werkt ook voor Connect-accounts: voorkeuren
+     * zijn geen accountbeheer (PUT /users/{id} is dat wel en blijft geblokkeerd).
      */
     public function updateSettings(Request $request)
     {
@@ -287,9 +292,21 @@ class UserController extends Controller
             // E-mailnotificaties bij storingen of gepland onderhoud (opt-in,
             // standaard uit). Wordt uitgelezen door `status:notify`.
             'notify_status_emails' => ['sometimes', 'boolean'],
+            'settings' => ['sometimes', 'array'],
         ]);
 
         $settings = $user->settings ?? [];
+        if (array_key_exists('settings', $validated)) {
+            $prefs = $validated['settings'];
+            unset($validated['settings']);
+            abort_if(array_is_list($prefs) && $prefs !== [], 422, 'Instellingen moeten een object zijn.');
+            abort_if(strlen((string) json_encode($prefs)) > 65535, 422, 'Te veel instellingen.');
+            $settings = array_merge($settings, $prefs);
+            // De twee sleutels die de server zelf leest blijven echte booleans.
+            foreach (['show_last_seen', 'notify_status_emails'] as $key) {
+                if (array_key_exists($key, $prefs)) $settings[$key] = filter_var($prefs[$key], FILTER_VALIDATE_BOOLEAN);
+            }
+        }
         foreach ($validated as $key => $value) {
             $settings[$key] = $value;
         }

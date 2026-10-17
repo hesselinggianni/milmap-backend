@@ -4,10 +4,17 @@ use App\Models\{User, ConnectMember, ConnectAllowedDevice, ConnectOrganization, 
 use Illuminate\Http\Request;
 
 class ConnectManagement {
-    public const PERMISSIONS = ['create', 'edit', 'delete', 'share_internal', 'share_external', 'public_links', 'export', 'integrations'];
+    // reset_account: gebruiker mag zelf "Account resetten" (alle eigen data wissen). Standaard aan;
+    // beheerders kunnen altijd resetten vanuit Connect.
+    // share_location: live locatie delen op kaarten en in missies. Standaard aan; stoppen met delen
+    // vereist nooit een recht (zie EnforceConnectManagement).
+    public const PERMISSIONS = ['create', 'edit', 'delete', 'share_internal', 'share_external', 'public_links', 'export', 'integrations', 'reset_account', 'share_location'];
+    // Rechten die nieuwer zijn dan oudere portaalbuilds; die mogen ontbreken in een policy-update.
+    public const OPTIONAL_PERMISSIONS = ['reset_account', 'share_location'];
     public const DEFAULTS = [
         'create' => true, 'edit' => true, 'delete' => false, 'share_internal' => true,
-        'share_external' => false, 'public_links' => false, 'export' => false, 'integrations' => false,
+        'share_external' => false, 'public_links' => false, 'export' => false, 'integrations' => false, 'reset_account' => true,
+        'share_location' => true,
         'offline_hours' => 24, 'support_name' => '', 'support_email' => '',
     ];
     public function membership(User $user): ?ConnectMember {
@@ -52,6 +59,10 @@ class ConnectManagement {
         if ($token?->expires_at && $until->gt($token->expires_at)) $until = $token->expires_at;
         return [
             'managed' => true, 'active' => (bool) $active, 'device_account' => (bool) $user->connect_device_account,
+            // A non-secret fingerprint lets the native app verify its current MDM
+            // configuration offline without persisting the binding credential.
+            'device_binding_hash' => $user->connect_device_account && ($device?->platform === 'android' || $org?->device_login_mode !== 'udid') ? $token?->connect_binding_hash : null,
+            'device_login_mode' => $user->connect_device_account ? ($device?->platform === 'android' ? 'binding' : $org?->device_login_mode) : null,
             'organization' => $org ? ['id' => $org->id, 'name' => $org->name, 'logo_url' => $org->logo_url] : null,
             'role' => $member?->role, 'device_name' => $device?->name, 'assigned_employee' => $device?->assigned_employee,
             'permissions' => $permissions, 'offline_hours' => (int) $policy['offline_hours'],
