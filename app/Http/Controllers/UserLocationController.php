@@ -6,6 +6,7 @@ use App\Events\UserLocationUpdated;
 use App\Events\UserLocationRemoved;
 use App\Models\Map;
 use App\Models\UserLocation;
+use App\Support\GpsValues;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Auth;
 
@@ -20,6 +21,11 @@ class UserLocationController extends Controller
         // Verify user has access to this map
         $map = Map::findOrFail($mapId);
         $this->authorize('view', $map);
+
+        // heading/speed = -1 betekent "onbekend" (stilstand): als null opslaan
+        // i.p.v. de hele positie met een 422 te weigeren — daardoor stond live
+        // delen bij stilstand feitelijk stil.
+        $request->merge(GpsValues::normalize($request->only(['heading', 'speed', 'accuracy'])));
 
         // Validate location data
         $validated = $request->validate([
@@ -106,8 +112,13 @@ class UserLocationController extends Controller
             ->where('user_id', Auth::id())
             ->first();
 
+        // Al gestopt (dubbele tik, of de rij was al opgeruimd na 5 min stilte):
+        // het gewenste eindresultaat is bereikt, dus geen 404.
         if (!$location) {
-            return response()->json(['error' => 'Location not found'], 404);
+            return response()->json([
+                'success' => true,
+                'message' => 'Location sharing already stopped',
+            ]);
         }
 
         // Het broadcast-event vereist altijd een string. Oude accounts kunnen

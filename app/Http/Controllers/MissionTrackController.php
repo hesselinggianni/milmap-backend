@@ -6,6 +6,7 @@ use App\Events\MissionLocationUpdated;
 use App\Models\Mission;
 use App\Models\MissionTrack;
 use App\Models\User;
+use App\Support\GpsValues;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Auth;
 use Illuminate\Support\Facades\DB;
@@ -33,6 +34,15 @@ class MissionTrackController extends Controller
         // pollute the debrief replay and a stale "live" map long after the fact.
         if ($mission->status === 'complete') {
             return response()->json(['message' => 'Mission is no longer active.'], 422);
+        }
+
+        // heading/speed = -1 is "onbekend" op iOS/Android; één zo'n punt liet
+        // anders de hele batch met 422 weigeren (zie GpsValues).
+        if (is_array($request->input('points'))) {
+            $request->merge(['points' => array_map(
+                fn ($p) => is_array($p) ? GpsValues::normalize($p) : $p,
+                $request->input('points'),
+            )]);
         }
 
         $data = $request->validate([
