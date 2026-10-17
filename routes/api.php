@@ -596,6 +596,24 @@ Route::prefix('v1')->middleware(['api'])->group(function () {
         Route::delete('/routemaps', [RouteMapController::class, 'clear']);
         Route::get('/maps/{mapId}routemaps', [RouteMapController::class, 'index']);
 
+        // Kaart-en-kompasopdrachten: gegenereerde routes + deelnemers + planning
+        Route::get('/route-assignments', [\App\Http\Controllers\RouteAssignmentController::class, 'overview']);
+        Route::get('/kako-folders', [\App\Http\Controllers\KakoFolderController::class, 'index']);
+        Route::post('/kako-folders', [\App\Http\Controllers\KakoFolderController::class, 'store']);
+        Route::patch('/kako-folders/{id}', [\App\Http\Controllers\KakoFolderController::class, 'update']);
+        Route::delete('/kako-folders/{id}', [\App\Http\Controllers\KakoFolderController::class, 'destroy']);
+        Route::put('/route-assignments/{id}/folder', [\App\Http\Controllers\KakoFolderController::class, 'assign']);
+        Route::get('/route-assignments/{id}/log', [\App\Http\Controllers\RouteAssignmentController::class, 'logIndex']);
+        Route::post('/route-assignments/{id}/collaborators', [\App\Http\Controllers\RouteAssignmentController::class, 'invite']);
+        Route::patch('/route-assignments/{id}/collaborators/{userId}', [\App\Http\Controllers\RouteAssignmentController::class, 'changeRole']);
+        Route::delete('/route-assignments/{id}/collaborators/{userId}', [\App\Http\Controllers\RouteAssignmentController::class, 'removeCollaborator']);
+        Route::post('/route-assignments/{id}/invitation/{answer}', [\App\Http\Controllers\RouteAssignmentController::class, 'respond']);
+        Route::get('/maps/{mapId}/route-assignments', [\App\Http\Controllers\RouteAssignmentController::class, 'index']);
+        Route::post('/maps/{mapId}/route-assignments', [\App\Http\Controllers\RouteAssignmentController::class, 'store']);
+        Route::get('/route-assignments/{id}', [\App\Http\Controllers\RouteAssignmentController::class, 'show']);
+        Route::put('/route-assignments/{id}', [\App\Http\Controllers\RouteAssignmentController::class, 'update']);
+        Route::delete('/route-assignments/{id}', [\App\Http\Controllers\RouteAssignmentController::class, 'destroy']);
+
         // Route generation routes
         Route::post('/routemaps/{routeMapId}/generate-route', [RouteGenerationController::class, 'generateRoute']);
         Route::get('/routemaps/{routeMapId}/generated-routes', [RouteGenerationController::class, 'listGeneratedRoutes']);

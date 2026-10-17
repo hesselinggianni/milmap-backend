@@ -22,6 +22,12 @@ class RouteMap extends Model
         'map_id',
         'mission_id',
         'owner_id',
+
+        // Kaart-en-kompasopdracht (RouteAssignmentController). Bewust niet in
+        // de update()-whitelist: alleen de opdracht zet/wijzigt deze.
+        'route_assignment_id',
+        'route_code',
+
         'title',
         'date',
         'time',
@@ -98,6 +104,11 @@ class RouteMap extends Model
     public function mission()
     {
         return $this->belongsTo(Mission::class, 'mission_id');
+    }
+
+    public function assignment()
+    {
+        return $this->belongsTo(RouteAssignment::class, 'route_assignment_id');
     }
 
     public function generatedRoutes()
