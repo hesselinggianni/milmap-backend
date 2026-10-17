@@ -2,6 +2,7 @@
 
 namespace App\Http\Controllers;
 
+use App\Services\ApiUsageMeter;
 use Illuminate\Support\Facades\Cache;
 use Illuminate\Support\Facades\File;
 use Illuminate\Support\Facades\Http;
@@ -48,9 +49,11 @@ class BathymetryTileController extends Controller
             is_file($path) && filemtime($path) > now()->subDays($days)->getTimestamp();
 
         if ($fresh($png, self::CACHE_TTL_DAYS)) {
+            ApiUsageMeter::record($this->usageProvider($z, $x, $y), 'tiles', ['cache_hits' => 1]);
             return $this->tileResponse($png);
         }
         if ($fresh($miss, 1)) {
+            ApiUsageMeter::record($this->usageProvider($z, $x, $y), 'tiles', ['cache_hits' => 1]);
             return response()->noContent(404);
         }
 
@@ -71,17 +74,20 @@ class BathymetryTileController extends Controller
             // Dubbele check: terwijl we op de lock wachtten kan een andere request
             // de tile al hebben opgehaald en gecachet.
             if ($fresh($png, self::CACHE_TTL_DAYS)) {
+                ApiUsageMeter::record($this->usageProvider($z, $x, $y), 'tiles', ['cache_hits' => 1]);
                 return $this->tileResponse($png);
             }
             if ($fresh($miss, 1)) {
+                ApiUsageMeter::record($this->usageProvider($z, $x, $y), 'tiles', ['cache_hits' => 1]);
                 return response()->noContent(404);
             }
 
             [$bboxMerc, $bboxDeg] = $this->tileBounds($z, $x, $y);
             $source = $this->pickSource($bboxDeg);
+            $usageProvider = $this->usageProvider($z, $x, $y);
 
             try {
-                $resp = Http::timeout(5)->retry(2, 250)->get($source['base'], [
+                $resp = ApiUsageMeter::measure($usageProvider, 'tiles', fn () => Http::timeout(5)->retry(2, 250)->get($source['base'], [
                     'SERVICE' => 'WMS',
                     'VERSION' => '1.3.0',
                     'REQUEST' => 'GetMap',
@@ -93,7 +99,7 @@ class BathymetryTileController extends Controller
                     'HEIGHT' => self::TILE_SIZE,
                     'FORMAT' => 'image/png',
                     'TRANSPARENT' => 'TRUE',
-                ]);
+                ]));
             } catch (Throwable) {
                 return is_file($png) ? $this->tileResponse($png) : response()->noContent(502);
             }
@@ -108,6 +114,10 @@ class BathymetryTileController extends Controller
 
             // WMS geeft bij een ongeldige request een XML-foutdocument terug i.p.v.
             // een HTTP-foutcode — dat vangen we hierboven af via de Content-Type-check.
+            if ($resp->successful()) {
+                // 2xx met een XML-fout: measure() telde 'm als geslaagd → alsnog als fout tellen.
+                ApiUsageMeter::record($usageProvider, 'tiles', ['requests' => 0, 'errors' => 1]);
+            }
             File::ensureDirectoryExists($dir);
             File::put($miss, '');
             return response()->noContent(404);
@@ -164,6 +174,14 @@ class BathymetryTileController extends Controller
             'layers' => 'GEBCO_LATEST',
             'styles' => 'default',
         ];
+    }
+
+    /** API-verbruik: welke WMS deze tile levert (zelfde keuze als pickSource). */
+    private function usageProvider(int $z, int $x, int $y): string
+    {
+        [, $bboxDeg] = $this->tileBounds($z, $x, $y);
+
+        return $this->pickSource($bboxDeg)['layers'] === 'GEBCO_LATEST' ? 'gebco' : 'emodnet';
     }
 
     private function tileResponse(string $path)

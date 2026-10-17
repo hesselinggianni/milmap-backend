@@ -242,6 +242,7 @@ class Mission extends Model
         if ($this->status === 'active' && $this->linked_team_id) {
             $isMember = TeamMember::where('team_id', $this->linked_team_id)
                 ->where('user_id', $userId)
+                ->where('status', TeamMember::STATUS_ACTIVE)
                 ->exists();
             if ($isMember) {
                 return 'viewer';
@@ -281,6 +282,7 @@ class Mission extends Model
             $ids = array_merge(
                 $ids,
                 TeamMember::where('team_id', $this->linked_team_id)
+                    ->where('status', TeamMember::STATUS_ACTIVE)
                     ->pluck('user_id')
                     ->map(fn ($id) => (int) $id)
                     ->all()
@@ -314,7 +316,7 @@ class Mission extends Model
      */
     public function scopeParticipatedBy($query, int $userId)
     {
-        $teamIds = TeamMember::where('user_id', $userId)->pluck('team_id');
+        $teamIds = TeamMember::activeTeamIdsQuery($userId)->pluck('team_id');
 
         return $query->where(function ($q) use ($userId, $teamIds) {
             $q->where('owner_id', $userId)

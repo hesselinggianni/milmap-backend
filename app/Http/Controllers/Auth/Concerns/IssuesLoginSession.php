@@ -28,7 +28,7 @@ trait IssuesLoginSession
         // Gearchiveerd account (>90 dagen ongeverifieerd): geen toegang meer.
         if ($user->isArchived()) {
             throw ValidationException::withMessages([
-                'email' => 'Dit account is gearchiveerd omdat het e-mailadres niet binnen 90 dagen is bevestigd. Maak opnieuw een account aan.',
+                'email' => 'This account was archived because the email address was not verified within 90 days. Please create a new account.',
             ]);
         }
 
@@ -83,7 +83,7 @@ trait IssuesLoginSession
     private function sendLoginNotification(Request $request, User $user): void
     {
         $ip = $request->ip();
-        $location = $this->resolveLocation($ip);
+        $location = $this->resolveLocation($ip, (int) $user->id);
         $device = $this->parseDevice($request->userAgent() ?? 'Onbekend');
         $loginTime = now()->setTimezone('Europe/Amsterdam')->format('d-m-Y \o\m H:i:s');
 
@@ -102,14 +102,17 @@ trait IssuesLoginSession
         }
     }
 
-    private function resolveLocation(string $ip): string
+    private function resolveLocation(string $ip, int $userId = 0): string
     {
         if (in_array($ip, ['127.0.0.1', '::1']) || str_starts_with($ip, '192.168.') || str_starts_with($ip, '10.')) {
             return 'Lokaal netwerk';
         }
 
         try {
-            $response = Http::timeout(3)->get("http://ip-api.com/json/{$ip}?fields=status,city,regionName,country&lang=nl");
+            // API-verbruik: het login-verzoek heeft (nog) geen bearer-token → gebruiker expliciet meegeven.
+            $response = \App\Services\ApiUsageMeter::measure('ip_api', 'geoip',
+                fn () => Http::timeout(3)->get("http://ip-api.com/json/{$ip}?fields=status,city,regionName,country&lang=nl"),
+                ['user_id' => $userId]);
 
             if ($response->ok()) {
                 $data = $response->json();

@@ -45,6 +45,7 @@ class CreateFlowsTest extends TestCase
 
         Schema::create('maps', function (Blueprint $t) {
             $t->uuid('id')->primary();
+            $t->unsignedBigInteger('connect_organization_id')->nullable();
             $t->string('owner_id');
             $t->string('title')->nullable();
             $t->json('settings')->nullable();
@@ -68,6 +69,7 @@ class CreateFlowsTest extends TestCase
 
         Schema::create('route_maps', function (Blueprint $t) {
             $t->uuid('id')->primary();
+            $t->unsignedBigInteger('connect_organization_id')->nullable();
             $t->uuid('map_id');
             $t->uuid('mission_id')->nullable();
             $t->string('owner_id');
@@ -98,6 +100,7 @@ class CreateFlowsTest extends TestCase
 
         Schema::create('missions', function (Blueprint $t) {
             $t->uuid('id')->primary();
+            $t->unsignedBigInteger('connect_organization_id')->nullable();
             $t->integer('owner_id');
             $t->uuid('linked_team_id')->nullable();
             $t->string('name');

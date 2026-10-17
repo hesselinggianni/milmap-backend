@@ -31,10 +31,17 @@ class LoginController extends Controller
         // many accounts) and block when EITHER trips. The per-account limit is
         // the tight one, so honest users sharing a NAT aren't punished for a
         // neighbour's failures.
+        //
+        // The "per-IP" counter is really per installation + IP: schools and
+        // barracks put thousands of users behind one NAT address, and 20 typos
+        // across all of them must not lock everybody out. A pure per-IP ceiling
+        // (20 × nat_factor) still bounds a host rotating installation IDs.
         $emailKey = 'login-attempts:email:' . sha1(mb_strtolower($credentials['email']));
-        $ipKey    = 'login-attempts:ip:' . $request->ip();
+        $ipKey    = 'login-attempts:client:' . sha1(\App\Support\ClientKey::forGuest($request));
+        $natKey   = 'login-attempts:ip:' . $request->ip();
 
-        if (RateLimiter::tooManyAttempts($emailKey, 5) || RateLimiter::tooManyAttempts($ipKey, 20)) {
+        if (RateLimiter::tooManyAttempts($emailKey, 5) || RateLimiter::tooManyAttempts($ipKey, 20)
+            || RateLimiter::tooManyAttempts($natKey, 20 * \App\Support\ClientKey::natFactor())) {
             throw ValidationException::withMessages([
                 'email' => 'Too many login attempts. Please try again in a few minutes.',
             ]);
@@ -48,6 +55,7 @@ class LoginController extends Controller
         if (!$user || !$user->password || !Hash::check($credentials['password'], $user->password)) {
             RateLimiter::hit($emailKey, 900); // 15-min decay
             RateLimiter::hit($ipKey, 900);
+            RateLimiter::hit($natKey, 900);
             throw ValidationException::withMessages([
                 'email' => 'The provided credentials are incorrect.',
             ]);

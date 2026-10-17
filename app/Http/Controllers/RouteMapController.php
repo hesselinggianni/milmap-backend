@@ -30,15 +30,12 @@ class RouteMapController extends Controller
 
     public function index(Request $request)
     {
-        // Get all maps the user has access to (owner + collaborated)
-        $mapIds = Map::where('owner_id', auth()->id())
-            ->orWhere(function ($query) {
-                $query->whereHas('collaborators', function ($q) {
-                    $q->where('user_id', auth()->id())
-                        ->where('status', 'accepted');
-                });
-            })
-            ->pluck('id');
+        // Alle kaarten waar de gebruiker bij mag — zelfde regel als MapPolicy
+        // (eigenaar, kaart-medewerker én deelnemer van een missie die deze
+        // kaart van de missie-eigenaar koppelt). De oude eigen query miste
+        // die missie-toegang: een genodigde zag de kaart wel, maar kreeg hier
+        // stil een lege lijst routekaarten terug.
+        $mapIds = app(\App\Services\MapAccess::class)->accessibleQuery(auth()->user())->pluck('id');
 
         $query = RouteMap::query()
             ->with(['owner', 'map'])
@@ -100,6 +97,7 @@ class RouteMapController extends Controller
         // Share-token path: unauthenticated public read
         $shareToken = $request->query('share_token');
         if ($shareToken) {
+            app(\App\Services\ConnectManagement::class)->assertPublicResource($map);
             $share = MapShare::active()
                 ->where('token', $shareToken)
                 ->where('map_id', $mapId)

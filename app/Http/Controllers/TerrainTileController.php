@@ -2,6 +2,7 @@
 
 namespace App\Http\Controllers;
 
+use App\Services\ApiUsageMeter;
 use Illuminate\Support\Facades\File;
 use Illuminate\Support\Facades\Http;
 use Throwable;
@@ -44,17 +45,19 @@ class TerrainTileController extends Controller
             is_file($path) && filemtime($path) > now()->subDays($days)->getTimestamp();
 
         if ($fresh($png, self::CACHE_TTL_DAYS)) {
+            ApiUsageMeter::record('mapbox', 'tiles', ['cache_hits' => 1]);
             return $this->tileResponse($png);
         }
         if ($fresh($miss, 1)) {
+            ApiUsageMeter::record('mapbox', 'tiles', ['cache_hits' => 1]);
             return response()->noContent(404);
         }
 
         try {
-            $resp = Http::timeout(12)->get(
+            $resp = ApiUsageMeter::measure('mapbox', 'tiles', fn () => Http::timeout(12)->get(
                 "https://api.mapbox.com/v4/mapbox.terrain-rgb/{$z}/{$x}/{$y}.pngraw",
                 ['access_token' => config('services.mapbox.token')]
-            );
+            ));
         } catch (Throwable) {
             return is_file($png)
                 ? $this->tileResponse($png) // verlopen > niets

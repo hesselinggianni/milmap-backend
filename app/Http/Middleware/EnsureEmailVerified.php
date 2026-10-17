@@ -40,7 +40,7 @@ class EnsureEmailVerified
         }
 
         return response()->json([
-            'message'       => 'Bevestig eerst je e-mailadres om je account te gebruiken.',
+            'message'       => 'Please verify your email address first to use your account.',
             'code'          => 'email_verification_required',
             'email'         => $user->email,
             'registered_at' => optional($user->created_at)->toIso8601String(),

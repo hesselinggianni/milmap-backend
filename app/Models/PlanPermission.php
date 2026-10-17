@@ -27,6 +27,7 @@ class PlanPermission extends Model
         'missions', 'chat', 'nine_liner', 'unlimited_maps', 'weather',
         'offline_maps', 'area_markers', 'route_export', 'teams',
         'team_shared_maps', 'live_location', 'exercise',
+        'tracks', 'route_maps', 'shares', 'mountain_pack',
     ];
 
     /**

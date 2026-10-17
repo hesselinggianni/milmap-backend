@@ -341,7 +341,7 @@ class UserController extends Controller
             return response()->json(['message' => 'Unauthorized'], 401);
         }
 
-        abort_if($user->connect_device_account, 403, 'Connect-apparaataccounts gebruiken apparaatlogin en kunnen geen wachtwoord instellen of wijzigen.');
+        abort_if($user->connect_device_account, 403, 'Connect device accounts use device login and cannot set or change a password.');
 
         $isFirstTimeSet = !$user->password_set_at;
 
@@ -353,8 +353,8 @@ class UserController extends Controller
         if (!$isFirstTimeSet && !\Illuminate\Support\Facades\Hash::check($validated['current_password'], $user->password)) {
             return response()->json([
                 'success' => false,
-                'message' => 'Huidig wachtwoord is onjuist.',
-                'errors'  => ['current_password' => ['Huidig wachtwoord is onjuist.']],
+                'message' => 'Current password is incorrect.',
+                'errors'  => ['current_password' => ['Current password is incorrect.']],
             ], 422);
         }
 

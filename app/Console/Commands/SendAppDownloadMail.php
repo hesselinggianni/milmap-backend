@@ -35,7 +35,7 @@ class SendAppDownloadMail extends Command
             try {
                 $result = $coupons->createYearlyDiscountCode($email);
                 $code = $result['code'];
-                $expiresLabel = $result['expires_at']->locale('nl')->isoFormat('D MMMM YYYY');
+                $expiresLabel = $result['expires_at']->locale('en')->isoFormat('D MMMM YYYY');
                 $this->info("Unieke code aangemaakt: {$code} (geldig t/m {$expiresLabel})");
             } catch (\Throwable $e) {
                 $this->error('Kon geen Stripe-code aanmaken: ' . $e->getMessage());

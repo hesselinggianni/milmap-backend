@@ -206,7 +206,7 @@ class LeadController extends Controller
             $result = app(LaunchCouponService::class)->createYearlyDiscountCode($lead->email);
             Mail::to($lead->email)->send(new AppDownloadMail(
                 couponCode: $result['code'],
-                couponExpiresLabel: $result['expires_at']->locale('nl')->isoFormat('D MMMM YYYY'),
+                couponExpiresLabel: $result['expires_at']->locale('en')->isoFormat('D MMMM YYYY'),
                 appStoreUrl: config('milmap.app_store_url'),
                 playStoreUrl: config('milmap.play_store_url'),
                 webAppUrl: config('milmap.web_app_url'),
@@ -430,7 +430,7 @@ class LeadController extends Controller
         try {
             Mail::to($lead->email)->send(new AppDownloadMail(
                 couponCode: $result['code'],
-                couponExpiresLabel: $result['expires_at']->locale('nl')->isoFormat('D MMMM YYYY'),
+                couponExpiresLabel: $result['expires_at']->locale('en')->isoFormat('D MMMM YYYY'),
                 appStoreUrl: config('milmap.app_store_url'),
                 playStoreUrl: config('milmap.play_store_url'),
                 webAppUrl: config('milmap.web_app_url'),

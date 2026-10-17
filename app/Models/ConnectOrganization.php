@@ -89,4 +89,39 @@ class ConnectOrganization extends Model
         return ConnectDevice::where('organization_id', $this->id)->connected()
             ->whereIn('user_id', $this->members()->where('status', 'active')->select('user_id'))->count();
     }
+    /**
+     * Welke apparaten vallen binnen de actieve licenties? Accounts gaan voor; de resterende plaatsen
+     * gaan op volgorde van registratie naar vooraf toegestane apparaten en daarna overige verbonden
+     * apparaten. Zonder actieve licentie heeft geen enkel apparaat een plaats.
+     * @return array{allowed: array<int,bool>, devices: array<int,bool>} per allowed-device-id en per connect_devices-id
+     */
+    public function deviceLicenseStatus(): array
+    {
+        $capacity = $this->licensed() ? max(0, $this->seat_limit - $this->occupiedSeats()) : 0;
+        $allowed = ConnectAllowedDevice::where('organization_id', $this->id)->orderBy('id')->get();
+        $byUdid = [];
+        $out = ['allowed' => [], 'devices' => []];
+        foreach ($allowed as $a) {
+            $byUdid[strtolower($a->udid)] = $out['allowed'][$a->id] = $capacity-- > 0;
+        }
+        $connected = ConnectDevice::where('organization_id', $this->id)->connected()
+            ->whereIn('user_id', $this->members()->where('status', 'active')->select('user_id'))->orderBy('id')->get();
+        foreach ($connected as $d) {
+            $key = strtolower((string) $d->vendor_id);
+            $out['devices'][$d->id] = $key !== '' && array_key_exists($key, $byUdid) ? $byUdid[$key] : $capacity-- > 0;
+        }
+        foreach (ConnectDevice::where('organization_id', $this->id)->whereNotNull('vendor_id')->get() as $d) {
+            $key = strtolower($d->vendor_id);
+            if (!isset($out['devices'][$d->id]) && array_key_exists($key, $byUdid)) $out['devices'][$d->id] = $byUdid[$key];
+        }
+        return $out;
+    }
+    /** Einde van de laatste licentie, of null als die er niet is. */
+    public function renewalInfo(): ?array
+    {
+        $end = $this->ends_at;
+        if (!$end || $this->status !== 'active') return null;
+        $days = (int) ceil(now()->diffInSeconds($end, false) / 86400);
+        return ['ends_at' => $end, 'days_left' => $days, 'due' => $days <= 30];
+    }
 }

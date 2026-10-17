@@ -62,6 +62,7 @@ class WarmTerrainTiles extends Command
                 $chunk
             ));
 
+            $chunkOk = 0;
             foreach ($chunk as $i => [$z, $x, $y]) {
                 $r = $responses[$i] ?? null;
                 if ($r instanceof \Illuminate\Http\Client\Response && $r->successful() && $r->body() !== '') {
@@ -69,9 +70,14 @@ class WarmTerrainTiles extends Command
                     File::ensureDirectoryExists($dir);
                     File::put("{$dir}/{$y}.png", $r->body());
                     $ok++;
+                    $chunkOk++;
                 }
                 $bar->advance();
             }
+            // API-verbruik (Mapbox raster-tiles): server-side, geen gebruiker/netwerk.
+            \App\Services\ApiUsageMeter::record('mapbox', 'tiles', [
+                'requests' => count($chunk), 'errors' => count($chunk) - $chunkOk, 'user_id' => 0, 'network_hash' => '',
+            ]);
         }
 
         $bar->finish();

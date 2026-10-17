@@ -15,7 +15,10 @@ class ConnectBillingController extends Controller {
     }
     public function catalog(Request $r, ConnectOrganization $organization, ConnectBilling $billing) {
         $this->manager($r,$organization); $quote=$billing->quote($organization); unset($quote['product'],$quote['price_id'],$quote['tax_behavior'],$quote['tax_rate_id']);
-        return response()->json(['organization'=>['id'=>$organization->id,'name'=>$organization->name],'pricing'=>$quote,'billing_details'=>$organization->billingProfile($r->user()->email)]);
+        // Vanuit "toevoegen" in Connect: de checkout toont wat er na betaling wordt toegevoegd en het minimum aantal seats.
+        $pending=$r->filled('pending') && \Illuminate\Support\Str::isUuid((string)$r->query('pending')) ? \App\Models\ConnectPendingAddition::where('organization_id',$organization->id)->where('status','pending')->find($r->query('pending')) : null;
+        return response()->json(['organization'=>['id'=>$organization->id,'name'=>$organization->name],'pricing'=>$quote+['coterm'=>collect([1,6,12])->mapWithKeys(fn ($m)=>[$m=>($c=$billing->coterm($organization,$m,$quote['unit_monthly_cents'])) ? ['ends_at'=>$c['ends_at']->toIso8601String(),'remaining_days'=>$c['remaining_days'],'term_days'=>$c['term_days'],'unit_term_cents'=>$c['unit_term_cents']] : null])->all()],'billing_details'=>$organization->billingProfile($r->user()->email),
+            'pending_addition'=>$pending ? app(\App\Services\ConnectPendingAdditions::class)->present($pending) : null]);
     }
     /** Factuurgegevens wijzigen vanuit het Connect-account (alleen eigenaar/beheerder). */
     public function updateDetails(Request $r, ConnectOrganization $organization, ConnectBilling $billing) {
@@ -35,9 +38,10 @@ class ConnectBillingController extends Controller {
     }
     public function store(Request $r, ConnectOrganization $organization, ConnectBilling $billing) {
         $this->manager($r,$organization); abort_unless($organization->status==='active',403,'Deze organisatie is niet actief.');
-        $data=$r->validate(['request_id'=>'required|uuid','seats'=>'required|integer|min:1|max:100000','term_months'=>'required|integer|in:1,12','auto_renew'=>'sometimes|boolean','payment_method'=>'required|in:direct,invoice','accepted'=>'accepted','expected_unit_monthly_cents'=>'required|integer|min:1','expected_total_incl_cents'=>'required|integer|min:1','expected_currency'=>'required|string|size:3',
+        $data=$r->validate(['request_id'=>'required|uuid','seats'=>'required|integer|min:1|max:100000','term_months'=>'required|integer|in:1,6,12','auto_renew'=>'sometimes|boolean','payment_method'=>'required|in:direct,invoice','embedded'=>'sometimes|boolean','accepted'=>'accepted','expected_unit_monthly_cents'=>'required|integer|min:1','expected_total_incl_cents'=>'required|integer|min:1','expected_currency'=>'required|string|size:3','pending_addition_id'=>'sometimes|nullable|uuid',
             'billing_details'=>'required|array:company_name,email,address']+$this->detailRules('billing_details.'));
         $order=$billing->order($organization,$r->user()->id,$data);
-        return response()->json(['order'=>$order,'checkout_url'=>$order->checkout_url],201);
+        $secret=$billing->embeddedSecret($order);
+        return response()->json(['order'=>$order,'checkout_url'=>$order->checkout_url]+($secret ? ['client_secret'=>$secret,'publishable_key'=>$billing->publishableKey()] : []),201);
     }
 }

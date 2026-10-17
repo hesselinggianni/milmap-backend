@@ -49,7 +49,9 @@ class GeoIp
 
         return Cache::remember($key, now()->addHours(24), function () use ($ip) {
             try {
-                $json = Http::timeout(2)->get('https://api.country.is/' . rawurlencode($ip))->json();
+                // API-verbruik: alleen echte upstream-calls (cache-hits zouden elke beacon een write kosten).
+                $json = \App\Services\ApiUsageMeter::measure('country_is', 'geoip',
+                    fn () => Http::timeout(2)->get('https://api.country.is/' . rawurlencode($ip)))->json();
                 return self::normalize($json['country'] ?? null);
             } catch (\Throwable $e) {
                 // Stil: analytics mag nooit falen op een geo-lookup.

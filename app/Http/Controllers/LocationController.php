@@ -32,6 +32,7 @@ class LocationController extends Controller
         // Share-token path: unauthenticated public read
         $shareToken = $request->query('share_token');
         if ($shareToken) {
+            app(\App\Services\ConnectManagement::class)->assertPublicResource($map);
             $share = MapShare::active()
                 ->where('token', $shareToken)
                 ->where('map_id', $mapId)

@@ -10,6 +10,7 @@ use App\Models\UserLoginCode;
 use Illuminate\Http\Request;
 use Illuminate\Support\Carbon;
 use Illuminate\Support\Facades\Mail;
+use Illuminate\Support\Facades\RateLimiter;
 use Illuminate\Validation\ValidationException;
 
 /**
@@ -89,6 +90,16 @@ class LoginCodeController extends Controller
             'code' => 'required|string|size:6',
         ]);
 
+        // Per account, not per IP: the route throttle counts per installation
+        // (thousands of users share a school/barracks NAT), so a 6-digit code
+        // needs its own cap — 10 wrong guesses per address per 15 minutes.
+        $attemptKey = 'login-code-verify:' . sha1(mb_strtolower(trim($validated['email'])));
+        if (RateLimiter::tooManyAttempts($attemptKey, 10)) {
+            throw ValidationException::withMessages([
+                'code' => 'Too many attempts. Request a new code in a few minutes.',
+            ]);
+        }
+
         $user = User::where('email', $validated['email'])->first();
 
         $loginCode = UserLoginCode::where('email', $validated['email'])
@@ -98,11 +109,13 @@ class LoginCodeController extends Controller
             ->first();
 
         if (!$user || $user->isArchived() || !$loginCode) {
+            RateLimiter::hit($attemptKey, 900);
             throw ValidationException::withMessages([
                 'code' => 'Invalid or expired code.',
             ]);
         }
 
+        RateLimiter::clear($attemptKey);
         $loginCode->markAsUsed();
 
         return $this->finalizeLogin($request, $user);

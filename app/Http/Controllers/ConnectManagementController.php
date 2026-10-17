@@ -51,7 +51,43 @@ class ConnectManagementController extends Controller {
     }
     public function audit(Request $r, ConnectOrganization $organization) {
         $this->manager($r, $organization);
-        return response()->json(ConnectAuditEvent::where('organization_id', $organization->id)->orderByDesc('id')->paginate(50));
+        $page = ConnectAuditEvent::where('organization_id', $organization->id)->orderByDesc('id')->paginate(50);
+        // Het portaal toont namen, geen kale account-/apparaatnummers.
+        $events = collect($page->items());
+        $userIds = $events->pluck('actor_user_id')->merge($events->where('resource_type', 'User')->pluck('resource_id'))->filter()->unique()->values();
+        $members = ConnectMember::where('organization_id', $organization->id)->whereIn('user_id', $userIds)->get()->keyBy('user_id');
+        $users = User::whereIn('id', $userIds)->get(['id', 'first_name', 'last_name'])->keyBy('id');
+        $personName = function ($id) use ($members, $users) {
+            if (!$id) return null;
+            $member = $members->get($id);
+            $name = $member ? trim($member->first_name.' '.$member->last_name) : trim(($users->get($id)?->first_name ?? '').' '.($users->get($id)?->last_name ?? ''));
+            return $name !== '' ? $name : 'Onbekend account';
+        };
+        $deviceIds = $events->pluck('device_id')->merge($events->where('resource_type', 'ConnectAllowedDevice')->pluck('resource_id'))->filter()->unique()->values();
+        $devices = ConnectAllowedDevice::where('organization_id', $organization->id)->whereIn('id', $deviceIds)->pluck('name', 'id');
+        $titles = [];
+        foreach (['Map' => [Map::class, 'title'], 'RouteMap' => [RouteMap::class, 'title'], 'Mission' => [Mission::class, 'name']] as $type => [$model, $column]) {
+            $ids = $events->where('resource_type', $type)->pluck('resource_id')->filter()->unique()->values();
+            $titles[$type] = $ids->isEmpty() ? collect() : $model::withTrashed()->where('connect_organization_id', $organization->id)->whereIn('id', $ids)->pluck($column, 'id');
+        }
+        $memberNames = ConnectMember::where('organization_id', $organization->id)
+            ->whereIn('id', $events->where('resource_type', 'ConnectMember')->pluck('resource_id')->filter()->unique()->values())
+            ->get()->mapWithKeys(fn ($m) => [$m->id => trim($m->first_name.' '.$m->last_name)]);
+        $page->getCollection()->transform(function ($event) use ($personName, $devices, $titles, $memberNames, $organization) {
+            $id = $event->resource_id;
+            $event->setAttribute('actor_name', $personName($event->actor_user_id));
+            $event->setAttribute('device_name', $event->device_id ? ($devices->get($event->device_id) ?? ($event->details['device_name'] ?? 'Verwijderd apparaat')) : null);
+            $event->setAttribute('resource_label', match ($event->resource_type) {
+                'User' => $personName($id),
+                'ConnectMember' => $memberNames->get($id) ?: null,
+                'ConnectAllowedDevice' => $devices->get($id),
+                'ConnectOrganization' => $organization->name,
+                'Map', 'RouteMap', 'Mission' => $titles[$event->resource_type]->get($id),
+                default => null,
+            });
+            return $event;
+        });
+        return response()->json($page);
     }
     public function resources(Request $r, ConnectOrganization $organization) {
         $this->manager($r, $organization);

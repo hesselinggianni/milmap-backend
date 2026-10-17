@@ -1,73 +1,41 @@
-# Connect-apparaatlogin — 16 oktober 2026
+# Connect-apparaatlogin op iOS en Android
 
-Geïmplementeerd in het bestaande project onder `/Applications/XAMPP/xamppfiles/htdocs/milmap`.
+Deze pagina vervangt de oorspronkelijke oplevernotitie van 16 oktober. De actuele migraties, organisatiepolicy, offline toegang, Stripe-inrichting en releasecontroles staan in [Connect management, seat orders and Android Enterprise](connect-management.md).
 
-## Gereed
+## Kies de juiste configuratie
 
-- Geconfigureerde Connect-iPads gaan vanaf `/login`, `/register`, `/password-forgot`, `/password-reset` en (uitgelogd) `/verify-email` naar `/` met `Home.vue`.
-- Home toont voor deze apparaten dezelfde Connect-loginweergave: één knop **Inloggen**, zonder e-mail-, wachtwoord-, registratie- of social-loginformulier. Apparaten zonder binding houden de bestaande schermen. Bestaande sessies blijven de bestaande routering volgen; admin-login staat los hiervan.
-- iOS leest `device_binding` uit de bestaande native `MilMapManagedConfig`-plugin. Er wordt geen echte UDID uit iOS opgevraagd.
-- Alleen het MDM-servertoken van de betreffende organisatie kan voor een vooraf geregistreerd apparaat een individuele binding laten uitgeven. De server bewaart alleen de SHA-256-hash.
-- De server maakt een apart device-useraccount en actief Connect-lid aan. E-mailadres: hoofdletterprefix vóór het eerste koppelteken van het geregistreerde volledige UDID, bijvoorbeeld `18D2D99B@connect.milmap.nl`.
-- Bestaande accounts of botsende prefixes worden niet overgenomen: provisioning weigert met 409. Het volledige geregistreerde UDID, de organisatie en de userkoppeling komen uit de database, nooit uit het client-emailveld of een UDID-header.
-- Device-accounts kunnen niet via gewone wachtwoord-/codelogin of een ongebonden Sanctum-token langs de bindingcontrole komen.
-- Blokkering via bestaand apparaatbeheer maakt de binding ongeldig en verwijdert de sessies. Allow-listverwijdering en bindingrotatie trekken ook sessies in. Sanctum controleert binding, user, organisatie en actief lidmaatschap bij authenticatie, ook op routes zonder apparaatregistratiemiddleware.
-- Eén actieve apparaatsessie per device-account; opnieuw inloggen vervangt de vorige sessie. Een ander installatie-ID kan een bestaande sessie niet gebruiken op de gecontroleerde app-API-routes.
-- Share- en cloudrechten volgen de normale user-ID. Getest: eigen cloudkaarten zichtbaar, andere device-account ziet ze niet, eigen Share-link maken, geldige link ontvangen, ongeldige link weigeren en geen beheer/schrijven/verwijderen namens een ander device-account.
+| Platform/modus | Managed app configuration | Authenticatie |
+| --- | --- | --- |
+| Android Enterprise | `device_binding`: het unieke geheim uit de binding-API | Een binding is altijd verplicht, ongeacht de iOS-instelling van de organisatie. |
+| iOS, `binding` | `device_binding`: het unieke geheim; optioneel `device_id` voor metadata/huisstijl | De binding geeft toegang. Alleen een geregistreerd UDID is onvoldoende. |
+| iOS, `udid` | `device_id`: het volledige geregistreerde UDID uit de MDM-inventaris | Het geregistreerde ID geeft toegang zonder afgeleverd geheim. Een UDID is niet geheim. |
 
-## Nog vereist voor gebruik met echte iPads
+De huidige organisatiestandaard is **`udid` voor iOS**. Migratie `2026_10_16_220000_default_device_login_udid` zet ook bestaande organisaties op die modus. Kies na die migratie in Connect expliciet **Device binding** voor organisaties die een geheim per apparaat vereisen. Deze keuze wijzigt Android niet. Een aanwezige `device_binding` heeft in de app voorrang boven `device_id`.
 
-1. Voer na vrijgave van een deployment de nieuwe migratie `2026_10_16_100000_add_connect_device_bindings.php` uit. Deze is nu alleen in de geïsoleerde testdatabase uitgevoerd; de bestaande lokale en productiedatabases zijn niet gemigreerd.
-2. Registreer het **volledige echte UDID uit de betrouwbare MDM-inventaris** in de juiste Connect-organisatie via de bestaande allow-list of `POST /api/v1/connect/mdm/devices` met het organisatiespecifieke MDM-Bearertoken. IDFV/Capacitor Device.getId is niet hetzelfde als het echte UDID.
-3. Laat uitsluitend de vertrouwde MDM-server/automatisering `POST /api/v1/connect/mdm/devices/{udid}/binding` uitvoeren met dat MDM-Bearertoken. De respons bevat `device_binding` (64 willekeurige tekens); dit is een geheim, geen UDID.
-4. Lever die waarde **alleen aan de bijbehorende beheerde iPad** als managed app configuration:
+De app vraagt geen echt Apple-UDID aan iOS. Lever voor iOS het volledige ID uit de betrouwbare MDM-inventaris; IDFV/Capacitor Device.getId is niet hetzelfde. Android gebruikt een stabiel inventaris-ID uit de MDM, geen geclaimd Android-ID als authenticatiebewijs.
 
-   ```json
-   {
-     "device_id": "18D2D99B-VOLLEDIGE-GEREGISTREERDE-UDID",
-     "device_binding": "DE-UNIEKE-64-TEKENS-UIT-DE-MDM-API"
-   }
-   ```
+## Apparaat registreren en binding afleveren
 
-   `device_id` blijft beschikbaar voor bestaande metadata/huisstijl. Authenticatie gebruikt uitsluitend `device_binding`. Zet nooit het organisatie-MDM-token in de app-config. Gebruik HTTPS en neem secrets niet op in URL's, logs, screenshots of gedeelde configuratieprofielen. Gebruik per apparaat een afzonderlijke waarde; de waarde is een bearercredential, geen hardwareattestatie.
-5. Gebruik een iOS-build waarin de bestaande `MilMapManagedConfig`-plugin is geregistreerd. Die registratie is in de bron aanwezig, maar installatie en ontvangst van managed config zijn in deze opdracht niet op een echte iPad getest. Andere platformen krijgen via deze nieuwe clientflow geen managed device-login.
-6. Na blokkering mag pas na bewuste nieuwe provisioning weer een nieuwe binding worden afgeleverd. Rotatie geeft de nieuwe waarde eenmaal terug en trekt de oude waarde en sessies in.
-7. Verwijdering van een allow-listitem bewaart het device-useraccount en diens gegevens. Opnieuw toevoegen/provisionen met hetzelfde prefix kan daardoor een 409 opleveren; herstel/toewijzing vereist dan expliciete beheercontrole. Er is geen automatische accountovername of dataverwijdering toegevoegd.
-8. Verifieer op een echte beheerde iPad: app-configbezorging, starten op Home, alle auth-routes, inloggen, herstarten, Share/cloudgebruik, offline foutweergave, blokkeren terwijl ingelogd en weigering van opnieuw inloggen.
+1. Pas vóór gebruik de volledige migratiereeks uit [connect-management.md](connect-management.md#rollout) toe via het normale releaseproces. Alleen de oorspronkelijke bindingmigratie uitvoeren is onvoldoende.
+2. Registreer het apparaat in de juiste organisatie via de allow-list of `POST /api/v1/connect/mdm/devices`, met het organisatie-MDM-token als `Authorization: Bearer …`. Stuur `udid`, `name` en expliciet `platform: ios` of `platform: android`. De legacy veldnaam `udid` geldt voor beide platformen; toegestane IDs bevatten 8–64 letters, cijfers of koppeltekens.
+3. Voor Android en iOS in bindingmodus: laat de vertrouwde MDM-integratie `POST /api/v1/connect/mdm/devices/{udid}/binding` uitvoeren met hetzelfde organisatietoken. De respons geeft eenmaal een willekeurige `device_binding` van 64 alfanumerieke tekens terug. De server bewaart alleen de SHA-256-hash. Een nieuwe aanvraag roteert het geheim en trekt bestaande sessies in.
+4. Lever het geheim uitsluitend aan het bijbehorende apparaat als managed app configuration voor `nl.milmap.app`. Android leest dit via `RestrictionsManager`; iOS via `com.apple.configuration.managed`. Gebruik op iOS in UDID-modus alleen de juiste `device_id` wanneer je zonder binding wilt inloggen.
+5. Installeer een native appbuild met de geregistreerde `MilMapManagedConfig`-plugin. Android heeft ook het schema `app_restrictions.xml` nodig. Een JavaScript/OTA-update alleen kan de native plugin niet toevoegen. Richt de afzonderlijke aflevering van de bindings zelf in de MDM in; registratie in de API levert de configuratie nog niet aan het apparaat af.
 
-De huidige MDM-integratie registreert apparaten; de aanvullende automatisering om het individuele geheim naar iedere iPad te pushen moet nog in jullie MDM worden ingericht. Een apparaat met uitsluitend een geïmporteerd UDID maar zonder afgeleverde binding kan nog niet de veilige Connect-login gebruiken.
+Het organisatie-MDM-token blijft uitsluitend in de serverintegratie. Geef elk apparaat een eigen binding en deel die niet via één statische organisatieconfiguratie. Gebruik HTTPS en plaats het geheim niet in URL’s of logs. Een binding is een bearercredential en geen hardwareattestatie.
 
-## Verificatie
+## Sessies, intrekken en behouden werk
 
-- Backend: **54 tests, 317 assertions geslaagd** voor `ConnectDeviceLoginTest`, `ConnectEnterpriseTest`, `AccountIsolationTest`, `ActivitySharingTest` en `SecurityHardeningTest`.
-- Connect-frontend: **10 tests geslaagd**, inclusief daadwerkelijk renderen van de actieve AuthView, routering naar Home, behoud normale login en uitsluiting van de lokale preview in productie.
-- Productiebuild: geslaagd met bestaande CSS-volgorde-/bundelwaarschuwingen en verouderde Browserslist-data.
-- Browser: lokale Connect-preview zichtbaar zonder e-mailveld; klikken toont alleen een voorbeeldmelding en maakt geen sessie. Normale `/login` toont het bestaande e-mailveld. `/register?connect-preview=1` verwijst zichtbaar naar `/?connect-preview=1`.
-- Volledige backendtestset: stopt door de bestaande dubbele methode `AdminController::createConnectOrganization()` (regels 741 en 1053).
-- Volledige frontendtestset: fouten in bestaande `account-panels.test.cjs` en `outbox-local-first.test.mjs`; deze bestanden en hun implementaties zijn door deze wijziging niet aangepast.
+Geconfigureerde apparaten gebruiken de Connect-weergave op Home met één knop **Inloggen**. De gewone auth-routes verwijzen uitgelogde apparaten met herkende managed configuratie naar Home. Normale accounts behouden hun gewone login. De server controleert de apparaatkoppeling, actieve organisatie/licentie en het lidmaatschap; gewone wachtwoordlogin of een ongebonden token geeft een device-account geen toegang.
 
-**Niet gedeployed.** Vrijgave vereist het oplossen van de bredere testblokkades en verificatie met een echte MDM-beheerde iPad. Native iOS-build, MDM-serverconfiguratie en productiegedrag zijn nog niet end-to-end bevestigd.
+Voor Android en iOS in bindingmodus vergelijkt de app bij een koude start verse native configuratie met de tokengebonden fingerprint vóór het vrijgeven van lokaal werk. De controle wordt op focus/hervatten herhaald; Android luistert ook naar configuratiewijzigingen. Een ontbrekende of gewijzigde binding of ontbrekende fingerprint blokkeert de sessie. Het geheim wordt niet in JavaScript-opslag bewaard. De aparte iOS-UDID-modus gebruikt deze geheime-bindingcontrole niet.
 
-## Lokale preview
+Verwijder bij uitschrijving het apparaat via `DELETE /api/v1/connect/mdm/devices/{udid}` en verwijder de managed configuratie via de MDM. De API trekt de binding en sessies in; een offline apparaat krijgt serverwijzigingen pas bij verbinding of bij het aflopen van de eerder afgegeven offline toegang. Gebruik de MDM voor het wissen van appdata of het werkprofiel wanneer dat nodig is.
 
-- Connect-Home: http://localhost:8080/?connect-preview=1
-- Doorverwijzing: http://localhost:8080/register?connect-preview=1
-- Normale login: http://localhost:8080/login
+Het verwijderen van een allow-listitem verwijdert geen device-account of organisatiegegevens. Bestaande accounts worden bij nieuwe provisioning niet automatisch overgenomen; een accountbotsing kan HTTP 409 geven en vereist beheercontrole. Er wordt geen accountnaam meer afgeleid van alleen het prefix vóór het eerste koppelteken. Voor overdracht van behouden werk gelden de organisatie- en eigendomsregels uit [connect-management.md](connect-management.md#ownership-and-handover).
 
-De previewparameter werkt alleen in development, verandert geen backend-authenticatie en maakt geen gebruikerssessie. De frontendontwikkelserver draait op localhost:8080; voor deze visuele preview is geen echte backendlogin nodig.
+## Verificatie vóór vrijgave
 
-## Belangrijkste bronbestanden
+Backend- en UI-tests gebruiken geïsoleerde data en gemockte betaalverwerking; Android Java-compilatie is geslaagd. Er is geen fysieke iOS/Android-apparaattest, echte MDM-configuratiebezorging of echte betaling uitgevoerd voor deze wijziging. Productie- en migratiestatus volgen niet uit deze tests.
 
-Backend: `app/Services/ConnectDeviceLogin.php`, `app/Http/Controllers/Auth/ConnectDeviceLoginController.php`, `app/Services/ConnectDeviceRegistry.php`, `app/Providers/AppServiceProvider.php`, `app/Http/Controllers/ConnectController.php`, `app/Http/Controllers/Auth/Concerns/IssuesLoginSession.php`, `app/Models/ConnectAllowedDevice.php`, `app/Models/User.php`, `routes/connect.php`, de nieuwe migratie en `tests/Feature/ConnectDeviceLoginTest.php`.
-
-Frontend: `src/services/connectDeviceLogin.js`, `src/services/AuthServices.js`, `src/views/auth/AuthView.vue`, `src/views/Home.vue`, `src/router/index.js` en `tests/connect-device-login.test.mjs`.
-
-Bij de normale login kwam tijdens de tests een bestaande PDO-serialisatiefout in de uitgestelde loginmail aan het licht. De gedeelde loginhandler gebruikt nu een applicatie-terminationcallback voor die mail in plaats van het serialiseren van de controller/request in een queueclosure; normale login is hiermee ook getest.
-
-## Aanvulling Enterprise-rechten
-
-Een actief Connect-lidmaatschap geeft nu alle pakketfuncties, onafhankelijk van een persoonlijk abonnement, proefperiode of beperkende Team-rechtentabel. De server blijft resource-eigendom, samenwerkingsrechten en beheerrollen controleren. De workspace moet wel een actieve Enterprise-licentie houden.
-
-UpgradePrompt gebruikt de actuele serverresponse van het account (`connect_device_account` of `premium.organization.via = enterprise`) en geen lokaal huisstijlcacherecord. Een open upgradevenster sluit zodra de Connect-status beschikbaar komt. Persoonlijke abonnement- en factuurpanelen zijn voor deze accounts verborgen.
-
-Aanvullend getest: geen persoonlijk abonnement of proefperiode, volledige Enterprise-featuretoegang ondanks gesloten Team-rechten, blokkering van toegang bij organisatieblokkade, geen upgradevenster/prijsvraag voor Connect en behoud van het gewone upgradegedrag.
+Controleer vóór klantgebruik op echte beheerde apparaten beide iOS-modi en Android: configuratiebezorging, Home/login, koude start en hervatten offline, bindingrotatie/verwijdering, intrekken van toegang, policyverval en tenantisolatie. De volledige releasecontroles staan in [connect-management.md](connect-management.md#verification-and-release-checks).

@@ -62,6 +62,8 @@ class MapWaypointController extends Controller
             'waypoints.*.icon'     => 'nullable|string|max:30',
             'waypoints.*.type'     => 'nullable|string|max:30',
             'waypoints.*.note'     => 'nullable|string',
+            'waypoints.*.props'    => 'nullable|array|max:50',
+            'waypoints.*.props.*'  => 'nullable|string|max:500',
         ]);
 
         $userId = Auth::id();
@@ -80,7 +82,7 @@ class MapWaypointController extends Controller
                         'icon'    => $w['icon'] ?? 'pin',
                         'type'    => $w['type'] ?? null,
                         'note'    => $w['note'] ?? null,
-                    ]
+                    ] + (array_key_exists('props', $w) ? ['props' => $w['props']] : [])
                 )->toClientArray();
             }
             return $out;
@@ -116,6 +118,8 @@ class MapWaypointController extends Controller
             // vrij string-veld, zie migratie 2026_08_08_140000.
             'type'     => 'nullable|string|max:30',
             'note'     => 'nullable|string',
+            'props'    => 'nullable|array|max:50',
+            'props.*'  => 'nullable|string|max:500',
         ]);
 
         $waypoint = MapWaypoint::updateOrCreate(
@@ -130,7 +134,7 @@ class MapWaypointController extends Controller
                 'icon'    => $data['icon'] ?? 'pin',
                 'type'    => $data['type'] ?? null,
                 'note'    => $data['note'] ?? null,
-            ]
+            ] + (array_key_exists('props', $data) ? ['props' => $data['props']] : [])
         );
 
         broadcast(new MapWaypointChanged($mapId, $waypoint->toClientArray(), 'created', Auth::id()))->toOthers();
@@ -163,6 +167,8 @@ class MapWaypointController extends Controller
             'icon'  => 'nullable|string|max:30',
             'type'  => 'nullable|string|max:30',
             'note'  => 'nullable|string',
+            'props'   => 'nullable|array|max:50',
+            'props.*' => 'nullable|string|max:500',
         ]);
 
         $waypoint->update($data);

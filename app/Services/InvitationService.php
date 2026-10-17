@@ -83,7 +83,7 @@ class InvitationService
         $ownerId      = (int) $invitable->owner_id;
 
         if ($existingUser && (int) $existingUser->id === $ownerId) {
-            return ['ok' => false, 'status' => 422, 'error' => 'De eigenaar kan niet worden uitgenodigd.'];
+            return ['ok' => false, 'status' => 422, 'error' => 'The owner cannot be invited.'];
         }
 
         // Already an active/pending collaborator?
@@ -98,7 +98,7 @@ class InvitationService
             ->where('status', 'pending')
             ->first();
         if ($open) {
-            return ['ok' => false, 'status' => 422, 'error' => 'Er staat al een uitnodiging open voor dit e-mailadres.'];
+            return ['ok' => false, 'status' => 422, 'error' => 'An invitation is already pending for this email address.'];
         }
 
         $invite = Invitation::create([
@@ -134,6 +134,7 @@ class InvitationService
      */
     public function accept(Invitation $invite, User $user): void
     {
+        abort_unless($invite->isAddressedTo($user), 403, 'This invitation is not intended for you.');
         if ($invite->invitable) app(ConnectManagement::class)->assertInvitation($invite->invitable, $invite->inviter ?? $user, $user->email);
         if (! $invite->isPending()) {
             return;
@@ -218,7 +219,7 @@ class InvitationService
      */
     public function convertForNewUser(User $user): int
     {
-        $pending = Invitation::forEmail($user->email)->pending()->get();
+        $pending = Invitation::addressedTo($user)->pending()->get();
 
         if ($pending->isEmpty()) {
             return 0;

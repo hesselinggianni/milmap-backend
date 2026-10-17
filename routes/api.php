@@ -113,6 +113,15 @@ Route::prefix('v1')->middleware(['api'])->group(function () {
     // /admin/analytics. Ruimere throttle want de client stuurt batches.
     Route::post('/app-events', [\App\Http\Controllers\AppEventController::class, 'store'])
         ->middleware('throttle:120,1');
+    // ── API-verbruik van derde partijen vanuit de app (auth optioneel) ─────
+    // Tellers van directe toestel-calls (Open-Meteo, OSRM, tegels, …) per
+    // ~5 min. Throttle zit in de controller (per gebruiker / ruim per IP voor
+    // school-NAT), daarom zonder throttle:api. Zie ApiUsageController.
+    Route::post('/api-usage', [\App\Http\Controllers\ApiUsageController::class, 'ingest'])
+        ->withoutMiddleware('throttle:api');
+    // Melding van een 429 van een externe API (Open-Meteo, Mapbox, …) vanuit de app.
+    Route::post('/rate-limit-events', [\App\Http\Controllers\RateLimitEventController::class, 'ingest'])
+        ->middleware('throttle:30,1');
     Route::post('/login', [LoginController::class, 'store'])->middleware('throttle:10,1');
     // E-mail-eerst auth-flow: bepaalt of een e-mail al een account heeft, zodat
     // de client kan kiezen tussen inloggen of registreren. Zwaar gethrottled om
@@ -169,6 +178,9 @@ Route::prefix('v1')->middleware(['api'])->group(function () {
         Route::post('/user/account/deletion',              [\App\Http\Controllers\AccountDeletionController::class, 'schedule'])
             ->middleware('throttle:10,10');
         Route::post('/user/account/deletion/cancel',       [\App\Http\Controllers\AccountDeletionController::class, 'cancel']);
+        // Account resetten: alle eigen data wissen, account blijft (uitloggen wist niets).
+        Route::post('/user/account/reset', [\App\Http\Controllers\AccountResetController::class, 'reset'])
+            ->middleware('throttle:5,10');
     });
 
     // ── E-mailverificatie ────────────────────────────────────────────
@@ -438,12 +450,15 @@ Route::prefix('v1')->middleware(['api'])->group(function () {
 
         // Opgenomen GPS-activiteiten (hardlopen/fietsen/wandelen), zoals Strava.
         Route::get('/activities', [\App\Http\Controllers\ActivityController::class, 'index']);
-        Route::post('/activities', [\App\Http\Controllers\ActivityController::class, 'store']);
-        Route::post('/activities/{id}/share', [\App\Http\Controllers\ActivityController::class, 'share']);
+        Route::post('/activities', [\App\Http\Controllers\ActivityController::class, 'store'])
+            ->middleware(RequiresPremium::class . ':tracks');
+        Route::post('/activities/{id}/share', [\App\Http\Controllers\ActivityController::class, 'share'])
+            ->middleware(RequiresPremium::class . ':tracks');
         Route::get('/activities/{id}', [\App\Http\Controllers\ActivityController::class, 'show']);
         Route::put('/activities/{id}', [\App\Http\Controllers\ActivityController::class, 'update']);
         Route::delete('/activities/{id}', [\App\Http\Controllers\ActivityController::class, 'destroy']);
-        Route::post('/activities/{id}/photos', [\App\Http\Controllers\ActivityController::class, 'uploadPhoto']);
+        Route::post('/activities/{id}/photos', [\App\Http\Controllers\ActivityController::class, 'uploadPhoto'])
+            ->middleware(RequiresPremium::class . ':tracks');
         Route::delete('/activities/{id}/photos/{photoId}', [\App\Http\Controllers\ActivityController::class, 'deletePhoto']);
 
         // Garmin Connect — gekoppeld account tonen/ontkoppelen + route pushen.
@@ -462,6 +477,7 @@ Route::prefix('v1')->middleware(['api'])->group(function () {
         // Literal routes first so they aren't captured by the {id} param.
         Route::get('/invitations/incoming', [InvitationController::class, 'incoming']);
         Route::get('/invitations/outgoing', [InvitationController::class, 'outgoing']);
+        Route::get('/invitations/token/{token}/context', [InvitationController::class, 'context']);
         Route::post('/invitations/token/{token}/accept', [InvitationController::class, 'accept']);
         Route::post('/invitations/token/{token}/decline', [InvitationController::class, 'decline']);
         // Legacy map-collaborator token accept (superseded by the flow above).
@@ -588,9 +604,9 @@ Route::prefix('v1')->middleware(['api'])->group(function () {
 
       
         Route::get('/routemaps', [RouteMapController::class, 'index']);
-        Route::post('/routemaps', [RouteMapController::class, 'store']);
+        Route::post('/routemaps', [RouteMapController::class, 'store'])->middleware(RequiresPremium::class . ':route_maps');
         Route::get('/routemaps/{id}', [RouteMapController::class, 'show']);
-        Route::put('/routemaps/{id}', [RouteMapController::class, 'update']);
+        Route::put('/routemaps/{id}', [RouteMapController::class, 'update'])->middleware(RequiresPremium::class . ':route_maps');
         Route::patch('/routemaps/{id}/mission', [RouteMapController::class, 'linkMission']);
         Route::delete('/routemaps/{id}', [RouteMapController::class, 'destroy']);
         Route::delete('/routemaps', [RouteMapController::class, 'clear']);
@@ -615,7 +631,7 @@ Route::prefix('v1')->middleware(['api'])->group(function () {
         Route::delete('/route-assignments/{id}', [\App\Http\Controllers\RouteAssignmentController::class, 'destroy']);
 
         // Route generation routes
-        Route::post('/routemaps/{routeMapId}/generate-route', [RouteGenerationController::class, 'generateRoute']);
+        Route::post('/routemaps/{routeMapId}/generate-route', [RouteGenerationController::class, 'generateRoute'])->middleware(RequiresPremium::class . ':route_maps');
         Route::get('/routemaps/{routeMapId}/generated-routes', [RouteGenerationController::class, 'listGeneratedRoutes']);
         Route::get('/generated-routes/{id}', [RouteGenerationController::class, 'getGeneratedRoute']);
         Route::post('/generated-routes/{id}/apply', [RouteGenerationController::class, 'applyRoute']);
@@ -649,8 +665,8 @@ Route::prefix('v1')->middleware(['api'])->group(function () {
 
         // Map sharing routes
         Route::get('/maps/{mapId}/shares', [MapShareController::class, 'index']);
-        Route::post('/maps/{mapId}/shares', [MapShareController::class, 'store']);
-        Route::put('/maps/{mapId}/shares/{shareId}', [MapShareController::class, 'update']);
+        Route::post('/maps/{mapId}/shares', [MapShareController::class, 'store'])->middleware(RequiresPremium::class . ':shares');
+        Route::put('/maps/{mapId}/shares/{shareId}', [MapShareController::class, 'update'])->middleware(RequiresPremium::class . ':shares');
         Route::delete('/maps/{mapId}/shares/{shareId}', [MapShareController::class, 'destroy']);
 
         // Map collaborators routes
@@ -692,6 +708,12 @@ Route::prefix('v1')->middleware(['api'])->group(function () {
         Route::post('/missions/{id}/dispatch-warning-order', [MissionController::class, 'dispatchWarningOrder']);
         Route::post('/missions/{id}/ogroup/upload', [MissionController::class, 'uploadOgroupFile']);
         Route::delete('/missions/{id}', [MissionController::class, 'destroy']);
+        // Samen bewerken: live inhoud + veld-locks (polling elke ~2s, dus een
+        // eigen cap i.p.v. het gedeelde throttle:api-budget op te eten).
+        Route::get ('/missions/{id}/live', [\App\Http\Controllers\MissionLiveController::class, 'show'])
+            ->withoutMiddleware('throttle:api')->middleware('throttle:240,1');
+        Route::post('/missions/{id}/live', [\App\Http\Controllers\MissionLiveController::class, 'sync'])
+            ->withoutMiddleware('throttle:api')->middleware('throttle:240,1');
 
         // ── Mission briefing + presentation ──────────────────────────
         Route::get   ('/missions/{id}/presentation',                [MissionBriefingController::class, 'presentation']);
@@ -897,6 +919,11 @@ Route::prefix('v1')->middleware(['api'])->group(function () {
 
             // ── App-gebruiksanalyse (meest bezochte routes + knoppen) ───
             Route::get('/admin/analytics', [\App\Http\Controllers\AppEventController::class, 'adminSummary']);
+            // ── API-verbruik derde partijen (kaarten, Open-Meteo, geocoding, …) ─
+            Route::get('/admin/api-usage', [\App\Http\Controllers\ApiUsageController::class, 'adminSummary']);
+            Route::get('/admin/rate-limit-events', [\App\Http\Controllers\RateLimitEventController::class, 'adminIndex']);
+            Route::delete('/admin/rate-limit-events', [\App\Http\Controllers\RateLimitEventController::class, 'adminClear']);
+            Route::get('/admin/users/{userId}/api-usage', [\App\Http\Controllers\ApiUsageController::class, 'adminUser']);
 
             // ── Sales / CRM-pijplijn ────────────────────────────────────
             Route::get   ('/admin/crm/deals',                 [\App\Http\Controllers\CrmController::class, 'index']);

@@ -52,9 +52,14 @@ class SecurityHardeningTest extends TestCase
         });
         Schema::create('missions', function (Blueprint $t) {
             $t->string('id'); $t->unsignedBigInteger('owner_id'); $t->json('map')->nullable(); $t->softDeletes();
+            $t->string('status')->default('planning'); $t->string('linked_team_id')->nullable();
         });
         Schema::create('mission_collaborators', function (Blueprint $t) {
             $t->id(); $t->string('mission_id'); $t->unsignedBigInteger('user_id'); $t->string('role'); $t->string('status');
+        });
+        // Kaarttoegang kijkt ook naar leden van het aan een missie gekoppelde team.
+        Schema::create('team_members', function (Blueprint $t) {
+            $t->uuid('id')->primary(); $t->uuid('team_id'); $t->unsignedBigInteger('user_id')->nullable(); $t->string('status')->default('active');
         });
         DB::table('users')->insert(['id' => 1, 'email' => 'admin@example.test', 'is_admin' => true]);
         Mail::fake();

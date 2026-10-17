@@ -43,8 +43,8 @@ class RouteGenerationService
             $osrmUrl = $this->buildOSRMUrl($coordinates, $optimization);
 
             // Call OSRM API
-            $osrmResponse = Http::timeout(self::REQUEST_TIMEOUT)
-                ->get($osrmUrl)
+            $osrmResponse = ApiUsageMeter::measure('osrm', 'route', fn () => Http::timeout(self::REQUEST_TIMEOUT)
+                ->get($osrmUrl))
                 ->json();
 
             if (! isset($osrmResponse['routes']) || empty($osrmResponse['routes'])) {
@@ -221,8 +221,8 @@ class RouteGenerationService
                 return ['latitude' => $coord[1], 'longitude' => $coord[0]];
             }, $coordinates);
 
-            $response = Http::timeout(self::REQUEST_TIMEOUT)
-                ->post(self::ELEVATION_API_URL, ['locations' => $locations])
+            $response = ApiUsageMeter::measure('open_elevation', 'elevation', fn () => Http::timeout(self::REQUEST_TIMEOUT)
+                ->post(self::ELEVATION_API_URL, ['locations' => $locations]))
                 ->json();
 
             if (! isset($response['results'])) {
@@ -667,9 +667,9 @@ out skel qt;
 EOQ;
 
         try {
-            $response = Http::timeout(self::REQUEST_TIMEOUT)
+            $response = ApiUsageMeter::measure('overpass', 'query', fn () => Http::timeout(self::REQUEST_TIMEOUT)
                 ->asForm()
-                ->post(self::OVERPASS_API_URL, ['data' => $query])
+                ->post(self::OVERPASS_API_URL, ['data' => $query]))
                 ->json();
         } catch (\Exception $e) {
             Log::warning('Overpass API request failed: ' . $e->getMessage());

@@ -112,10 +112,35 @@ class AppServiceProvider extends ServiceProvider
             // foutmeldingen niet eens meer in de admin belandden). Productie
             // draaide feitelijk op 600 (APP_ENV stond op local); dat houden we
             // aan, los van APP_ENV.
-            return Limit::perMinute(600)
-                ->by($request->user()
-                    ? 'user:'.$request->user()->getAuthIdentifier()
-                    : 'ip:'.$request->ip());
+            if ($request->user()) {
+                return Limit::perMinute(600)->by('user:'.$request->user()->getAuthIdentifier());
+            }
+
+            // Gasten per installatie, met een plafond per IP: duizenden
+            // gebruikers achter één school-/kazerne-NAT mogen elkaar niet
+            // buitensluiten (zie App\Support\ClientKey).
+            $guest = Limit::perMinute(600)->by(\App\Support\ClientKey::forGuest($request));
+            if (! \App\Support\ClientKey::installation($request)) {
+                return $guest;
+            }
+
+            return [$guest, Limit::perMinute(600 * \App\Support\ClientKey::natFactor())->by('ip:'.$request->ip())];
+        });
+
+        // Connect-apparaatlogin (status, login, huisstijl): per apparaat-credential
+        // i.p.v. per IP. Een klas van honderden beheerde iPads deelt één IP en logt
+        // tegelijk in; het plafond per IP is alleen een vangnet tegen misbruik.
+        RateLimiter::for('connect-device', function (Request $request) {
+            $route = $request->route()?->uri() ?? $request->path();
+            $credential = (string) ($request->input('device_binding') ?: $request->input('device_id') ?: '');
+            $client = $credential !== ''
+                ? 'device:'.hash('sha256', $credential)
+                : \App\Support\ClientKey::forGuest($request);
+
+            return [
+                Limit::perMinute(30)->by($route.'|'.$client),
+                Limit::perMinute(30 * \App\Support\ClientKey::natFactor())->by($route.'|ip:'.$request->ip()),
+            ];
         });
 
         // Broadcastfouten (Reverb onbereikbaar) nooit laten doorwerken in de

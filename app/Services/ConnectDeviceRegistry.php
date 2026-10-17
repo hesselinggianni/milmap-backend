@@ -37,6 +37,9 @@ class ConnectDeviceRegistry
             $this->recordBound($request, $token, $login);
             return;
         }
+        // Een browserlogin (webapp stuurt X-Milmap-Client: web) is geen app-installatie: geen
+        // apparaatregistratie en geen apparaatlicentie (het account zelf gebruikt al een plaats).
+        if (strtolower(trim((string) $request->header('X-Milmap-Client', ''))) === 'web') return;
         $id = $request->header('X-Milmap-Installation');
         if (!is_string($id) || !preg_match('/^[a-f0-9-]{36}$/i', $id)) {
             // Connect's management portal itself does not consume an app-device license.
@@ -80,7 +83,10 @@ class ConnectDeviceRegistry
             }
             // Connect-leden hebben maximaal één actieve app-sessie: bij een nieuwe login vervallen de oude.
             if ($login && $membership) DB::table('personal_access_tokens')->where('tokenable_type', $user->getMorphClass())->where('tokenable_id', $user->id)->whereNotNull('connect_device_id')->where('id', '!=', $token->id)->delete();
-            $device->fill(array_merge(['name' => DeviceInfo::device($request->userAgent()), 'platform' => DeviceInfo::platform($request), 'last_seen_at' => now(), 'revoked_at' => null], DeviceInfo::hardware($request)))->save();
+            // In de app is de user-agent een WebView ("Onbekende browser op macOS" op een iPad): toon het model.
+            $hardware = DeviceInfo::hardware($request);
+            $name = DeviceInfo::modelName($hardware['model'] ?? null) ?? DeviceInfo::device($request->userAgent());
+            $device->fill(array_merge(['name' => $name, 'platform' => DeviceInfo::platform($request), 'last_seen_at' => now(), 'revoked_at' => null], $hardware))->save();
             if ((int) $token->connect_device_id !== (int) $device->id) $token->forceFill(['connect_device_id' => $device->id])->save();
         });
     }

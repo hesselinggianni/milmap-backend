@@ -51,6 +51,13 @@ class AppsumoController extends Controller
             'password' => 'required|string|min:8|confirmed',
         ]);
 
+        // Connect: het apparaatdomein (@connect.milmap.nl) en door een organisatie
+        // beheerde accounts krijgen nooit een persoonlijk Stripe-abonnement.
+        $connectGuard = app(\App\Services\ConnectPersonalBillingGuard::class);
+        if ($connectGuard->blocksEmail($data['email'])) {
+            return $connectGuard->deny();
+        }
+
         if (! $this->appsumo->isConfigured()) {
             throw ValidationException::withMessages([
                 'code' => ['Verzilveren is tijdelijk niet beschikbaar. Probeer het later opnieuw.'],

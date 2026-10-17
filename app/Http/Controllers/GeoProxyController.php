@@ -2,6 +2,7 @@
 
 namespace App\Http\Controllers;
 
+use App\Services\ApiUsageMeter;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Cache;
 use Illuminate\Support\Facades\Http;
@@ -59,14 +60,17 @@ class GeoProxyController extends Controller
 
         $leeg = ['place' => null, 'city' => null, 'region' => null, 'country' => null, 'countryCode' => null];
 
-        $resultaat = Cache::remember($sleutel, now()->addDays(30), function () use ($lat, $lon, $lang, $leeg) {
+        // API-verbruik: upstream-call telt in de closure, anders een cache-hit.
+        $upstream = false;
+        $resultaat = Cache::remember($sleutel, now()->addDays(30), function () use ($lat, $lon, $lang, $leeg, &$upstream) {
+            $upstream = true;
             try {
-                $res = Http::withHeaders(['User-Agent' => self::USER_AGENT])
+                $res = ApiUsageMeter::measure('nominatim', 'reverse', fn () => Http::withHeaders(['User-Agent' => self::USER_AGENT])
                     ->timeout(6)
                     ->get('https://nominatim.openstreetmap.org/reverse', [
                         'lat' => $lat, 'lon' => $lon,
                         'format' => 'json', 'accept-language' => $lang,
-                    ]);
+                    ]));
 
                 if (!$res->successful()) return $leeg;
                 $adres = $res->json('address') ?? [];
@@ -88,6 +92,7 @@ class GeoProxyController extends Controller
                 return $leeg;
             }
         });
+        if (!$upstream) ApiUsageMeter::record('nominatim', 'reverse', ['cache_hits' => 1]);
 
         return response()->json($resultaat);
     }
@@ -123,7 +128,9 @@ class GeoProxyController extends Controller
             mb_strtolower($q), $limit, $lang, $autocomplete, $country, $proximity,
         ]));
 
-        $resultaat = Cache::remember($sleutel, now()->addDays(7), function () use ($q, $limit, $lang, $autocomplete, $country, $proximity) {
+        $upstream = false;
+        $resultaat = Cache::remember($sleutel, now()->addDays(7), function () use ($q, $limit, $lang, $autocomplete, $country, $proximity, &$upstream) {
+            $upstream = true;
             try {
                 $params = array_filter([
                     'access_token' => config('services.mapbox.token'),
@@ -134,10 +141,10 @@ class GeoProxyController extends Controller
                     'proximity'    => $proximity,
                 ], fn ($v) => $v !== null && $v !== '');
 
-                $res = Http::timeout(6)->get(
+                $res = ApiUsageMeter::measure('mapbox', 'geocoding', fn () => Http::timeout(6)->get(
                     'https://api.mapbox.com/geocoding/v5/mapbox.places/' . rawurlencode($q) . '.json',
                     $params
-                );
+                ));
 
                 return $res->successful() ? $res->json() : ['features' => []];
             } catch (\Throwable $e) {
@@ -145,6 +152,7 @@ class GeoProxyController extends Controller
                 return ['features' => []];
             }
         });
+        if (!$upstream) ApiUsageMeter::record('mapbox', 'geocoding', ['cache_hits' => 1]);
 
         return response()->json($resultaat);
     }
@@ -166,12 +174,14 @@ class GeoProxyController extends Controller
 
         $sleutel = 'geo:overpass:' . sha1($data['query']);
 
-        $resultaat = Cache::remember($sleutel, now()->addHours(12), function () use ($data) {
+        $upstream = false;
+        $resultaat = Cache::remember($sleutel, now()->addHours(12), function () use ($data, &$upstream) {
+            $upstream = true;
             try {
-                $res = Http::withHeaders(['User-Agent' => self::USER_AGENT])
+                $res = ApiUsageMeter::measure('overpass', 'query', fn () => Http::withHeaders(['User-Agent' => self::USER_AGENT])
                     ->timeout(25) // Overpass mag traag zijn
                     ->asForm()
-                    ->post('https://overpass-api.de/api/interpreter', ['data' => $data['query']]);
+                    ->post('https://overpass-api.de/api/interpreter', ['data' => $data['query']]));
 
                 return $res->successful() ? $res->json() : ['elements' => []];
             } catch (\Throwable $e) {
@@ -179,6 +189,7 @@ class GeoProxyController extends Controller
                 return ['elements' => []];
             }
         });
+        if (!$upstream) ApiUsageMeter::record('overpass', 'query', ['cache_hits' => 1]);
 
         return response()->json($resultaat);
     }

@@ -60,6 +60,29 @@ class Invitation extends Model
         return $query->where('email', mb_strtolower(trim($email)));
     }
 
+    /** A bound invitation follows the original account, even after an email change. */
+    public function scopeAddressedTo($query, User $user)
+    {
+        return $query->where(function ($query) use ($user) {
+            $query->where('invited_user_id', $user->id)
+                ->orWhere(function ($query) use ($user) {
+                    $query->whereNull('invited_user_id')
+                        ->whereRaw('LOWER(TRIM(email)) = ?', [mb_strtolower(trim($user->email))]);
+                });
+        });
+    }
+
+    public function isAddressedTo(User $user): bool
+    {
+        if ($this->invited_user_id !== null) {
+            return (int) $this->invited_user_id === (int) $user->id;
+        }
+
+        $email = mb_strtolower(trim((string) $user->email));
+
+        return $email !== '' && $email === mb_strtolower(trim((string) $this->email));
+    }
+
     // ── Helpers ─────────────────────────────────────────────────────
 
     /**

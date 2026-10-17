@@ -49,7 +49,10 @@ class MapLinkController extends Controller
 
         for ($i = 0; $i < self::MAX_REDIRECTS; $i++) {
             try {
-                $response = Http::withHeaders([
+                // API-verbruik: per redirect-stap, toegewezen aan de host die we bevragen.
+                $usageHost = strtolower((string) parse_url($current, PHP_URL_HOST));
+                $usageProvider = str_contains($usageHost, 'apple.com') ? 'apple_maps' : 'google_maps';
+                $response = \App\Services\ApiUsageMeter::measure($usageProvider, 'link_resolve', fn () => Http::withHeaders([
                         // Zonder browser-UA geeft Google een kale interstitial
                         // zonder de plek-coordinaten in de URL.
                         'User-Agent' => 'Mozilla/5.0 (iPhone; CPU iPhone OS 17_0 like Mac OS X) '
@@ -57,7 +60,7 @@ class MapLinkController extends Controller
                     ])
                     ->timeout(8)
                     ->withoutRedirecting()
-                    ->get($current);
+                    ->get($current), ['ok' => fn ($r) => $r->status() < 400]);
             } catch (\Throwable $e) {
                 return response()->json(['message' => 'Could not resolve link'], 502);
             }

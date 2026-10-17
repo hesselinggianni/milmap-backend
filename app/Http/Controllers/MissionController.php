@@ -27,7 +27,7 @@ class MissionController extends Controller
         $userId = Auth::id();
 
         // Team IDs the user belongs to (for auto-viewer access)
-        $teamIds = TeamMember::where('user_id', $userId)->pluck('team_id');
+        $teamIds = TeamMember::activeTeamIdsQuery($userId)->pluck('team_id');
 
         $missions = Mission::query()
             // Eager-load exactly what present()/roleFor() pull via loadMissing()

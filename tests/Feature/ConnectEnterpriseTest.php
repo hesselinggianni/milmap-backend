@@ -77,6 +77,19 @@ class ConnectEnterpriseTest extends TestCase {
         $this->deleteJson("/api/v1/connect/organizations/$org->id/devices/$device->id")->assertNoContent();
         $this->assertFalse(DB::table('personal_access_tokens')->where('id',$token->id)->exists());$this->assertNotNull($device->fresh()->revoked_at);
     }
+    public function test_web_logins_are_not_registered_as_devices(): void {
+        $owner=$this->user('web-owner@test.nl'); $org=$this->organization($owner, 50);
+        $registry=app(\App\Services\ConnectDeviceRegistry::class);
+        $web=\Illuminate\Http\Request::create('/'); $web->headers->set('X-Milmap-Installation', (string) Str::uuid()); $web->headers->set('X-Milmap-Client', 'web');
+        $registry->record($web, $owner->createToken('Web',['user'])->accessToken, true);
+        $registry->record($web, $owner->createToken('Web',['user'])->accessToken);
+        $this->assertSame(0, ConnectDevice::where('user_id',$owner->id)->count());
+        // Browsersessie bezet geen apparaat: inloggen in de app blijft mogelijk.
+        $app=\Illuminate\Http\Request::create('/'); $app->headers->set('X-Milmap-Installation', (string) Str::uuid()); $app->headers->set('X-Milmap-Client', 'ios'); $app->headers->set('X-Milmap-Device-Model', 'iPad16,6');
+        $registry->record($app, $owner->createToken('App',['user'])->accessToken, true);
+        $this->assertSame(1, $org->occupiedDevices());
+        $this->assertSame('iPad Pro 13" (M4)', ConnectDevice::where('user_id',$owner->id)->value('name'));
+    }
     public function test_each_account_has_at_most_one_connected_device(): void {
         $owner=$this->user('device-owner@test.nl'); $org=$this->organization($owner, 50);
         $registry=app(\App\Services\ConnectDeviceRegistry::class);

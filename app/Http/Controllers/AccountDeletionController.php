@@ -60,7 +60,7 @@ class AccountDeletionController extends Controller
                 'user_id' => $user->id, 'error' => $e->getMessage(),
             ]);
 
-            return response()->json(['message' => 'We konden de code niet versturen. Probeer het zo nog eens.'], 500);
+            return response()->json(['message' => 'We could not send the code. Please try again shortly.'], 500);
         }
 
         return response()->json(['sent' => true, 'expires_in_minutes' => self::CODE_MINUTEN]);
@@ -85,20 +85,20 @@ class AccountDeletionController extends Controller
         ]);
 
         if (! $user->deletion_code_hash || ! $user->deletion_code_expires_at || now()->greaterThan($user->deletion_code_expires_at)) {
-            return response()->json(['message' => 'De code is verlopen. Vraag een nieuwe aan.'], 422);
+            return response()->json(['message' => 'The code has expired. Request a new one.'], 422);
         }
         if (! Hash::check(trim($request->input('code')), $user->deletion_code_hash)) {
-            return response()->json(['message' => 'De code klopt niet.'], 422);
+            return response()->json(['message' => 'The code is incorrect.'], 422);
         }
         if (! Hash::check($request->input('password'), (string) $user->password)) {
-            return response()->json(['message' => 'Wachtwoord klopt niet.'], 422);
+            return response()->json(['message' => 'The password is incorrect.'], 422);
         }
         // De app stuurt het woord al in hoofdletters; hier nog eens normaliseren
         // zodat toetsenbordinstellingen geen roet in het eten gooien.
         $bevestiging = mb_strtoupper(trim((string) $request->input('confirmation')));
         // Moet exact overeenkomen met CONFIRM_WORD in DeleteAccountDialog.vue.
         if (! in_array($bevestiging, ['VERWIJDEREN', 'DELETE'], true)) {
-            return response()->json(['message' => 'Typ het bevestigingswoord precies over.'], 422);
+            return response()->json(['message' => 'Type the confirmation word exactly.'], 422);
         }
 
         if ($blokkade = $this->teamBlokkade($user)) {
@@ -163,8 +163,8 @@ class AccountDeletionController extends Controller
                     ->where('user_id', '!=', $user->id)
                     ->count();
                 if ($anderen > 0) {
-                    return 'Je beheert een team met ' . $anderen . ' ' . ($anderen === 1 ? 'ander lid' : 'andere leden')
-                        . '. Draag het eigenaarschap eerst over of verwijder de leden, daarna kun je je account verwijderen.';
+                    return 'You manage a team with ' . $anderen . ' other ' . ($anderen === 1 ? 'member' : 'members')
+                        . '. Transfer ownership or remove the members first, then you can delete your account.';
                 }
             }
         } catch (\Throwable $e) {

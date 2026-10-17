@@ -11,6 +11,12 @@ trait BelongsToConnectOrganization {
             $query->where(fn ($q) => $q->whereNull($column)->orWhereIn($column, $internal)->orWhereIn($column, $external));
         });
         static::creating(function ($model) {
+            // A route is part of its parent map, even when an external
+            // collaborator creates it from a personal or another tenant's account.
+            if ($model instanceof \App\Models\RouteMap) {
+                $model->connect_organization_id = \App\Models\Map::findOrFail($model->map_id)->connect_organization_id;
+                return;
+            }
             // Ignore any submitted organisation id. Ownership derives from the
             // authenticated session (or owner on an internal/queue create).
             $user = auth('sanctum')->user() ?? \App\Models\User::find($model->owner_id);
@@ -20,6 +26,12 @@ trait BelongsToConnectOrganization {
         });
         static::updating(function ($model) {
             if ($model->isDirty('connect_organization_id')) throw new \LogicException('Organisation ownership cannot be changed.');
+            if ($model instanceof \App\Models\RouteMap && $model->isDirty('map_id')) {
+                $parent = \App\Models\Map::findOrFail($model->map_id);
+                if ((int) $parent->connect_organization_id !== (int) $model->connect_organization_id) {
+                    throw \Illuminate\Validation\ValidationException::withMessages(['map_id' => 'Een organisatieroute kan niet naar een kaart van een andere organisatie worden verplaatst.']);
+                }
+            }
         });
     }
     public function connectOrganization() { return $this->belongsTo(\App\Models\ConnectOrganization::class, 'connect_organization_id'); }

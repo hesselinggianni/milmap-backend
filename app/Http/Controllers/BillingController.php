@@ -6,7 +6,10 @@ use App\Mail\AccountActivationMail;
 use App\Models\Subscription;
 use App\Models\SubscriptionItem;
 use App\Models\User;
+use App\Services\ConnectPersonalBillingGuard;
 use Illuminate\Http\Request;
+use Illuminate\Routing\Controllers\HasMiddleware;
+use Illuminate\Routing\Controllers\Middleware;
 use Illuminate\Support\Facades\Cache;
 use Illuminate\Support\Facades\Hash;
 use Illuminate\Support\Facades\Log;
@@ -17,9 +20,28 @@ use Stripe\Exception\SignatureVerificationException;
 use Stripe\StripeClient;
 use Stripe\Webhook;
 
-class BillingController extends Controller
+class BillingController extends Controller implements HasMiddleware
 {
     private StripeClient $stripe;
+
+    // ── Connect: geen persoonlijke billing voor beheerde accounts ───
+    // Door een organisatie beheerde accounts (apparaataccounts en actieve
+    // organisatieleden, zie ConnectPersonalBillingGuard) komen nooit in de
+    // persoonlijke Stripe-omgeving. EnforceConnectManagement weigert billing/*
+    // al; dit is de tweede laag op de controller zelf, zodat ook een gewijzigde
+    // routegroep nooit een Stripe-customer of -sessie voor zo'n account maakt.
+    // Publieke prijzen, check-email en de webhook vallen erbuiten; gast-checkout
+    // toetst daarnaast zelf het opgegeven e-mailadres.
+    public static function middleware(): array
+    {
+        return [
+            new Middleware(static function (Request $request, \Closure $next) {
+                $guard = app(ConnectPersonalBillingGuard::class);
+
+                return $guard->blocksUser($request->user('sanctum')) ? $guard->deny() : $next($request);
+            }, only: ['guestCheckout', 'subscription', 'availablePlans', 'createCheckout', 'createPortal', 'cancel', 'resume', 'changePlan', 'invoices', 'verifySession']),
+        ];
+    }
 
     // Cache key voor de live Stripe-prijzen. De cache wordt NIET op een timer
     // verlopen: hij blijft staan tot een admin nieuwe prijzen koppelt (savePriceMap)
@@ -347,6 +369,15 @@ class BillingController extends Controller
             // Vooraf gekozen teamgrootte (alleen relevant bij team_monthly/yearly).
             'seats' => 'nullable|integer|min:1|max:500',
         ]);
+
+        // Connect: een e-mailadres van een door een organisatie beheerd account
+        // (of het apparaatdomein @connect.milmap.nl) krijgt nooit een
+        // persoonlijke checkout of Stripe-customer — ook niet anoniem via deze
+        // publieke route.
+        $connectGuard = app(ConnectPersonalBillingGuard::class);
+        if ($connectGuard->blocksEmail($request->email)) {
+            return $connectGuard->deny();
+        }
 
         $plans   = $this->plans();
         $priceId = $plans[$request->plan] ?? null;

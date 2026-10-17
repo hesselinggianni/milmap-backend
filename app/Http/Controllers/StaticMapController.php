@@ -2,6 +2,7 @@
 
 namespace App\Http\Controllers;
 
+use App\Services\ApiUsageMeter;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\File;
 use Illuminate\Support\Facades\Http;
@@ -50,6 +51,7 @@ class StaticMapController extends Controller
         $file = "{$dir}/{$key}.png";
 
         if (is_file($file) && filemtime($file) > now()->subDays(self::CACHE_TTL_DAYS)->getTimestamp()) {
+            ApiUsageMeter::record('mapbox', 'static_image', ['cache_hits' => 1]);
             return $this->fileResponse($file);
         }
 
@@ -61,7 +63,7 @@ class StaticMapController extends Controller
         $url    = "https://api.mapbox.com/{$schoon}{$sep}access_token=" . config('services.mapbox.token');
 
         try {
-            $resp = Http::timeout(12)->get($url);
+            $resp = ApiUsageMeter::measure('mapbox', 'static_image', fn () => Http::timeout(12)->get($url));
         } catch (Throwable) {
             return is_file($file) ? $this->fileResponse($file) : response()->noContent(502);
         }

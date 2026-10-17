@@ -30,7 +30,7 @@ class ConnectController extends Controller {
     public function requestQuote(Request $r) {
         $data = $r->validate(['company_name'=>'required|string|max:190','contact_name'=>'required|string|max:190','email'=>'required|email|max:190','billing_email'=>'nullable|email|max:190','phone'=>'nullable|string|max:50','seat_count'=>'required|integer|min:1|max:100000','purpose'=>'nullable|string|max:190','requirements'=>'nullable|string|max:5000']);
         $data['user_id'] = $r->user('sanctum')?->id; $quote = app(\App\Services\ConnectApplication::class)->create($data);
-        try { Mail::to('gianni@milmap.nl')->send(new \App\Mail\ConnectQuoteRequestMail($quote->toArray())); } catch (\Throwable $e) { report($e); }
+        try { Mail::to('hello@milmap.nl')->send(new \App\Mail\ConnectQuoteRequestMail($quote->toArray())); } catch (\Throwable $e) { report($e); }
         return response()->json(['message'=>'Je offerteaanvraag is verstuurd. We nemen snel contact met je op.','id'=>$quote->id], 201);
     }
     public function show(Request $r, ConnectOrganization $organization) {
@@ -38,14 +38,18 @@ class ConnectController extends Controller {
         $organization->load('licenses');
         $members = $organization->members()->orderBy('first_name')->get();
         $devices = ConnectDevice::whereIn('user_id', $members->where('status', 'active')->pluck('user_id')->filter())->with('user:id,first_name,last_name,email')->orderByDesc('last_seen_at')->get();
+        $license = $organization->deviceLicenseStatus();
+        $devices->each(fn ($d) => $d->setAttribute('licensed', $license['devices'][$d->id] ?? null));
         $userIds = $members->pluck('user_id')->filter()->values();
         $mapCounts = Map::selectRaw('owner_id, COUNT(*) as c')->whereIn('owner_id', $userIds)->groupBy('owner_id')->pluck('c','owner_id');
         $routeCounts = RouteMap::selectRaw('owner_id, COUNT(*) as c')->whereIn('owner_id', $userIds)->groupBy('owner_id')->pluck('c','owner_id');
         $missionCounts = Mission::selectRaw('owner_id, COUNT(*) as c')->whereIn('owner_id', $userIds)->groupBy('owner_id')->pluck('c','owner_id');
         $lastSeen = ConnectDevice::selectRaw('user_id, MAX(last_seen_at) as seen')->whereIn('user_id', $userIds)->groupBy('user_id')->pluck('seen', 'user_id');
-        $members->each(function ($member) use ($mapCounts, $routeCounts, $missionCounts, $lastSeen) { $member->setAttribute('last_seen_at', $lastSeen[$member->user_id] ?? null); $member->setAttribute('stats', ['maps' => (int) ($mapCounts[$member->user_id] ?? 0), 'route_maps' => (int) ($routeCounts[$member->user_id] ?? 0), 'missions' => (int) ($missionCounts[$member->user_id] ?? 0)]); });
+        // Browsergebruik staat niet als apparaat geregistreerd; de gebruiker zelf houdt wel last_seen_at bij.
+        $userSeen = \App\Models\User::whereIn('id', $userIds)->pluck('last_seen_at', 'id');
+        $members->each(function ($member) use ($mapCounts, $routeCounts, $missionCounts, $lastSeen, $userSeen) { $seen = array_filter([$lastSeen[$member->user_id] ?? null, $userSeen[$member->user_id] ?? null]); $member->setAttribute('last_seen_at', $seen ? max(array_map(fn ($s) => \Illuminate\Support\Carbon::parse($s), $seen)) : null); $member->setAttribute('stats', ['maps' => (int) ($mapCounts[$member->user_id] ?? 0), 'route_maps' => (int) ($routeCounts[$member->user_id] ?? 0), 'missions' => (int) ($missionCounts[$member->user_id] ?? 0)]); });
         return response()->json(['organization' => $organization, 'user' => ['name' => trim($r->user()->first_name.' '.$r->user()->last_name), 'email' => $r->user()->email], 'role' => $manager->role, 'licensed' => $organization->licensed(),
-            'occupied_seats' => $organization->occupiedSeats(), 'used_licenses' => $organization->usedLicenses(), 'occupied_devices' => $organization->occupiedDevices(), 'members' => $members, 'devices' => $devices, 'allowed_devices' => $this->allowedDevices($organization),
+            'occupied_seats' => $organization->occupiedSeats(), 'used_licenses' => $organization->usedLicenses(), 'occupied_devices' => $organization->occupiedDevices(), 'members' => $members, 'devices' => $devices, 'renewal' => $organization->renewalInfo(), 'unlicensed_devices' => collect($license['allowed'])->merge($license['devices'])->filter(fn ($v) => $v === false)->count(), 'allowed_devices' => $this->allowedDevices($organization, $license['allowed']), 'pending_additions' => app(\App\Services\ConnectPendingAdditions::class)->recent($organization),
             'management_policy' => app(\App\Services\ConnectManagement::class)->policy($organization), 'billing_details' => $organization->billingProfile($r->user()->email),
             'analytics' => ['maps' => $mapCounts->sum(), 'route_maps' => $routeCounts->sum(), 'missions' => $missionCounts->sum()]]);
     }
@@ -56,7 +60,7 @@ class ConnectController extends Controller {
     public function checkoutSeats(Request $r, ConnectOrganization $organization) {
         $this->manager($r, $organization);
         $data = $r->validate(['additional_seats' => 'required|integer|min:1|max:100000']);
-        return response()->json(['checkout_url' => rtrim(config('app.frontend_url'), '/').'/checkout/connect?org='.$organization->uuid.'&seats='.$data['additional_seats']]);
+        return response()->json(['checkout_url' => rtrim(config('connect.url'), '/').'/licenties/bestellen?seats='.$data['additional_seats']]);
     }
     public function invoiceRequest(Request $r, ConnectOrganization $organization) {
         return $this->checkoutSeats($r, $organization);
@@ -100,6 +104,22 @@ class ConnectController extends Controller {
             $member->update(['status' => 'removed', 'token_hash' => null]);
         }); return response()->noContent();
     }
+    /**
+     * Account resetten door een beheerder. Apparaataccounts zijn volledig van de organisatie:
+     * alles gaat weg. Een persoonlijk account verliest alleen de werkgegevens van deze organisatie.
+     */
+    public function resetMember(Request $r, ConnectOrganization $organization, ConnectMember $member) {
+        $manager = $this->manager($r, $organization); abort_unless($member->organization_id === $organization->id && $member->user_id, 404);
+        abort_if($member->role === 'owner' || ($member->role === 'admin' && $manager->role !== 'owner'), 403);
+        return $this->resetAccount($organization, $member->user, 'ConnectMember', (string) $member->id);
+    }
+    private function resetAccount(ConnectOrganization $organization, \App\Models\User $user, string $type, string $id) {
+        $reset = app(\App\Services\AccountReset::class);
+        $full = (bool) $user->connect_device_account;
+        $counts = $full ? $reset->reset($user) : $reset->resetOrganizationData($user, $organization->id);
+        app(\App\Services\ConnectManagement::class)->audit($organization->id, 'account.reset', $type, $id, ['counts' => $counts, 'scope' => $full ? 'account' : 'organization']);
+        return response()->json(['message' => $full ? 'Account gereset: alle gegevens zijn verwijderd.' : 'Werkgegevens van de organisatie verwijderd.', 'scope' => $full ? 'account' : 'organization', 'deleted' => $counts]);
+    }
     public function resend(Request $r, ConnectOrganization $organization, ConnectMember $member) {
         $manager = $this->manager($r, $organization); abort_unless($member->organization_id === $organization->id, 404);
         abort_if($member->status !== 'pending' || ($member->role === 'admin' && $manager->role !== 'owner'), 403);
@@ -129,11 +149,12 @@ class ConnectController extends Controller {
         }); return response()->noContent();
     }
     /** Toegestane apparaten met status: gekoppeld = er is al een installatie met dit UDID in deze organisatie. */
-    private function allowedDevices(ConnectOrganization $organization) {
+    private function allowedDevices(ConnectOrganization $organization, ?array $licensed = null) {
+        $licensed ??= $organization->deviceLicenseStatus()['allowed'];
         $seen = ConnectDevice::where('organization_id', $organization->id)->whereNotNull('vendor_id')->get()->keyBy(fn ($d) => strtolower($d->vendor_id));
-        return ConnectAllowedDevice::where('organization_id', $organization->id)->orderBy('name')->get()->map(function ($a) use ($seen) {
+        return ConnectAllowedDevice::where('organization_id', $organization->id)->orderBy('name')->get()->map(function ($a) use ($seen, $licensed) {
             $d = $seen->get(strtolower($a->udid));
-            return ['user_id' => $a->user_id, 'assigned_employee' => $a->assigned_employee, 'platform' => $a->platform, 'id' => $a->id, 'name' => $a->name, 'udid' => $a->udid, 'linked' => (bool) $d, 'last_seen_at' => $d?->last_seen_at,
+            return ['user_id' => $a->user_id, 'assigned_employee' => $a->assigned_employee, 'platform' => $a->platform, 'id' => $a->id, 'name' => $a->name, 'udid' => $a->udid, 'licensed' => $licensed[$a->id] ?? false, 'linked' => (bool) $d, 'last_seen_at' => $d?->last_seen_at,
                 'device_id' => $d?->id, 'connected' => (bool) $d?->is_connected, 'app_version' => $d?->app_version, 'model' => $d?->model, 'update_pending' => (bool) $d?->update_requested_at];
         });
     }
@@ -215,6 +236,13 @@ class ConnectController extends Controller {
         $this->manager($r, $organization);
         abort_unless((int) $allowedDevice->organization_id === (int) $organization->id, 404);
         DB::transaction(function () use ($allowedDevice) { app(\App\Services\ConnectDeviceLogin::class)->revoke($allowedDevice); $allowedDevice->delete(); }); return response()->noContent();
+    }
+    /** Apparaataccount leegmaken (bijv. iPad naar de volgende gebruiker); koppeling en login blijven. */
+    public function resetAllowedDevice(Request $r, ConnectOrganization $organization, ConnectAllowedDevice $allowedDevice) {
+        $this->manager($r, $organization);
+        abort_unless((int) $allowedDevice->organization_id === (int) $organization->id, 404);
+        abort_unless($allowedDevice->user_id && ($user = \App\Models\User::find($allowedDevice->user_id)), 422, 'Dit apparaat heeft nog geen account: er is niets te resetten.');
+        return $this->resetAccount($organization, $user, 'ConnectAllowedDevice', (string) $allowedDevice->id);
     }
     /**
      * Publiek: huisstijl voor het inlogscherm op een zakelijk apparaat. De app stuurt het

@@ -33,24 +33,54 @@ class InvitationController extends Controller
             ->first();
 
         if (! $invite) {
-            return response()->json(['error' => 'Uitnodiging niet gevonden'], 404);
+            return response()->json(['error' => 'Invitation not found'], 404);
         }
 
+        // Een gebonden uitnodiging (invited_user_id) hoort altijd bij een
+        // bestaand account, ook als dat account inmiddels een ander adres heeft.
+        $userExists = $invite->invited_user_id !== null
+            || User::where('email', $invite->email)->exists();
+
+        $invitation = [
+            'token'          => $invite->token,
+            'email'          => $invite->email,
+            'status'         => $invite->status,
+            'role'           => $invite->role,
+            'resource_type'  => $invite->resourceType(),
+            'resource_label' => $invite->resourceLabel(),
+            'resource_title' => $invite->resourceTitle(),
+            'resource_id'    => $invite->invitable_id,
+            'invited_by'     => $invite->inviter?->full_name,
+            'user_exists'    => $userExists,
+            'expired'        => $invite->isExpired(),
+        ];
+
+        // Het adres van de genodigde gaat alleen mee als er nog geen account
+        // bestaat (registratieformulier vooraf invullen). Bestaat het account
+        // wel, dan heeft de client het niet nodig — en wie de link met een
+        // ander account opent, mag niet zien voor welk adres hij bedoeld is.
+        if ($userExists) {
+            unset($invitation['email']);
+        }
+
+        return response()->json(['invitation' => $invitation]);
+    }
+
+    /**
+     * Compare the invitation with the current, server-authenticated account.
+     * Kept separate from public preview so a shared link cannot reveal a session.
+     *
+     * Anoniem: alleen het oordeel (klopt het account wel/niet), nooit een
+     * e-mailadres — niet van het ingelogde account en niet van de genodigde.
+     * De client heeft voor de melding "ander account" niets anders nodig.
+     */
+    public function context($token)
+    {
+        $invite = Invitation::where('token', $token)->firstOrFail();
+
         return response()->json([
-            'invitation' => [
-                'token'          => $invite->token,
-                'email'          => $invite->email,
-                'status'         => $invite->status,
-                'role'           => $invite->role,
-                'resource_type'  => $invite->resourceType(),
-                'resource_label' => $invite->resourceLabel(),
-                'resource_title' => $invite->resourceTitle(),
-                'resource_id'    => $invite->invitable_id,
-                'invited_by'     => $invite->inviter?->full_name,
-                'user_exists'    => User::where('email', $invite->email)->exists(),
-                'expired'        => $invite->isExpired(),
-            ],
-        ]);
+            'matches_recipient' => $invite->isAddressedTo(Auth::user()),
+        ])->header('Cache-Control', 'private, no-store');
     }
 
     /**
@@ -63,14 +93,14 @@ class InvitationController extends Controller
         $user   = Auth::user();
 
         if (! $this->addressedTo($invite, $user)) {
-            abort(403, 'Deze uitnodiging is niet voor jou bestemd.');
+            abort(403, 'This invitation is not intended for you.');
         }
         if (! $invite->isPending()) {
-            return response()->json(['error' => 'Deze uitnodiging is niet meer geldig.'], 422);
+            return response()->json(['error' => 'This invitation is no longer valid.'], 422);
         }
         if ($invite->isExpired()) {
             $invite->update(['status' => 'revoked']);
-            return response()->json(['error' => 'Deze uitnodiging is verlopen.'], 422);
+            return response()->json(['error' => 'This invitation has expired.'], 422);
         }
 
         $this->service->accept($invite, $user);
@@ -92,7 +122,7 @@ class InvitationController extends Controller
         $user   = Auth::user();
 
         if (! $this->addressedTo($invite, $user)) {
-            abort(403, 'Deze uitnodiging is niet voor jou bestemd.');
+            abort(403, 'This invitation is not intended for you.');
         }
         if ($invite->isPending()) {
             $invite->update(['status' => 'declined']);
@@ -110,10 +140,7 @@ class InvitationController extends Controller
         $user = Auth::user();
 
         $invites = Invitation::pending()
-            ->where(function ($q) use ($user) {
-                $q->where('email', mb_strtolower($user->email))
-                    ->orWhere('invited_user_id', $user->id);
-            })
+            ->addressedTo($user)
             ->with(['invitable', 'inviter:id,first_name,last_name'])
             ->latest()
             ->get()
@@ -147,7 +174,7 @@ class InvitationController extends Controller
         $invite = Invitation::findOrFail($id);
 
         if ((int) $invite->invited_by !== Auth::id()) {
-            abort(403, 'Je kunt alleen je eigen uitnodigingen intrekken.');
+            abort(403, 'You can only revoke your own invitations.');
         }
 
         $invite->update(['status' => 'revoked']);
@@ -163,13 +190,10 @@ class InvitationController extends Controller
     public function timeline()
     {
         $user   = Auth::id();
-        $email  = mb_strtolower(Auth::user()->email);
         $events = collect();
 
         // Invitations I received.
-        Invitation::where(function ($q) use ($user, $email) {
-            $q->where('invited_user_id', $user)->orWhere('email', $email);
-        })
+        Invitation::addressedTo(Auth::user())
             ->with(['invitable', 'inviter:id,first_name,last_name'])
             ->latest()->limit(40)->get()
             ->each(function ($i) use (&$events) {
@@ -193,7 +217,7 @@ class InvitationController extends Controller
             ->each(function ($i) use (&$events) {
                 $events->push([
                     'type'    => 'invite_sent',
-                    'title'   => $i->status === 'accepted' ? 'Jouw uitnodiging is geaccepteerd' : 'Uitnodiging verstuurd',
+                    'title'   => $i->status === 'accepted' ? 'Your invitation was accepted' : 'Invitation sent',
                     'subtitle' => $i->email . ' · ' . $i->resourceLabel() . ' "' . $i->resourceTitle() . '"',
                     'status'  => $i->status,
                     'resource_type' => $i->resourceType(),
@@ -305,7 +329,7 @@ class InvitationController extends Controller
                 $events->push([
                     'type'          => 'chat_invite_accepted',
                     'title'         => 'Chatverzoek geaccepteerd',
-                    'subtitle'      => $name . ' accepteerde je chatverzoek',
+                    'subtitle'      => $name . ' accepted your chat request',
                     'status'        => 'accepted',
                     'resource_type' => $conversationId ? 'chat' : null,
                     'resource_id'   => $conversationId,
@@ -326,8 +350,7 @@ class InvitationController extends Controller
 
     protected function addressedTo(Invitation $invite, User $user): bool
     {
-        return mb_strtolower($user->email) === $invite->email
-            || (int) $invite->invited_user_id === (int) $user->id;
+        return $invite->isAddressedTo($user);
     }
 
     protected function present(Invitation $i): array

@@ -54,12 +54,12 @@ class AppleAuthController extends Controller
         } catch (\Throwable $e) {
             Log::warning('[apple-auth] token afgekeurd', ['error' => $e->getMessage()]);
 
-            return response()->json(['message' => 'Inloggen met Apple is niet gelukt. Probeer het opnieuw.'], 401);
+            return response()->json(['message' => 'Signing in with Apple failed. Please try again.'], 401);
         }
 
         $appleSub = (string) ($claims['sub'] ?? '');
         if ($appleSub === '') {
-            return response()->json(['message' => 'Inloggen met Apple is niet gelukt.'], 401);
+            return response()->json(['message' => 'Signing in with Apple failed.'], 401);
         }
 
         $email = isset($claims['email']) ? mb_strtolower((string) $claims['email']) : null;

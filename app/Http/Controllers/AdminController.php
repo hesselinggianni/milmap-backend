@@ -567,7 +567,7 @@ class AdminController extends Controller
             $naam  = trim(($user->first_name ?? '') . ' ' . ($user->last_name ?? '')) ?: $email;
             // Engels is de standaardtaal; alleen een account dat expliciet op
             // Nederlands staat krijgt de Nederlandse tekst.
-            $taal  = strtolower(substr((string) ($user->language ?? ''), 0, 2)) === 'nl' ? 'nl' : 'en';
+            $taal  = 'en';
 
             // Lopend abonnement opzeggen. Gebeurt hier expliciet omdat de
             // databank dat niet kan opruimen: blijft het staan, dan betaalt de

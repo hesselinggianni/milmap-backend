@@ -81,9 +81,9 @@ class SecurityController extends Controller
             return 'Lokaal netwerk';
         }
         try {
-            $response = Http::timeout(3)->get(
+            $response = \App\Services\ApiUsageMeter::measure('ip_api', 'geoip', fn () => Http::timeout(3)->get(
                 "http://ip-api.com/json/{$ip}?fields=status,city,regionName,country&lang=nl"
-            );
+            ));
             if ($response->ok()) {
                 $data = $response->json();
                 if (($data['status'] ?? '') === 'success') {

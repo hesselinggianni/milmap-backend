@@ -51,6 +51,13 @@ class AccountIsolationTest extends TestCase
         Schema::create('mission_collaborators', function (Blueprint $t) {
             $t->id(); $t->uuid('mission_id'); $t->integer('user_id'); $t->string('role'); $t->string('status');
         });
+        Schema::create('teams', function (Blueprint $t) {
+            $t->uuid('id')->primary(); $t->string('name')->default('Team'); $t->string('color')->nullable(); $t->timestamps();
+        });
+        Schema::create('team_members', function (Blueprint $t) {
+            $t->uuid('id')->primary(); $t->uuid('team_id'); $t->integer('user_id')->nullable();
+            $t->string('status')->default('active'); $t->timestamps();
+        });
         (require database_path('migrations/2026_09_18_140000_create_map_layer_prefs_table.php'))->up();
         (require database_path('migrations/2026_07_22_130000_create_activities_table.php'))->up();
         (require database_path('migrations/2026_08_10_100200_add_garmin_fields_to_activities_table.php'))->up();
@@ -113,6 +120,56 @@ class AccountIsolationTest extends TestCase
         $this->putJson('/api/v1/maps/'.$this->mapId, ['title' => 'Allowed'])->assertOk();
         DB::table('mission_collaborators')->update(['status' => 'pending']);
         $this->getJson('/api/v1/maps/'.$this->mapId.'/0,0')->assertForbidden();
+    }
+
+    public function test_route_map_list_follows_mission_map_access(): void
+    {
+        Schema::create('route_maps', function (Blueprint $t) {
+            $t->uuid('id')->primary(); $t->uuid('map_id'); $t->integer('owner_id'); $t->string('title')->nullable();
+            $t->timestamps(); $t->softDeletes();
+        });
+        DB::table('route_maps')->insert(['id' => (string) Str::uuid(), 'map_id' => $this->mapId, 'owner_id' => 10, 'title' => 'Route A', 'created_at' => now()]);
+        $url = '/api/v1/routemaps?map_id='.$this->mapId;
+
+        $this->getJson($url)->assertOk()->assertJsonCount(0);
+        // Genodigde op een missie die de kaart van de eigenaar koppelt → ziet de routekaarten.
+        $this->mission(10, 'viewer');
+        $this->getJson($url)->assertOk()->assertJsonCount(1)->assertJsonPath('0.title', 'Route A');
+        DB::table('mission_collaborators')->update(['status' => 'pending']);
+        $this->getJson($url)->assertOk()->assertJsonCount(0);
+        DB::table('mission_collaborators')->update(['status' => 'accepted']);
+        DB::table('missions')->update(['map' => json_encode(['id' => $this->mapId, 'source' => 'local'])]);
+        $this->getJson($url)->assertOk()->assertJsonCount(0);
+    }
+
+    public function test_linked_team_member_sees_mission_map_while_active(): void
+    {
+        $teamId = (string) Str::uuid();
+        DB::table('teams')->insert(['id' => $teamId]);
+        DB::table('team_members')->insert(['id' => (string) Str::uuid(), 'team_id' => $teamId, 'user_id' => 20]);
+        DB::table('missions')->insert([
+            'id' => $this->missionId, 'owner_id' => 10, 'status' => 'active', 'linked_team_id' => $teamId,
+            'map' => json_encode(['id' => $this->mapId, 'source' => 'server']),
+        ]);
+        $map = '/api/v1/maps/'.$this->mapId.'/0,0';
+        $routeMaps = fn () => app(MapAccess::class)->accessibleQuery(auth()->user())->pluck('id')->all();
+
+        $this->getJson('/api/v1/missions/'.$this->missionId)->assertOk()->assertJsonPath('data.my_role', 'viewer');
+        $this->getJson($map)->assertOk()->assertJsonPath('can_edit', false);
+        $this->putJson('/api/v1/maps/'.$this->mapId, ['title' => 'No'])->assertForbidden();
+        $this->assertSame([$this->mapId], $routeMaps());
+
+        // Missie niet actief → teamleden zien missie noch kaart.
+        DB::table('missions')->update(['status' => 'planning']);
+        $this->getJson($map)->assertForbidden();
+        $this->assertSame([], $routeMaps());
+
+        // Nog niet geaccepteerd teamlid (pending) telt niet mee.
+        DB::table('missions')->update(['status' => 'active']);
+        DB::table('team_members')->update(['status' => 'pending']);
+        $this->getJson('/api/v1/missions/'.$this->missionId)->assertForbidden();
+        $this->getJson($map)->assertForbidden();
+        $this->assertSame([], $routeMaps());
     }
 
     public function test_local_map_reference_cannot_grant_server_map_access(): void

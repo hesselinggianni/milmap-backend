@@ -41,7 +41,7 @@ class PasswordResetController extends Controller
         });
 
         return response()->json([
-            'message' => 'Als dit e-mailadres bij ons bekend is, ontvang je een link om je wachtwoord opnieuw in te stellen.',
+            'message' => 'If this email address is known to us, you will receive a link to reset your password.',
         ], 200);
     }
     
@@ -60,7 +60,7 @@ class PasswordResetController extends Controller
         $status = Password::reset(
             $request->only('email', 'password', 'password_confirmation', 'token'),
             function (User $user, string $password) {
-                abort_if($user->connect_device_account, 403, 'Connect-apparaataccounts gebruiken apparaatlogin en kunnen geen wachtwoord instellen of wijzigen.');
+                abort_if($user->connect_device_account, 403, 'Connect device accounts use device login and cannot set or change a password.');
 
                 // Na een geslaagde reset kent de gebruiker het wachtwoord —
                 // zelfde signaal als zelf instellen via account/beveiliging.

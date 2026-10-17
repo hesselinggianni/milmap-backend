@@ -5,6 +5,7 @@ namespace App\Services;
 use App\Models\Map;
 use App\Models\MapCollaborator;
 use App\Models\Mission;
+use App\Models\TeamMember;
 use App\Models\User;
 use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Support\Collection;
@@ -23,11 +24,16 @@ class MapAccess
                     ->whereColumn('missions.map_ref_id', 'maps.id')
                     ->where(fn ($m) => $m->whereNull('map->source')->orWhere('map->source', 'server'))
                     ->whereHas('collaborators', fn ($c) => $c->where('user_id', $user->id)
-                        ->where('status', 'accepted')->whereIn('role', ['viewer', 'editor', 'admin'])));
+                        ->where('status', 'accepted')->whereIn('role', ['viewer', 'editor', 'admin'])))
+                // Leden van het gekoppelde team zien een actieve missie (Mission::roleFor)
+                // en dus ook de kaart ervan — alleen-lezen.
+                ->orWhereExists($this->teamMissions($user)
+                    ->whereColumn('missions.owner_id', 'maps.owner_id')
+                    ->whereColumn('missions.map_ref_id', 'maps.id'));
         });
     }
 
-    /** Resolve a whole batch using at most three queries, without loading map features. */
+    /** Resolve a whole batch using at most five queries, without loading map features. */
     public function rolesFor(User $user, Collection $maps): array
     {
         $roles = [];
@@ -65,7 +71,32 @@ class MapAccess
                 $this->mergeRole($roles, $id, $grant->role);
             }
         }
+
+        // Teamleden van een actieve missie: viewer op de gekoppelde kaart.
+        $teamMissions = $this->teamMissions($user)
+            ->whereIn('map_ref_id', $remaining->keys())
+            ->whereIn('owner_id', $remaining->pluck('owner_id')->unique())
+            ->get(['id', 'owner_id', 'map']);
+        foreach ($teamMissions as $mission) {
+            $id = (string) ($mission->map['id'] ?? '');
+            $map = $remaining->get($id);
+            if ($map && (string) $map->owner_id === (string) $mission->owner_id) {
+                $this->mergeRole($roles, $id, 'viewer');
+            }
+        }
         return $roles;
+    }
+
+    /**
+     * Actieve missies met een server-kaart waarvan de gebruiker via het
+     * gekoppelde team meekijkt — zelfde voorwaarde als Mission::roleFor.
+     */
+    private function teamMissions(User $user): Builder
+    {
+        return Mission::query()
+            ->where('missions.status', 'active')
+            ->whereIn('missions.linked_team_id', TeamMember::activeTeamIdsQuery($user->id))
+            ->where(fn ($m) => $m->whereNull('map->source')->orWhere('map->source', 'server'));
     }
 
     private function mergeRole(array &$roles, string $id, ?string $role): void

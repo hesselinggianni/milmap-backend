@@ -129,6 +129,7 @@ class User extends Authenticatable implements HasLocalePreference
             'billing_synced_at' => 'datetime',
             'trial_ends_at'     => 'datetime',
             'connect_device_account' => 'boolean',
+            'data_reset_at'     => 'datetime',
             'view_only'         => 'boolean',
             'is_demo'           => 'boolean',
             'last_seen_at'      => 'datetime',
@@ -368,14 +369,14 @@ class User extends Authenticatable implements HasLocalePreference
     // *app-side* proef (géén automatische Stripe-afschrijving): `trial_ends_at`
     // op de user staat op registratie op nu+7 dagen. Zolang die datum in de
     // toekomst ligt heeft de gebruiker alle premiumfuncties. Daarna valt hij
-    // terug op het gratis Starter-niveau (max 5 kaarten, basisroutes, MGRS,
+    // terug op het gratis Starter-niveau (max 1 kaart, basisroutes, MGRS,
     // online lagen, GPX-import) tot hij een abonnement neemt.
 
     /** Lengte van de gratis proefperiode na registratie, in dagen. */
     public const APP_TRIAL_DAYS = 7;
 
     /** Max aantal kaarten voor een gratis account (buiten proef/abonnement). */
-    public const FREE_MAP_LIMIT = 5;
+    public const FREE_MAP_LIMIT = 1;
 
     /** Max aantal eigen missies voor een gratis account (buiten proef/abonnement). */
     public const FREE_MISSION_LIMIT = 1;
@@ -390,7 +391,7 @@ class User extends Authenticatable implements HasLocalePreference
         'missions',          // missies aanmaken & beheren
         'chat',              // chatten (1-op-1 + missiekanaal)
         'nine_liner',        // MEDEVAC 9-liner
-        'unlimited_maps',    // meer dan 5 kaarten
+        'unlimited_maps',    // meer dan 1 kaart
         'weather',           // weersintegratie
         'offline_maps',      // offline kaarten
         'area_markers',      // gebieden markeren
@@ -399,6 +400,10 @@ class User extends Authenticatable implements HasLocalePreference
         'team_shared_maps',  // gedeelde teamkaarten
         'live_location',     // live locatie delen
         'exercise',          // oefening-modus (force-on-force)
+        'tracks',            // activiteiten/tracks opnemen, delen & foto's
+        'route_maps',        // routekaarten aanmaken & bewerken
+        'shares',            // kaart-deellinks aanmaken & beheren
+        'mountain_pack',     // bergterrein-overlays (steilheid/expositie/lawine)
     ];
 
     /** Loopt de gratis proefperiode nu nog? */
@@ -637,13 +642,11 @@ class User extends Authenticatable implements HasLocalePreference
      * Taal waarin deze gebruiker gemaild wordt.
      *
      * Laravel roept dit automatisch aan bij `Mail::to($user)` en zet daarmee de
-     * locale van de mailable. Engels is de standaard — MilMap is internationaal
-     * — en alleen een account dat expliciet op Nederlands staat krijgt de
-     * Nederlandse tekst. Talen zonder eigen vertaalbestand vallen via
-     * `fallback_locale` terug op Engels.
+     * locale van de mailable. Alle communicatie (registratie, verificatie, wachtwoord, enz.) gaat
+     * bewust altijd in het Engels, ongeacht de accounttaal.
      */
     public function preferredLocale(): string
     {
-        return strtolower(substr((string) ($this->language ?? ''), 0, 2)) === 'nl' ? 'nl' : 'en';
+        return 'en';
     }
 }

@@ -21,8 +21,10 @@ use Symfony\Component\Mime\Email;
  *  - injecteert een 1×1-pixel {api}/m/o2/{token}.gif.
  *
  * Uitzonderingen: afmeld-/tracking-URL's (/m/u/, /m/o/, /m/c/) en mailto's
- * blijven ongemoeid; campagnemails hebben daarnaast hun eigen mail_sends-
- * tracking — dubbel meten is daar onschadelijk.
+ * blijven ongemoeid; app-links (uitnodigingen, zie isAppLink) krijgen wel
+ * UTM maar geen klik-wrapper, anders opent iOS/Android de browser i.p.v. de
+ * app. Campagnemails hebben daarnaast hun eigen mail_sends-tracking — dubbel
+ * meten is daar onschadelijk.
  */
 class SentMailTracker
 {
@@ -62,6 +64,14 @@ class SentMailTracker
                         . 'utm_source=mail&utm_medium=email&utm_campaign=' . rawurlencode($campaign);
                 }
 
+                // App-links (iOS Universal Links / Android App Links) moeten
+                // rechtstreeks in de mail staan: een tik op de klik-redirect
+                // via api.milmap.nl opent altijd de browser, ook als de app
+                // geïnstalleerd is. Dus wel UTM, geen klik-wrapper.
+                if (self::isAppLink($url)) {
+                    return $pre . e($url, false) . $mid . $inner . $post;
+                }
+
                 // Linktekst als leesbaar label ("welke knop"), zonder HTML.
                 $label = mb_substr(trim(preg_replace('/\s+/', ' ', strip_tags($inner))), 0, 120);
 
@@ -84,6 +94,27 @@ class SentMailTracker
         $message->html($html);
 
         return $token;
+    }
+
+    /**
+     * Links die de app via Universal Links / App Links zelf claimt (zie
+     * public/.well-known in de frontend). Alleen /invite/… — /invite-web/…
+     * is juist de expliciete browserroute en mag gewoon getrackt worden.
+     */
+    public static function isAppLink(string $url): bool
+    {
+        $hosts = array_unique(array_filter([
+            'https://app.milmap.nl',
+            rtrim((string) config('app.frontend_url'), '/'),
+        ]));
+
+        foreach ($hosts as $host) {
+            if (stripos($url, $host . '/invite/') === 0) {
+                return true;
+            }
+        }
+
+        return false;
     }
 
     /**

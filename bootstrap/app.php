@@ -32,6 +32,8 @@ return Application::configure(basePath: dirname(__DIR__))
         ]);
 
         $middleware->alias([
+            // Eigen emmer per route + per installatie i.p.v. per IP (NAT), zie de klasse.
+            'throttle'     => \App\Http\Middleware\ThrottleRequests::class,
             'admin.auth'   => \App\Http\Middleware\AdminAuth::class,
             'deploy.token' => \App\Http\Middleware\DeployTokenAuth::class,
             'partner'      => \App\Http\Middleware\EnsureUserIsPartner::class,

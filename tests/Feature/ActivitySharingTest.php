@@ -32,6 +32,7 @@ class ActivitySharingTest extends TestCase
     private function loginAs(int $id): void
     {
         $user = new User(); $user->id = $id;
+        $user->trial_ends_at = now()->addDay(); // tracks delen is premium (RequiresPremium:tracks)
         $this->actingAs($user, 'sanctum');
     }
 

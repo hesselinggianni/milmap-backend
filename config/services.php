@@ -119,4 +119,11 @@ return [
         'redirect_uri'   => env('GARMIN_REDIRECT_URI', env('APP_URL') . '/api/v1/auth/garmin/callback'),
         'webhook_secret' => env('GARMIN_WEBHOOK_SECRET'),
     ],
+
+    // Rate limiting achter NAT (scholen/defensie: duizenden gebruikers op één
+    // IP). Limieten gelden per installatie; per IP geldt limiet × nat_factor.
+    // Zie App\Support\ClientKey.
+    'throttle' => [
+        'nat_factor' => (int) env('THROTTLE_NAT_FACTOR', 200),
+    ],
 ];

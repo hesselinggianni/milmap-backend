@@ -50,12 +50,12 @@ class GoogleAuthController extends Controller
         } catch (\Throwable $e) {
             Log::warning('[google-auth] token afgekeurd', ['error' => $e->getMessage()]);
 
-            return response()->json(['message' => 'Inloggen met Google is niet gelukt. Probeer het opnieuw.'], 401);
+            return response()->json(['message' => 'Signing in with Google failed. Please try again.'], 401);
         }
 
         $googleSub = (string) ($claims['sub'] ?? '');
         if ($googleSub === '') {
-            return response()->json(['message' => 'Inloggen met Google is niet gelukt.'], 401);
+            return response()->json(['message' => 'Signing in with Google failed.'], 401);
         }
 
         $email = isset($claims['email']) ? mb_strtolower((string) $claims['email']) : null;

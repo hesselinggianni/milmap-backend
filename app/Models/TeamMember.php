@@ -43,6 +43,18 @@ class TeamMember extends Model
         return $this->status === self::STATUS_ACTIVE;
     }
 
+    /**
+     * team_id's waarvan de gebruiker geaccepteerd lid is, als subquery. Eén
+     * definitie voor "teamlid" bij missie- én kaarttoegang: pending = nog niet
+     * gekozen voor het team (eigen abonnement) en telt dus nog niet mee.
+     */
+    public static function activeTeamIdsQuery(int $userId)
+    {
+        return static::query()->select('team_id')
+            ->where('user_id', $userId)
+            ->where('status', self::STATUS_ACTIVE);
+    }
+
     public function isGuest(): bool
     {
         return $this->role === self::ROLE_GUEST;

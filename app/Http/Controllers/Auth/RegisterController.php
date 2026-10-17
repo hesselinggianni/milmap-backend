@@ -96,7 +96,15 @@ class RegisterController extends Controller
         // bij aanmelden aangaat). Best-effort: een Stripe-storing mag de gratis
         // registratie nooit blokkeren — de customer wordt anders alsnog lui
         // aangemaakt bij de eerste checkout.
-        $this->ensureStripeCustomer($user);
+        // Connect: wie onder een organisatie gaat vallen (apparaatdomein,
+        // openstaande/actieve uitnodiging, of registratie via het Connect-
+        // portaal) krijgt géén persoonlijke Stripe-customer — het abonnement
+        // loopt via de organisatie (zie ConnectPersonalBillingGuard).
+        $connectUrl = rtrim((string) config('connect.url'), '/');
+        $viaConnectPortal = $connectUrl !== '' && str_starts_with((string) $request->input('source_url'), $connectUrl);
+        if (! $viaConnectPortal && ! app(\App\Services\ConnectPersonalBillingGuard::class)->joiningOrganisation($user->email)) {
+            $this->ensureStripeCustomer($user);
+        }
 
         // Partner-attributie: kwam de registratie via een partner-referral-link
         // binnen (frontend stuurt `referral_code`, bv. JANSEN25), koppel de

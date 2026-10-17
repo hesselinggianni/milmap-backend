@@ -70,7 +70,7 @@ class LeadNurtureService
         // het formulier — zie LeadController::store()). Onbekend of niet
         // ondersteund → Engels, nooit stilzwijgend Nederlands versturen naar
         // een lead waarvan we de taal niet kennen.
-        $language = in_array($lead->language, ['nl', 'en', 'de', 'es', 'fr'], true) ? $lead->language : 'en';
+        $language = 'en'; // communicatie is altijd Engels
 
         $webAppUrl = rtrim(config('milmap.web_app_url', 'https://app.milmap.nl'), '/');
         $continueUrl = $webAppUrl . '/checkout/pro_monthly?' . http_build_query([

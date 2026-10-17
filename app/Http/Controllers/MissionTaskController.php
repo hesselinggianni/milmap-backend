@@ -224,6 +224,7 @@ class MissionTaskController extends Controller
             $team = Team::find($mission->linked_team_id);
             $users = $users->merge(
                 TeamMember::where('team_id', $mission->linked_team_id)
+                    ->where('status', TeamMember::STATUS_ACTIVE)
                     ->whereNotNull('user_id')
                     ->with('user:id,first_name,last_name,email')
                     ->get()

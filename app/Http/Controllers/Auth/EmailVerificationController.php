@@ -62,7 +62,7 @@ class EmailVerificationController extends Controller
         }
         if ($user->hasVerifiedEmail()) {
             return response()->json([
-                'message'      => 'Je e-mailadres is al bevestigd.',
+                'message'      => 'Your email address is already verified.',
                 'verification' => $user->verificationState(),
             ], 200);
         }
@@ -70,7 +70,7 @@ class EmailVerificationController extends Controller
         EmailVerificationService::send($user);
 
         return response()->json([
-            'message'      => 'Verificatiemail verstuurd. Controleer je inbox (en spam).',
+            'message'      => 'Verification email sent. Check your inbox (and spam folder).',
             'verification' => $user->verificationState(),
         ], 200);
     }

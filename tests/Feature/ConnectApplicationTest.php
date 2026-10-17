@@ -28,7 +28,16 @@ class ConnectApplicationTest extends TestCase
         $this->assertStringContainsString($data['requirements'], $deal->notes);
         $this->assertSame($response->json('id'), $deal->activities()->sole()->meta['connect_quote_request_id']);
         $this->assertDatabaseMissing('users', ['email' => $data['email']]);
-        Mail::assertSent(ConnectQuoteRequestMail::class, fn ($mail) => $mail->hasTo('gianni@milmap.nl') && $mail->quote['billing_email'] === $data['billing_email']);
+        Mail::assertSent(ConnectQuoteRequestMail::class, fn ($mail) => $mail->hasTo('hello@milmap.nl') && $mail->quote['billing_email'] === $data['billing_email']);
+    }
+
+    public function test_email_renders_when_optional_fields_are_omitted(): void
+    {
+        $mail = new ConnectQuoteRequestMail(['company_name' => 'Voorbeeld',
+            'contact_name' => 'Sam Jansen', 'email' => 'sam@example.test', 'seat_count' => 50]);
+        $html = $mail->render();
+        $this->assertStringContainsString('Voorbeeld', $html);
+        $this->assertStringContainsString('https://admin.milmap.nl/sales', $html);
     }
 
     public function test_invalid_application_does_not_create_a_lead_or_send_email(): void

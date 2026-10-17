@@ -11,13 +11,14 @@ class MapWaypoint extends Model
 
     protected $fillable = [
         'map_id', 'user_id', 'local_id',
-        'lon', 'lat', 'mgrs', 'label', 'color', 'icon', 'type', 'note',
+        'lon', 'lat', 'mgrs', 'label', 'color', 'icon', 'type', 'note', 'props',
     ];
 
     protected $casts = [
         'lon'      => 'float',
         'lat'      => 'float',
         'local_id' => 'integer',
+        'props'    => 'array',
     ];
 
     public function map()
@@ -49,6 +50,7 @@ class MapWaypoint extends Model
             'icon'     => $this->icon,
             'type'     => $this->type,
             'note'     => $this->note,
+            'props'    => $this->props ?: (object) [],
             'images'   => $this->relationLoaded('images')
                 ? $this->images->map->toApiArray()->values()->all()
                 : [],
