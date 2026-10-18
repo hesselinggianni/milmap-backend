@@ -112,11 +112,29 @@ class ConnectDeviceLoginTest extends TestCase
     public function test_prefix_collision_and_preexisting_accounts_never_merge(): void {
         $this->binding();
         $other=ConnectAllowedDevice::create(['organization_id'=>$this->org->id,'name'=>'Other','udid'=>'18D2D99B-DIFFERENT']);
-        User::create(['first_name'=>'Bestaand','last_name'=>'Account','email'=>'18d2d99b-different@connect.milmap.nl','password'=>bcrypt('Password1!'),'email_verified_at'=>now()]);
-        try { app(ConnectDeviceLogin::class)->provision($other); $this->fail('Collision accepted'); }
-        catch (\Symfony\Component\HttpKernel\Exception\HttpException $e) { $this->assertSame(409,$e->getStatusCode()); }
-        $this->assertNull($other->fresh()->user_id);
-        $this->assertSame(2,User::count());
+        $existing=User::create(['first_name'=>'Bestaand','last_name'=>'Account','email'=>'18d2d99b-different@connect.milmap.nl','password'=>bcrypt('Password1!'),'email_verified_at'=>now()]);
+        app(ConnectDeviceLogin::class)->provision($other);
+        // Het bestaande account blijft onaangeroerd; het apparaat krijgt een eigen account met +1.
+        $this->assertNotSame($existing->id,$other->fresh()->user_id);
+        $this->assertSame('18d2d99b-different+1@connect.milmap.nl',User::find($other->fresh()->user_id)->email);
+        $this->assertSame('Bestaand',$existing->fresh()->first_name);
+        $this->assertSame(3,User::count());
+    }
+    public function test_same_udid_in_another_workspace_gets_its_own_plus_suffix_account(): void {
+        $this->binding();
+        $second=ConnectOrganization::create(['name'=>'Andere workspace','seat_limit'=>5,'status'=>'active','starts_at'=>now()->subDay(),'ends_at'=>now()->addYear(),'restrict_to_allowed_devices'=>true]);
+        $movedDevice=ConnectAllowedDevice::create(['organization_id'=>$second->id,'name'=>'iPad verhuisd','udid'=>$this->device->udid]);
+        $login=app(ConnectDeviceLogin::class);
+        $login->provision($movedDevice);
+        $login->provision($movedDevice);
+        $this->assertSame(strtolower($this->device->udid).'+1@connect.milmap.nl',User::find($movedDevice->fresh()->user_id)->email);
+        $third=ConnectOrganization::create(['name'=>'Derde workspace','seat_limit'=>5,'status'=>'active','starts_at'=>now()->subDay(),'ends_at'=>now()->addYear(),'restrict_to_allowed_devices'=>true]);
+        $thirdDevice=ConnectAllowedDevice::create(['organization_id'=>$third->id,'name'=>'iPad nog eens','udid'=>$this->device->udid]);
+        $login->provision($thirdDevice);
+        $this->assertSame(strtolower($this->device->udid).'+2@connect.milmap.nl',User::find($thirdDevice->fresh()->user_id)->email);
+        $this->assertSame(3,User::count());
+        $this->assertSame(1,ConnectMember::where('organization_id',$second->id)->count());
+        $this->assertSame(1,ConnectMember::where('organization_id',$this->org->id)->count());
     }
     public function test_rotation_invalidates_secret_and_sessions_but_retains_account(): void {
         $secret=$this->binding();$res=$this->loginDevice($secret)->assertOk();

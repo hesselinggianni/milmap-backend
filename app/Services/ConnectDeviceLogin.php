@@ -2,6 +2,7 @@
 namespace App\Services;
 
 use App\Models\{ConnectAllowedDevice, ConnectMember, ConnectDevice, User};
+use Illuminate\Database\UniqueConstraintViolationException;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Str;
 
@@ -17,11 +18,21 @@ class ConnectDeviceLogin
                     ? 'A'.strtoupper(substr(hash('sha256', $device->organization_id.':'.$device->udid),0,48))
                     : strtoupper($device->udid);
                 abort_unless(preg_match('/^[A-Z0-9-]{1,64}$/', $prefix), 422);
-                $email = strtolower($prefix).'@connect.milmap.nl';
-                // Never take over an existing account or merge two UDIDs sharing a prefix.
-                abort_if(User::whereRaw('LOWER(email) = ?', [strtolower($email)])->exists(), 409, 'Dit UDID-prefix heeft al een account. Handmatige controle vereist.');
-                $user = User::create(['first_name' => $device->name, 'last_name' => 'Connect',
-                    'email' => $email, 'password' => bcrypt(Str::random(64)), 'email_verified_at' => now()]);
+                // Never take over an existing account or merge two UDIDs sharing a prefix. Is het
+                // adres al in gebruik (zelfde apparaat in een andere workspace, of een oud apparaataccount
+                // na verwijderen), dan krijgt dit apparaat een eigen account: prefix+1, prefix+2, ...
+                $user = null;
+                for ($n = 0; $n <= 50 && !$user; $n++) {
+                    $email = strtolower($prefix).($n ? '+'.$n : '').'@connect.milmap.nl';
+                    if (User::whereRaw('LOWER(email) = ?', [strtolower($email)])->exists()) continue;
+                    try {
+                        $user = User::create(['first_name' => $device->name, 'last_name' => 'Connect',
+                            'email' => $email, 'password' => bcrypt(Str::random(64)), 'email_verified_at' => now()]);
+                    } catch (UniqueConstraintViolationException) {
+                        // Gelijktijdig aangemaakt door een andere workspace: volgende suffix proberen.
+                    }
+                }
+                abort_unless($user, 409, 'Dit UDID-prefix heeft al een account. Handmatige controle vereist.');
                 $user->forceFill(['connect_device_account' => true])->save();
                 $device->user_id = $user->id;
                 ConnectMember::create(['organization_id' => $device->organization_id, 'user_id' => $user->id,
