@@ -22,6 +22,8 @@ return Application::configure(basePath: dirname(__DIR__))
         $middleware->append(\App\Http\Middleware\SecurityHeaders::class);
 
         $middleware->group('api', [
+            // Eerst: ziet ook de 429's van de throttle-middleware verderop (vangnet).
+            \App\Http\Middleware\LogRateLimitResponses::class,
             \App\Http\Middleware\BlockCountries::class,
             \App\Http\Middleware\PrivateApiResponse::class,
             \Laravel\Sanctum\Http\Middleware\EnsureFrontendRequestsAreStateful::class,

@@ -15,7 +15,7 @@ class RateLimitLog
     public const TABLE = 'rate_limit_events';
 
     /**
-     * @param  array{provider?:?string,limiter?:?string,max_attempts?:?int,retry_after?:?int,platform?:?string,user_id?:?int,route?:?string,method?:?string}  $opts
+     * @param  array{provider?:?string,limiter?:?string,reason?:?string,max_attempts?:?int,retry_after?:?int,platform?:?string,user_id?:?int,route?:?string,method?:?string}  $opts
      */
     public static function record(string $source, ?Request $request = null, array $opts = []): void
     {
@@ -31,12 +31,21 @@ class RateLimitLog
 
             $bucket = substr(sha1(implode('|', [$hour, $source, $provider, $method, $route, $userId, $ip])), 0, 40);
             $now = now();
+            $reason = isset($opts['reason']) && $opts['reason'] !== '' ? mb_substr($opts['reason'], 0, 160) : null;
 
-            $updated = DB::table(self::TABLE)->where('bucket', $bucket)->update([
+            // Eén 429 wordt maar één keer geteld, ook als zowel de throttle-middleware
+            // als het vangnet (LogRateLimitResponses) hem ziet.
+            $request->attributes->set('rate_limit_logged', true);
+
+            $update = [
                 'hits'         => DB::raw('hits + 1'),
                 'last_seen_at' => $now,
                 'retry_after'  => $opts['retry_after'] ?? null,
-            ]);
+            ];
+            if ($reason !== null) {
+                $update['reason'] = $reason;
+            }
+            $updated = DB::table(self::TABLE)->where('bucket', $bucket)->update($update);
             if ($updated) {
                 return;
             }
@@ -48,6 +57,7 @@ class RateLimitLog
                 'method'        => $method,
                 'route'         => $route ? substr($route, 0, 255) : null,
                 'limiter'       => $opts['limiter'] ?? null,
+                'reason'        => $reason,
                 'user_id'       => $userId ?: null,
                 'ip'            => $ip,
                 'installation'  => \App\Support\ClientKey::installation($request),

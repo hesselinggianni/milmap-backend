@@ -946,6 +946,8 @@ Route::prefix('v1')->middleware(['api'])->group(function () {
             Route::put   ('/admin/social/accounts/{platform}',   [\App\Http\Controllers\AdminSocialController::class, 'saveAccount']);
 
             // ── SEO-CMS (per milmap.nl-pagina × taal) ───────────────────
+            // ── Serverstatus (admin → Server): load, schijf, services, domeinen, back-ups, queue ─
+            Route::get('/admin/server-status', [\App\Http\Controllers\AdminServerStatusController::class, 'index']);
             Route::get ('/admin/seo',              [AdminSeoController::class, 'index']);
             Route::post('/admin/seo',              [AdminSeoController::class, 'upsert']);
             Route::post('/admin/seo/generate',     [AdminSeoController::class, 'generate']);

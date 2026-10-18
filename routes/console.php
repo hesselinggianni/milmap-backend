@@ -97,3 +97,12 @@ Schedule::command('model:prune', ['--model' => [\App\Models\ApiUsageHourly::clas
 
 // Connect: een maand voor het verlopen van de licentie een melding + e-mail naar de beheerders.
 Schedule::command('connect:renewal-reminders')->dailyAt('09:00')->withoutOverlapping();
+
+// Serverstatus (admin → Server): hartslagen van scheduler en queue-worker, zodat de
+// pagina ziet dat beide echt draaien. Zie App\Services\ServerStatus.
+Schedule::call(fn () => \App\Services\ServerStatus::beat('scheduler'))->everyMinute()->name('server-status-scheduler-beat');
+Schedule::job(new \App\Jobs\ServerStatusHeartbeat)->everyFiveMinutes();
+
+// "Te veel verzoeken"-meldingen: de admin toont maximaal 90 dagen, dus ouder dan dat opruimen.
+Schedule::call(fn () => \Illuminate\Support\Facades\DB::table('rate_limit_events')->where('last_seen_at', '<', now()->subDays(90))->delete())
+    ->dailyAt('04:55')->name('rate-limit-events-prune');
