@@ -197,20 +197,40 @@ class ConnectBilling {
             // Stripe Checkout mag naam en adres van de klant overschrijven (customer_update auto): de volgende bestelling of wijziging stuurt de accountgegevens daarom opnieuw.
             $org->forceFill(['stripe_customer_details_hash'=>null])->save();
         } else {
-            $subscription=$order->stripe_subscription_id ? $stripe->subscriptions->retrieve($order->stripe_subscription_id,['expand'=>['latest_invoice']]) : $stripe->subscriptions->create(['customer'=>$customerId,'items'=>[$item],'collection_method'=>'send_invoice','days_until_due'=>14]+($coterm ? ['billing_cycle_anchor'=>$coterm,'proration_behavior'=>'none','add_invoice_items'=>[$once]] : [])+[
+            $subscription=$order->stripe_subscription_id ? $stripe->subscriptions->retrieve($order->stripe_subscription_id,['expand'=>['latest_invoice']]) : $stripe->subscriptions->create(['customer'=>$customerId,'items'=>[$item],'collection_method'=>'send_invoice','days_until_due'=>14]+($coterm ? ['billing_cycle_anchor'=>$coterm,'proration_behavior'=>'none','add_invoice_items'=>[$once]] : [])+$this->invoicePaymentSettings($order->currency)+[
                 'metadata'=>$metadata,'expand'=>['latest_invoice']],['idempotency_key'=>'connect-invoice-subscription-'.$order->id]);
             if (!$order->auto_renew && !$order->stripe_subscription_id) $stripe->subscriptions->update($subscription->id,['cancel_at_period_end'=>true],['idempotency_key'=>'connect-norenew-'.$order->id]);
             $order=$this->awaitingPayment($order,['stripe_subscription_id'=>$subscription->id]);
             $invoice=$subscription->latest_invoice;
             if (is_string($invoice)) $invoice=$stripe->invoices->retrieve($invoice,[]);
-            if ($invoice->status==='draft') $invoice=$stripe->invoices->finalizeInvoice($invoice->id,[],['idempotency_key'=>'connect-finalize-'.$invoice->id]);
-            if ($invoice->status==='open') $invoice=$stripe->invoices->sendInvoice($invoice->id,[],['idempotency_key'=>'connect-send-'.$invoice->id]);
+            if ($invoice->status==='draft') $invoice=$this->unlessPermissionDenied($order,$invoice,'afgerond',fn () => $stripe->invoices->finalizeInvoice($invoice->id,[],['idempotency_key'=>'connect-finalize-'.$invoice->id])) ?? $invoice;
+            if ($invoice->status==='open') $invoice=$this->unlessPermissionDenied($order,$invoice,'verstuurd',fn () => $stripe->invoices->sendInvoice($invoice->id,[],['idempotency_key'=>'connect-send-'.$invoice->id])) ?? $invoice;
             $this->recordInvoice($order,$invoice);
             // Keuzemuur + factuur: direct toegang tot de factuur betaald is (de echte licentie komt bij invoice.paid).
             if ($wall && ($invoice->status ?? '')!=='paid') $this->grantGrace($order);
         }
         app(ConnectManagement::class)->audit($org->id,'order.created','ConnectOrder',$order->id,['seats'=>$order->seats,'term_months'=>$order->term_months,'payment_method'=>$order->payment_method]);
         return $order->fresh()->load('invoices');
+    }
+    /**
+     * Een Stripe-sleutel zonder recht om facturen af te ronden of te versturen laat de bestelling niet mislukken: het abonnement en de
+     * conceptfactuur staan dan al in Stripe, waar de factuur alsnog wordt afgerond en verstuurd of handmatig op betaald gezet. Andere fouten blijven fouten.
+     */
+    private function unlessPermissionDenied(ConnectOrder $order, object $invoice, string $step, \Closure $call): ?object {
+        try {
+            return $call();
+        } catch (\Stripe\Exception\ApiErrorException $e) {
+            if (!$e instanceof \Stripe\Exception\PermissionException && $e->getStripeCode()!=='more_permissions_required') throw $e;
+            Log::warning("Connect: factuur kon door een ontbrekend Stripe-recht niet worden {$step}; de factuur staat in Stripe en moet daar worden afgerond, verstuurd of op betaald gezet",
+                ['order'=>$order->id,'stripe_invoice'=>$invoice->id,'stripe_code'=>$e->getStripeCode(),'stripe_request_id'=>$e->getRequestId(),'error'=>$e->getMessage()]);
+            return null;
+        }
+    }
+    /** Factuurbestellingen worden per bankoverschrijving betaald (SEPA-gegevens op de factuur); alleen in euro's, andere valuta houden de standaard van het Stripe-account. */
+    private function invoicePaymentSettings(string $currency): array {
+        if (strtoupper($currency)!=='EUR') return [];
+        return ['payment_settings'=>['payment_method_types'=>['customer_balance'],'payment_method_options'=>['customer_balance'=>[
+            'funding_type'=>'bank_transfer','bank_transfer'=>['type'=>'eu_bank_transfer','eu_bank_transfer'=>['country'=>'NL']]]]]];
     }
     /** Tijdelijke toegang voor de betaaltermijn van de factuur; dubbel aanroepen levert dezelfde licentie op. */
     private function grantGrace(ConnectOrder $order): void {

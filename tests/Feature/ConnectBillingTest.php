@@ -8,7 +8,7 @@ use Illuminate\Support\Str;
 use Stripe\StripeClient;
 use Tests\TestCase;
 class ConnectStripeFake extends StripeClient {
-    public array $calls=[]; public bool $restricted=false; public bool $failCustomerUpdate=false; public bool $failCheckout=false; public bool $failSendInvoice=false;
+    public array $calls=[]; public bool $restricted=false; public bool $failCustomerUpdate=false; public bool $failCheckout=false; public bool $failSendInvoice=false; public bool $denyFinalize=false; public bool $denySend=false;
     public int $unitAmount=200; public array $subscriptionObjects=[]; public array $invoiceObjects=[]; public ?\Closure $checkoutCreated=null;
     public function __construct() {}
     public function __get($name) { return $this->endpoint($name); }
@@ -31,12 +31,14 @@ class ConnectStripeFake extends StripeClient {
         if($method==='subscriptions.create') {
             $n=count(array_filter($this->calls,fn($c)=>$c[0]===$method));$id='sub_connect'.($n>1?'_'.$n:'');$invoiceId='in_first'.($n>1?'_'.$n:'');
             $recurring=$args[0]['items'][0]['price_data']['recurring'];$months=$recurring['interval']==='year' ? 12 : $recurring['interval_count'];
-            $invoice=(object)['id'=>$invoiceId,'subscription'=>$id,'status'=>'open','number'=>'INV-'.$n,'total'=>1200,'currency'=>'eur','hosted_invoice_url'=>'https://invoice.stripe.com/test','invoice_pdf'=>'https://files.stripe.com/test.pdf',
+            $invoice=(object)['id'=>$invoiceId,'subscription'=>$id,'status'=>$this->denyFinalize ? 'draft' : 'open','number'=>'INV-'.$n,'total'=>1200,'currency'=>'eur','hosted_invoice_url'=>'https://invoice.stripe.com/test','invoice_pdf'=>'https://files.stripe.com/test.pdf',
                 'lines'=>(object)['data'=>[(object)['type'=>'subscription','subscription'=>$id,'period'=>(object)['start'=>now()->timestamp,'end'=>now()->addMonths($months)->timestamp]]]]];
             $this->invoiceObjects[$invoiceId]=$invoice;
             return $this->subscriptionObjects[$id]=(object)['id'=>$id,'latest_invoice'=>$invoice,'metadata'=>(object)$args[0]['metadata']];
         }
         if($method==='subscriptions.retrieve')return $this->subscriptionObjects[$args[0]];
+        if(($method==='invoices.finalizeInvoice'&&$this->denyFinalize)||($method==='invoices.sendInvoice'&&$this->denySend))throw \Stripe\Exception\PermissionException::factory('The provided key does not have the required permissions',403,null,null,null,'more_permissions_required');
+        if($method==='invoices.finalizeInvoice'){$this->invoiceObjects[$args[0]]->status='open';return $this->invoiceObjects[$args[0]];}
         if($method==='invoices.sendInvoice'&&$this->failSendInvoice)throw \Stripe\Exception\ApiConnectionException::factory('Could not connect');
         if(in_array($method,['invoices.sendInvoice','invoices.retrieve'],true))return $this->invoiceObjects[$args[0]];
         if($method==='subscriptions.update')return (object)['id'=>'sub_connect','cancel_at_period_end'=>true];
@@ -160,7 +162,22 @@ class ConnectBillingTest extends TestCase {
         $this->assertSame(2,$this->org->fresh()->seat_limit);$this->assertDatabaseCount('connect_order_invoices',1);
         $call=collect($this->stripe->calls)->first(fn($c)=>$c[0]==='subscriptions.create');
         $this->assertSame('send_invoice',$call[1][0]['collection_method']);$this->assertSame(14,$call[1][0]['days_until_due']);
+        $this->assertSame(['customer_balance'],$call[1][0]['payment_settings']['payment_method_types']);
+        $this->assertSame('bank_transfer',$call[1][0]['payment_settings']['payment_method_options']['customer_balance']['funding_type']);
         $this->getJson($this->path().'/orders')->assertOk()->assertJsonPath('data.0.id',$res->json('order.id'));
+    }
+    public function test_an_invoice_order_survives_a_key_that_may_not_finalize_or_send_invoices(): void {
+        $this->stripe->denyFinalize=true;\Illuminate\Support\Facades\Log::spy();
+        $res=$this->postJson($this->path().'/orders',$this->payload('invoice'))->assertCreated()->assertJsonPath('order.invoices.0.status','draft');
+        $this->assertSame(0,collect($this->stripe->calls)->where(0,'invoices.sendInvoice')->count());
+        $this->assertSame(2,$this->org->fresh()->seat_limit);
+        \Illuminate\Support\Facades\Log::shouldHaveReceived('warning')->withArgs(fn ($m,$ctx=[]) => str_contains($m,'ontbrekend Stripe-recht') && ($ctx['stripe_code'] ?? null)==='more_permissions_required')->once();
+        $this->assertSame('awaiting_payment',ConnectOrder::findOrFail($res->json('order.id'))->status);
+    }
+    public function test_an_invoice_order_survives_a_key_that_may_not_send_invoices(): void {
+        $this->stripe->denySend=true;
+        $this->postJson($this->path().'/orders',$this->payload('invoice'))->assertCreated()->assertJsonPath('order.invoices.0.status','open');
+        $this->assertSame(1,collect($this->stripe->calls)->where(0,'invoices.sendInvoice')->count());
     }
     public function test_checkout_completion_is_not_payment_and_paid_invoice_is_idempotent(): void {
         $res=$this->postJson($this->path().'/orders',$this->payload())->assertCreated();$order=ConnectOrder::findOrFail($res->json('order.id'));
