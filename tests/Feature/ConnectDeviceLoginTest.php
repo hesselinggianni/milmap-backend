@@ -58,6 +58,20 @@ class ConnectDeviceLoginTest extends TestCase
         $this->asToken($res->json('token'))->getJson('/api/v1/users/me')->assertOk();
         Mail::assertNothingSent();
     }
+    public function test_device_account_member_is_not_a_second_license_but_a_real_email_is(): void {
+        $this->binding();
+        $member=ConnectMember::where('organization_id',$this->org->id)->firstOrFail();
+        $this->assertStringEndsWith('@connect.milmap.nl',$member->email);
+        $this->assertTrue($member->device_account);
+        $org=$this->org->fresh();
+        $this->assertSame(0,$org->occupiedSeats());
+        $this->assertSame(1,$org->usedLicenses());
+        $user=User::create(['first_name'=>'Echte','last_name'=>'Gebruiker','email'=>'echt@test.nl','password'=>bcrypt('x'),'email_verified_at'=>now()]);
+        $real=ConnectMember::create(['organization_id'=>$org->id,'user_id'=>$user->id,'email'=>'echt@test.nl','first_name'=>'Echte','last_name'=>'Gebruiker','role'=>'member','status'=>'active','accepted_at'=>now()]);
+        $this->assertFalse($real->device_account);
+        $this->assertSame(1,$org->fresh()->occupiedSeats());
+        $this->assertSame(2,$org->fresh()->usedLicenses());
+    }
     public function test_device_account_cannot_set_or_change_password(): void {
         $res = $this->loginDevice($this->binding())->assertOk();
         $user = User::findOrFail($res->json('user.id'));

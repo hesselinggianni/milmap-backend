@@ -109,9 +109,10 @@ class ConnectOrganization extends Model
     }
     public function getSeatLimitAttribute($value): int { return $this->activeLicenseTotal('seat_count', $value); }
     public function getMonthlyPriceCentsAttribute($value): int { return $this->activeLicenseTotal('monthly_price_cents', $value); }
+    /** Gebruikers (actief of uitgenodigd). Apparaataccounts (@connect.milmap.nl) tellen niet mee: dat apparaat heeft zijn eigen licentie via deviceUnits(). */
     public function occupiedSeats(): int
     {
-        return $this->members()->where(fn ($q) => $q->where('status', 'active')->orWhere(fn ($q) => $q->where('status', 'pending')->where('expires_at', '>', now())))->count();
+        return $this->members()->excludingDeviceAccounts()->where(fn ($q) => $q->where('status', 'active')->orWhere(fn ($q) => $q->where('status', 'pending')->where('expires_at', '>', now())))->count();
     }
     /** Eén licentie per account én één per apparaat (vooraf toegestaan of geregistreerd). */
     public function deviceUnits(): int
