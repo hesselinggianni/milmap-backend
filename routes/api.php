@@ -1028,7 +1028,7 @@ Route::prefix('v1')->middleware(['api'])->group(function () {
             Route::get ('/admin/stripe/invoices', [\App\Http\Controllers\AdminStripeController::class, 'invoices']);
             Route::get ('/admin/stripe/invoices/{id}', [\App\Http\Controllers\AdminStripeController::class, 'invoice'])->where('id', 'in_[A-Za-z0-9]+');
             Route::post('/admin/stripe/invoices/{id}/mark-paid', [\App\Http\Controllers\AdminStripeController::class, 'markPaid'])->where('id', 'in_[A-Za-z0-9]+');
-            Route::post('/admin/stripe/invoices/{id}/credit-note', [\App\Http\Controllers\AdminStripeController::class, 'creditNote'])->where('id', 'in_[A-Za-z0-9]+');
+            Route::post('/admin/stripe/invoices/{id}/credit-invoice', [\App\Http\Controllers\AdminStripeController::class, 'creditInvoice'])->where('id', 'in_[A-Za-z0-9]+');
             Route::put ('/admin/stripe/subscriptions/{id}', [\App\Http\Controllers\AdminStripeController::class, 'updateSubscription'])->where('id', 'sub_[A-Za-z0-9]+');
             Route::delete('/admin/stripe/subscriptions/{id}', [\App\Http\Controllers\AdminStripeController::class, 'cancelSubscription'])->where('id', 'sub_[A-Za-z0-9]+');
             Route::get ('/admin/stripe/balance', [\App\Http\Controllers\AdminStripeController::class, 'balance']);

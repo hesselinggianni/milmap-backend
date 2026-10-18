@@ -63,23 +63,24 @@ class AdminStripeController extends Controller
 
     public function markPaid(Request $request, string $id): JsonResponse
     {
-        $request->validate(['confirm' => 'accepted']);
-        return $this->run('mark_paid', $id, fn () => $this->stripe->markPaid($id), $request);
+        $data = $request->validate(['confirm' => 'accepted', 'note' => 'nullable|string|max:300']);
+        return $this->run('mark_paid', $id, fn () => $this->stripe->markPaid($id, $data['note'] ?? null), $request, $data);
     }
 
-    public function creditNote(Request $request, string $id): JsonResponse
+    /** Crediteren met een nieuwe factuur met negatieve regels (geen Stripe-creditnota's), eventueel direct gevolgd door het abonnement. */
+    public function creditInvoice(Request $request, string $id): JsonResponse
     {
         $data = $request->validate(['confirm' => 'accepted', 'lines' => 'required|array|min:1|max:50', 'lines.*.id' => ['required', 'string', 'regex:/^[A-Za-z0-9_\-]+$/', 'max:80'],
-            'lines.*.quantity' => 'nullable|integer|min:1|max:100000', 'reason' => ['nullable', Rule::in(StripeAdmin::CREDIT_REASONS)], 'memo' => 'nullable|string|max:500',
-            'settlement' => ['nullable', Rule::in(array_keys(StripeAdmin::SETTLEMENTS))], 'subscription' => 'nullable|in:keep,period_end,now']);
-        return $this->run('credit_note', $id, function () use ($id, $data) {
-            $result = $this->stripe->creditNote($id, $data);
+            'lines.*.quantity' => 'nullable|integer|min:1|max:100000', 'memo' => 'nullable|string|max:300', 'subscription' => 'nullable|in:keep,period_end,now']);
+        return $this->run('credit_invoice', $id, function () use ($id, $data) {
+            $result = $this->stripe->creditInvoice($id, $data);
             // Direct daarna het gekoppelde abonnement stilzetten, als de beheerder dat koos.
             $subscriptionId = $result['invoice']['subscription_id'] ?? null;
             if ($subscriptionId && ($data['subscription'] ?? 'keep') === 'period_end') $result['subscription'] = $this->stripe->updateSubscription($subscriptionId, ['cancel_at_period_end' => true])['subscription'];
             if ($subscriptionId && ($data['subscription'] ?? 'keep') === 'now') $result['subscription'] = $this->stripe->cancelSubscription($subscriptionId)['subscription'];
             return $result;
-        }, $request, $data);
+        }, $request, $data, auditResult: fn ($r) => ['id' => $r['credit_invoice']['id'], 'number' => $r['credit_invoice']['number'], 'total' => $r['credit_invoice']['total'],
+            'currency' => $r['credit_invoice']['currency'], 'settled' => $r['settled']]);
     }
 
     // ── Abonnementen ─────────────────────────────────────────────────────
@@ -111,7 +112,7 @@ class AdminStripeController extends Controller
      * Voert een Stripe-actie uit. Een Stripe-fout wordt vastgelegd in het foutenoverzicht en komt als "Stripe-fout: …" terug,
      * met het ontbrekende recht erbij als Stripe dat noemde. $audit: acties die iets wijzigen komen in stripe_admin_actions.
      */
-    private function run(string $action, string $object, \Closure $do, ?Request $request = null, array $payload = [], bool $audit = true): JsonResponse
+    private function run(string $action, string $object, \Closure $do, ?Request $request = null, array $payload = [], bool $audit = true, ?\Closure $auditResult = null): JsonResponse
     {
         try {
             $result = $do();
@@ -124,7 +125,7 @@ class AdminStripeController extends Controller
                 'stripe' => ['code' => $code, 'http_status' => $e->getHttpStatus(), 'missing_permission' => $missing, 'hint' => StripeErrors::hint($code, $missing), 'request_id' => $e->getRequestId()]],
                 $e instanceof \Stripe\Exception\ApiConnectionException ? 502 : 422);
         }
-        if ($audit) $this->audit($request, $action, $object, $payload, true);
+        if ($audit) $this->audit($request, $action, $object, $auditResult ? $payload + ['result' => $auditResult($result)] : $payload, true);
         return response()->json($result);
     }
 

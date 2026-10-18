@@ -247,6 +247,14 @@ class ConnectBillingTest extends TestCase {
         $this->postJson($url,['country'=>'US','vat_id'=>'123'])->assertOk()->assertJsonPath('treatment','outside_eu')->assertJsonPath('percent',0)->assertJsonPath('eu',false);
         $this->postJson($url,['country'=>'Nederland'])->assertUnprocessable();
     }
+    public function test_an_invoice_settled_by_a_credit_invoice_gives_no_license_and_cancels_the_order(): void {
+        $order=ConnectOrder::findOrFail($this->postJson($this->path().'/orders',$this->payload('invoice'))->assertCreated()->json('order.id'));
+        $invoice=$this->invoice($order);$invoice->metadata->credited_by='CRD-0001';
+        $this->billing->webhook('invoice.paid',$invoice);
+        $this->assertSame(2,$this->org->fresh()->seat_limit);$this->assertSame(0,$this->org->licenses()->where('source_reference','stripe-invoice:in_paid')->count());
+        $this->assertSame('cancelled',$order->fresh()->status);$this->assertSame('paid',ConnectOrderInvoice::where('stripe_invoice_id','in_paid')->first()->status);
+        $this->assertDatabaseHas('connect_audit_events',['action'=>'invoice.credited']);
+    }
     public function test_checkout_completion_is_not_payment_and_paid_invoice_is_idempotent(): void {
         $res=$this->postJson($this->path().'/orders',$this->payload())->assertCreated();$order=ConnectOrder::findOrFail($res->json('order.id'));
         $this->billing->webhook('checkout.session.completed',(object)['id'=>'cs_connect','subscription'=>'sub_connect','metadata'=>(object)['connect_order_id'=>$order->id],'payment_status'=>'unpaid']);

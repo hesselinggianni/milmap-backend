@@ -481,12 +481,20 @@ class ConnectBilling {
             return true; // Checkout completion alone never grants capacity.
         }
         if (str_starts_with($type,'invoice.')) {
-            DB::transaction(function () use ($order,$object,$type,$subscriptionId) {
+            // Een factuur die in MilMap Admin met een creditfactuur is verrekend, is niet echt betaald: geen licentie en de bestelling vervalt.
+            $credited=$type==='invoice.paid' && (string)($object->metadata->credited_by ?? '')!=='';
+            DB::transaction(function () use ($order,$object,$type,$subscriptionId,$credited) {
                 $order=ConnectOrder::whereKey($order->id)->lockForUpdate()->firstOrFail();
                 abort_unless($subscriptionId && (!$order->stripe_subscription_id || $order->stripe_subscription_id===$subscriptionId),409);
                 abort_unless(strtoupper($object->currency ?? '')===$order->currency,422,'Factuurvaluta komt niet overeen.');
                 $order->update(['stripe_subscription_id'=>$subscriptionId]);
                 $invoice=$this->recordInvoice($order,$object);
+                if ($credited) {
+                    $order->organization->licenses()->where('source_reference',self::GRACE_PREFIX.$order->id)->delete();
+                    if ($order->status!=='cancelled') $order->update(['status'=>'cancelled']);
+                    app(ConnectManagement::class)->audit($order->organization_id,'invoice.credited','ConnectOrder',$order->id,['invoice_id'=>$object->id,'credited_by'=>$object->metadata->credited_by]);
+                    return;
+                }
                 $hasLaterInvoice=$invoice->period_start && $order->invoices()->where('period_start','>',$invoice->period_start)->exists();
                 if ($type==='invoice.paid' && ($object->status ?? '')==='paid') {
                     // Meeloop-bestelling: de eerste factuur (vóór de einddatum van de lopende licentie) dekt nu t/m die datum;
@@ -513,7 +521,7 @@ class ConnectBilling {
                 } elseif ($type==='invoice.payment_failed' && $invoice->status!=='paid' && !$hasLaterInvoice && !in_array($order->status,['cancellation_requested','cancelled'],true)) $order->update(['status'=>'payment_failed']);
             });
             // Seats zijn er nu: wat in Connect op deze betaling wachtte, wordt toegevoegd (mislukken blokkeert de webhook niet).
-            if ($type==='invoice.paid' && ($object->status ?? '')==='paid') {
+            if ($type==='invoice.paid' && ($object->status ?? '')==='paid' && !$credited) {
                 try { app(ConnectPendingAdditions::class)->processForOrder($order); } catch (\Throwable $e) { report($e); }
             }
             return true;

@@ -3,7 +3,7 @@
 namespace App\Services;
 
 use App\Models\ConnectOrderInvoice;
-use Illuminate\Support\Facades\Cache;
+use Illuminate\Support\Facades\{Cache, DB};
 use Stripe\StripeClient;
 
 /**
@@ -12,10 +12,6 @@ use Stripe\StripeClient;
  */
 class StripeAdmin
 {
-    public const CREDIT_REASONS = ['duplicate', 'fraudulent', 'order_change', 'product_unsatisfactory'];
-    /** Waar het bedrag van een credit note naartoe gaat bij een al betaalde factuur. */
-    public const SETTLEMENTS = ['credit_balance' => 'credit_amount', 'refund' => 'refund_amount', 'out_of_band' => 'out_of_band_amount'];
-
     protected function client(): StripeClient
     {
         abort_unless(config('billing.stripe_secret'), 422, 'Stripe is nog niet geconfigureerd (geen secret key).');
@@ -55,59 +51,112 @@ class StripeAdmin
         $invoice = $stripe->invoices->retrieve($id, ['expand' => ['customer']]);
         $lines = $invoice->lines->data ?? [];
         if ($invoice->lines->has_more ?? false) $lines = iterator_to_array($stripe->invoices->allLines($id, ['limit' => 100])->autoPagingIterator(), false);
-        $notes = $stripe->creditNotes->all(['invoice' => $id, 'limit' => 20])->data;
         $subscriptionId = $this->subscriptionId($invoice);
         $order = ConnectOrderInvoice::where('stripe_invoice_id', $id)->with('order.organization')->first()?->order;
         return ['invoice' => $this->invoiceRow($invoice) + ['memo' => $invoice->description ?? null],
             'lines' => array_map(fn ($l) => $this->lineRow($l), $lines),
-            'credit_notes' => array_map(fn ($n) => $this->creditNoteRow($n), $notes),
+            'credit_invoices' => $this->creditInvoicesOf($id),
+            'credited_lines' => array_values(array_filter(explode(',', (string) ($invoice->metadata->credited_lines ?? '')))),
             'subscription' => $subscriptionId ? $this->subscriptionRow($stripe->subscriptions->retrieve($subscriptionId, [])) : null,
             'connect_order' => $order ? ['id' => $order->id, 'organization_id' => $order->organization_id, 'organization' => $order->organization?->name,
                 'seats' => $order->seats, 'term_months' => $order->term_months, 'status' => $order->status] : null];
     }
 
     /** Als betaald buiten Stripe markeren (bijv. na een bankoverschrijving); een concept wordt eerst definitief gemaakt. */
-    public function markPaid(string $id): array
+    public function markPaid(string $id, ?string $note = null): array
     {
         $stripe = $this->client();
         $invoice = $stripe->invoices->retrieve($id, []);
         abort_if($invoice->status === 'paid', 422, 'Deze factuur is al betaald.');
         abort_if($invoice->status === 'void', 422, 'Een vervallen factuur kan niet worden betaald.');
         if ($invoice->status === 'draft') $invoice = $stripe->invoices->finalizeInvoice($id, ['auto_advance' => false], ['idempotency_key' => 'admin-finalize-'.$id]);
+        // Stripe kent bij 'betaald buiten Stripe' geen opmerking: die komt in de metadata van de factuur.
+        if (trim((string) $note) !== '') $stripe->invoices->update($id, ['metadata' => ['paid_out_of_band_note' => mb_substr(trim($note), 0, 480)]]);
         $paid = $stripe->invoices->pay($id, ['paid_out_of_band' => true], ['idempotency_key' => 'admin-pay-'.$id]);
         // Connect-bestellingen activeren direct, ook als de webhook later of niet aankomt.
         return ['invoice' => $this->invoiceRow($paid), 'connect_synced' => $this->syncConnect('invoice.paid', $paid)];
     }
 
     /**
-     * Credit note over geselecteerde factuurregels. Bij een betaalde factuur gaat het bedrag naar het tegoed van de klant,
-     * wordt het teruggestort, of wordt het buiten Stripe verrekend ($settlement); bij een openstaande factuur daalt het te betalen bedrag.
-     * @param array{lines:array<int,array{id:string,quantity?:int}>,reason?:string,memo?:?string,settlement?:string} $data
+     * Crediteren zonder Stripe-creditnota's: een nieuwe factuur met de geselecteerde regels als negatief bedrag (met dezelfde btw-tarieven),
+     * definitief gemaakt zodat het bedrag als tegoed bij de klant komt. Een nog openstaande factuur die daarmee volledig wordt gedekt, wordt
+     * met dat tegoed betaald: zo strepen de twee elkaar weg. Op de oorspronkelijke factuur staat in de metadata welke creditfactuur dat deed.
+     * @param array{lines:array<int,array{id:string,quantity?:int}>,memo?:?string} $data
+     * @return array{credit_invoice:array,invoice:array,settled:bool,settle_error:?string}
      */
-    public function creditNote(string $id, array $data): array
+    public function creditInvoice(string $id, array $data): array
     {
         $stripe = $this->client();
-        $invoice = $stripe->invoices->retrieve($id, []);
+        $invoice = $stripe->invoices->retrieve($id, ['expand' => ['customer']]);
         abort_if($invoice->status === 'draft', 422, 'Een concept kan niet worden gecrediteerd: rond de factuur eerst af of verwijder het concept in Stripe.');
         abort_unless(in_array($invoice->status, ['open', 'paid', 'uncollectible'], true), 422, 'Alleen een openstaande of betaalde factuur kan worden gecrediteerd.');
+        abort_if(!empty($invoice->metadata->credits_invoice ?? null), 422, 'Dit is zelf een creditfactuur en kan niet nog eens worden gecrediteerd.');
+        $already = array_values(array_filter(explode(',', (string) ($invoice->metadata->credited_lines ?? ''))));
         $available = [];
         foreach ($invoice->lines->data ?? [] as $line) $available[$line->id] = $line;
-        $lines = [];
+        $number = $invoice->number ?? $id;
+        $items = [];
         foreach ($data['lines'] as $row) {
             $line = $available[$row['id']] ?? null;
             abort_unless($line, 422, 'Een geselecteerde regel hoort niet bij deze factuur.');
+            abort_if(in_array($line->id, $already, true), 422, "De regel '".($line->description ?? $line->id)."' is al gecrediteerd.");
             $max = max(1, (int) ($line->quantity ?? 1)); $quantity = (int) ($row['quantity'] ?? $max);
             abort_unless($quantity >= 1 && $quantity <= $max, 422, "Het aantal bij '".($line->description ?? $line->id)."' moet tussen 1 en {$max} liggen.");
-            $lines[] = ['type' => 'invoice_line_item', 'invoice_line_item' => $line->id, 'quantity' => $quantity];
+            $amount = (int) round(((int) $line->amount) * $quantity / $max);
+            abort_if($amount <= 0, 422, "De regel '".($line->description ?? $line->id)."' heeft geen bedrag om te crediteren.");
+            $taxes = (array) ($line->taxes ?? []);
+            $items[] = ['line' => $line->id, 'amount' => -$amount, 'description' => mb_substr('Creditering: '.($line->description ?? 'regel').($max > 1 ? " ({$quantity} van {$max})" : '').' · factuur '.$number, 0, 480),
+                'tax_rates' => array_values(array_filter(array_map(fn ($t) => $t->tax_rate_details->tax_rate ?? null, $taxes))), 'tax_behavior' => $taxes[0]->tax_behavior ?? null];
         }
-        $params = ['invoice' => $id, 'lines' => $lines, 'reason' => $data['reason'] ?? 'order_change'];
-        if (trim((string) ($data['memo'] ?? '')) !== '') $params['memo'] = trim($data['memo']);
-        if ($invoice->status === 'paid') {
-            $preview = $stripe->creditNotes->preview($params);
-            $params[self::SETTLEMENTS[$data['settlement'] ?? 'credit_balance']] = (int) $preview->total;
+        $customerId = is_object($invoice->customer ?? null) ? $invoice->customer->id : $invoice->customer;
+        $hash = substr(md5(json_encode($items)), 0, 16);
+        $credit = $stripe->invoices->create(['customer' => $customerId, 'currency' => $invoice->currency, 'collection_method' => 'send_invoice', 'days_until_due' => 1, 'auto_advance' => false,
+            'pending_invoice_items_behavior' => 'exclude', 'automatic_tax' => ['enabled' => false],
+            'description' => mb_substr(trim("Creditfactuur voor factuur {$number}. ".($data['memo'] ?? '')), 0, 480),
+            'metadata' => ['credits_invoice' => $id, 'credits_invoice_number' => (string) $number]], ['idempotency_key' => "admin-credit-invoice-{$id}-{$hash}"]);
+        try {
+            foreach ($items as $item) {
+                $stripe->invoiceItems->create(array_filter(['customer' => $customerId, 'invoice' => $credit->id, 'currency' => $invoice->currency, 'amount' => $item['amount'], 'description' => $item['description'],
+                    'tax_rates' => $item['tax_rates'] ?: null, 'tax_behavior' => $item['tax_rates'] ? $item['tax_behavior'] : null, 'metadata' => ['credits_line' => $item['line']]], fn ($v) => $v !== null),
+                    ['idempotency_key' => "admin-credit-item-{$id}-{$item['line']}-{$hash}"]);
+            }
+        } catch (\Throwable $e) {
+            // Geen halve creditfactuur achterlaten: het concept zonder regels (of met een deel ervan) verdwijnt weer.
+            try { $stripe->invoices->delete($credit->id, []); } catch (\Throwable) { /* Stripe geeft dan zelf de foutmelding hierboven */ }
+            throw $e;
         }
-        $note = $stripe->creditNotes->create($params, ['idempotency_key' => 'admin-credit-'.$id.'-'.substr(md5(json_encode($params)), 0, 16)]);
-        return ['credit_note' => $this->creditNoteRow($note), 'invoice' => $this->invoiceRow($stripe->invoices->retrieve($id, ['expand' => ['customer']]))];
+        // Definitief maken: een negatief totaal komt als tegoed bij de klant en de creditfactuur is daarmee afgehandeld; anders handmatig op betaald zetten.
+        $credit = $stripe->invoices->finalizeInvoice($credit->id, ['auto_advance' => false], ['idempotency_key' => "admin-credit-finalize-{$credit->id}"]);
+        if ($credit->status !== 'paid') $credit = $stripe->invoices->pay($credit->id, ['paid_out_of_band' => true], ['idempotency_key' => "admin-credit-pay-{$credit->id}"]);
+        $creditNumber = $credit->number ?? $credit->id;
+        $creditedLines = implode(',', array_merge($already, array_column($items, 'line')));
+        $settled = false; $settleError = null;
+        if ($invoice->status === 'open' && abs((int) $credit->total) >= (int) $invoice->amount_due) {
+            // Volledig gedekt: de oorspronkelijke factuur met het tegoed betalen. De metadata gaat vooraf mee, zodat de webhook van die betaling (Connect) weet dat het een verrekening is en geen echte betaling.
+            $stripe->invoices->update($id, ['metadata' => ['credited_by' => (string) $creditNumber, 'credited_lines' => $creditedLines, 'settled_note' => mb_substr("Verrekend met creditfactuur {$creditNumber}", 0, 480)]]);
+            try {
+                $paid = $stripe->invoices->pay($id, [], ['idempotency_key' => "admin-credit-settle-{$id}-{$credit->id}"]);
+                $settled = $paid->status === 'paid';
+                if ($settled) $this->syncConnect('invoice.paid', $paid);
+            } catch (\Stripe\Exception\ApiErrorException $e) {
+                StripeErrors::record($e, 'admin.credit_invoice_settle', ['stripe_object' => $id, 'credit_invoice' => $credit->id], true);
+                $settleError = StripeErrors::scrub($e->getMessage());
+            }
+            if (!$settled) $stripe->invoices->update($id, ['metadata' => ['credited_by' => '', 'settled_note' => '', 'credit_invoices' => (string) $creditNumber]]);
+        } else {
+            $stripe->invoices->update($id, ['metadata' => ['credited_lines' => $creditedLines, 'credit_invoices' => trim(((string) ($invoice->metadata->credit_invoices ?? '')).','.$creditNumber, ',')]]);
+        }
+        return ['credit_invoice' => $this->invoiceRow($credit), 'invoice' => $this->invoiceRow($stripe->invoices->retrieve($id, ['expand' => ['customer']])), 'settled' => $settled, 'settle_error' => $settleError];
+    }
+
+    /** De creditfacturen die via MilMap Admin op deze factuur zijn gemaakt (uit ons eigen actielogboek). */
+    private function creditInvoicesOf(string $id): array
+    {
+        return DB::table('stripe_admin_actions')->where('action', 'credit_invoice')->where('stripe_object', $id)->where('succeeded', true)->orderByDesc('id')->get()
+            ->map(function ($r) {
+                $result = json_decode((string) $r->payload, true)['result'] ?? null;
+                return is_array($result) && isset($result['id']) ? $result + ['created_at' => $r->created_at] : null;
+            })->filter()->values()->all();
     }
 
     // ── Abonnementen ─────────────────────────────────────────────────────
@@ -180,19 +229,14 @@ class StripeAdmin
             'customer_id' => $customer->id ?? (is_string($i->customer ?? null) ? $i->customer : null),
             'customer_name' => $i->customer_name ?? $customer->name ?? null, 'customer_email' => $i->customer_email ?? $customer->email ?? null,
             'created' => $i->created ?? null, 'due_date' => $i->due_date ?? null, 'collection_method' => $i->collection_method ?? null,
-            'hosted_invoice_url' => $i->hosted_invoice_url ?? null, 'invoice_pdf' => $i->invoice_pdf ?? null, 'subscription_id' => $this->subscriptionId($i)];
+            'hosted_invoice_url' => $i->hosted_invoice_url ?? null, 'invoice_pdf' => $i->invoice_pdf ?? null, 'subscription_id' => $this->subscriptionId($i),
+            'credits_invoice' => $i->metadata->credits_invoice_number ?? null, 'credited_by' => ($i->metadata->credited_by ?? '') ?: null, 'note' => ($i->metadata->paid_out_of_band_note ?? '') ?: null];
     }
 
     private function lineRow(object $l): array
     {
         return ['id' => $l->id, 'description' => $l->description ?? null, 'amount' => (int) ($l->amount ?? 0), 'quantity' => (int) ($l->quantity ?? 1),
             'currency' => strtoupper($l->currency ?? 'eur'), 'period_start' => $l->period->start ?? null, 'period_end' => $l->period->end ?? null];
-    }
-
-    private function creditNoteRow(object $n): array
-    {
-        return ['id' => $n->id, 'number' => $n->number ?? null, 'status' => $n->status ?? null, 'reason' => $n->reason ?? null, 'memo' => $n->memo ?? null,
-            'total' => (int) ($n->total ?? 0), 'currency' => strtoupper($n->currency ?? 'eur'), 'created' => $n->created ?? null, 'pdf' => $n->pdf ?? null];
     }
 
     private function subscriptionRow(object $s): array

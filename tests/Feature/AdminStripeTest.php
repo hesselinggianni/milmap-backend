@@ -26,11 +26,25 @@ class AdminStripeFake extends StripeClient {
             case 'customers.all': return (object) ['data' => [(object) ['id' => 'cus_1']]];
             case 'invoices.all': return (object) ['data' => array_values($this->invoiceStore), 'has_more' => false];
             case 'invoices.retrieve': return $this->invoiceStore[$args[0]];
-            case 'invoices.finalizeInvoice': $this->invoiceStore[$args[0]]->status = 'open'; return $this->invoiceStore[$args[0]];
+            case 'invoices.finalizeInvoice':
+                $i = $this->invoiceStore[$args[0]];
+                // Een negatief totaal wordt tegoed bij de klant: de creditfactuur is meteen betaald en krijgt een nummer.
+                if ($i->total < 0) { $i->status = 'paid'; $i->number = 'CRD-'.$args[0]; } else $i->status = 'open';
+                return $i;
             case 'invoices.pay': $i = $this->invoiceStore[$args[0]]; $i->status = 'paid'; $i->amount_paid = $i->total; $i->amount_due = 0; return $i;
-            case 'creditNotes.all': return (object) ['data' => []];
-            case 'creditNotes.preview': return (object) ['total' => array_sum(array_map(fn ($l) => ($this->invoiceStore[$args[0]['invoice']]->lines->data[array_search($l['invoice_line_item'], array_column($this->invoiceStore[$args[0]['invoice']]->lines->data, 'id'))]->amount / max(1, $this->invoiceStore[$args[0]['invoice']]->lines->data[array_search($l['invoice_line_item'], array_column($this->invoiceStore[$args[0]['invoice']]->lines->data, 'id'))]->quantity)) * $l['quantity'], $args[0]['lines']))];
-            case 'creditNotes.create': return (object) ['id' => 'cn_1', 'number' => 'CN-1', 'status' => 'issued', 'reason' => $args[0]['reason'], 'memo' => $args[0]['memo'] ?? null, 'total' => $args[0]['credit_amount'] ?? $args[0]['refund_amount'] ?? $args[0]['out_of_band_amount'] ?? 1000, 'currency' => 'eur', 'created' => now()->timestamp, 'pdf' => null];
+            case 'invoices.create':
+                $id = 'in_credit'.(count(array_filter($this->calls, fn ($c) => $c[0] === 'invoices.create')));
+                return $this->invoiceStore[$id] = (object) ['id' => $id, 'number' => null, 'status' => 'draft', 'currency' => $args[0]['currency'], 'total' => 0, 'amount_due' => 0, 'amount_paid' => 0, 'customer' => $args[0]['customer'], 'created' => now()->timestamp,
+                    'metadata' => (object) $args[0]['metadata'], 'description' => $args[0]['description'], 'lines' => (object) ['has_more' => false, 'data' => []]];
+            case 'invoiceItems.create':
+                $inv = $this->invoiceStore[$args[0]['invoice']]; $inv->total += $args[0]['amount'];
+                $inv->lines->data[] = (object) ['id' => 'il_c'.count($inv->lines->data), 'amount' => $args[0]['amount'], 'description' => $args[0]['description'], 'quantity' => 1, 'currency' => $args[0]['currency']];
+                return (object) ['id' => 'ii_'.count($this->calls)];
+            case 'invoices.delete': unset($this->invoiceStore[$args[0]]); return (object) ['id' => $args[0], 'deleted' => true];
+            case 'invoices.update':
+                $i = $this->invoiceStore[$args[0]];
+                foreach (($args[1]['metadata'] ?? []) as $k => $v) { if ($v === '') unset($i->metadata->$k); else $i->metadata->$k = $v; }
+                return $i;
             case 'subscriptions.retrieve': return $this->subscriptionStore[$args[0]];
             case 'subscriptions.update':
                 $s = $this->subscriptionStore[$args[0]];
@@ -54,11 +68,12 @@ class AdminStripeTest extends TestCase {
         Cache::flush();
         $this->stripe = new AdminStripeFake();
         $customer = (object) ['id' => 'cus_1', 'name' => 'Korps mariniers', 'email' => 'korps@example.org'];
+        $taxed = function ($l) { $l->taxes = [(object) ['tax_behavior' => 'exclusive', 'tax_rate_details' => (object) ['tax_rate' => 'txr_vat']]]; return $l; };
         $line = fn ($id, $desc, $amount, $qty) => (object) ['id' => $id, 'description' => $desc, 'amount' => $amount, 'quantity' => $qty, 'currency' => 'eur', 'period' => (object) ['start' => now()->timestamp, 'end' => now()->addYear()->timestamp]];
         $invoice = fn ($id, $status) => (object) ['id' => $id, 'number' => $status === 'draft' ? null : 'INV-'.$id, 'status' => $status, 'currency' => 'eur', 'total' => 2889, 'amount_due' => $status === 'paid' ? 0 : 2889, 'amount_paid' => $status === 'paid' ? 2889 : 0,
             'customer' => $customer, 'customer_name' => 'Korps mariniers', 'customer_email' => 'korps@example.org', 'created' => now()->timestamp, 'collection_method' => 'send_invoice', 'hosted_invoice_url' => $status === 'draft' ? null : 'https://invoice.stripe.com/x', 'invoice_pdf' => null,
-            'parent' => (object) ['subscription_details' => (object) ['subscription' => 'sub_1']],
-            'lines' => (object) ['has_more' => false, 'data' => [$line('il_1', 'Connect · 1 seat', 2388, 1), $line('il_2', 'Extra seats', 501, 3)]]];
+            'parent' => (object) ['subscription_details' => (object) ['subscription' => 'sub_1']], 'metadata' => (object) [],
+            'lines' => (object) ['has_more' => false, 'data' => [$line('il_1', 'Connect · 1 seat', 2388, 1), $taxed($line('il_2', 'Extra seats', 501, 3))]]];
         $this->stripe->invoiceStore = ['in_draft' => $invoice('in_draft', 'draft'), 'in_open' => $invoice('in_open', 'open'), 'in_paid' => $invoice('in_paid', 'paid')];
         $this->stripe->subscriptionStore = ['sub_1' => (object) ['id' => 'sub_1', 'status' => 'active', 'cancel_at_period_end' => false, 'canceled_at' => null, 'collection_method' => 'send_invoice', 'current_period_end' => now()->addYear()->timestamp,
             'items' => (object) ['data' => [(object) ['id' => 'si_1', 'quantity' => 1, 'price' => (object) ['unit_amount' => 199, 'currency' => 'eur', 'recurring' => (object) ['interval' => 'year', 'interval_count' => 1]]]]]]];
@@ -93,7 +108,7 @@ class AdminStripeTest extends TestCase {
         $this->assertSame('cus_1', $list[1][0]['customer']);$this->assertSame('open', $list[1][0]['status']);
     }
 
-    public function test_invoice_detail_shows_lines_credit_notes_and_the_linked_subscription(): void {
+    public function test_invoice_detail_shows_lines_credit_invoices_and_the_linked_subscription(): void {
         $this->login();
         $this->getJson('/api/v1/admin/stripe/invoices/in_open')->assertOk()->assertJsonCount(2, 'lines')->assertJsonPath('lines.1.quantity', 3)
             ->assertJsonPath('subscription.id', 'sub_1')->assertJsonPath('subscription.items.0.quantity', 1)->assertJsonPath('subscription.items.0.unit_amount', 199)->assertJsonPath('connect_order', null);
@@ -133,33 +148,87 @@ class AdminStripeTest extends TestCase {
         $this->getJson('/api/v1/admin/stripe/errors?code=more_permissions_required')->assertOk()->assertJsonCount(3, 'errors.data');
     }
 
-    public function test_credit_note_credits_the_selected_lines_and_settles_a_paid_invoice(): void {
-        $this->login();
-        $lines = [['id' => 'il_2', 'quantity' => 2]];
-        $this->postJson('/api/v1/admin/stripe/invoices/in_paid/credit-note', ['lines' => $lines])->assertUnprocessable();
-        $this->postJson('/api/v1/admin/stripe/invoices/in_paid/credit-note', ['confirm' => true, 'lines' => $lines, 'reason' => 'order_change', 'memo' => 'Minder seats', 'settlement' => 'refund'])
-            ->assertOk()->assertJsonPath('credit_note.id', 'cn_1')->assertJsonPath('credit_note.total', 334)->assertJsonPath('invoice.id', 'in_paid');
-        $create = collect($this->stripe->calls)->first(fn ($c) => $c[0] === 'creditNotes.create')[1][0];
-        $this->assertSame([['type' => 'invoice_line_item', 'invoice_line_item' => 'il_2', 'quantity' => 2]], $create['lines']);
-        $this->assertSame(334, $create['refund_amount']);$this->assertArrayNotHasKey('credit_amount', $create);$this->assertSame('Minder seats', $create['memo']);
-        $this->assertDatabaseHas('stripe_admin_actions', ['action' => 'credit_note', 'stripe_object' => 'in_paid', 'succeeded' => true]);
+    private const CREDIT = '/api/v1/admin/stripe/invoices/%s/credit-invoice';
+    private function creditCalls(string $method): array { return array_values(array_filter($this->stripe->calls, fn ($c) => $c[0] === $method)); }
+
+    public function test_crediting_makes_a_negative_invoice_and_leaves_a_paid_invoice_as_customer_credit(): void {
+        $admin = $this->login();
+        $lines = [['id' => 'il_2', 'quantity' => 2]]; $url = sprintf(self::CREDIT, 'in_paid');
+        $this->postJson($url, ['lines' => $lines])->assertUnprocessable();
+        $res = $this->postJson($url, ['confirm' => true, 'lines' => $lines, 'memo' => 'Minder seats'])->assertOk()
+            ->assertJsonPath('credit_invoice.number', 'CRD-in_credit1')->assertJsonPath('credit_invoice.status', 'paid')->assertJsonPath('credit_invoice.total', -334)
+            ->assertJsonPath('credit_invoice.credits_invoice', 'INV-in_paid')->assertJsonPath('settled', false)->assertJsonPath('invoice.id', 'in_paid');
+        $this->assertSame([], array_filter($this->stripe->calls, fn ($c) => str_starts_with($c[0], 'creditNotes.')), 'geen Stripe-creditnota\'s');
+        $create = $this->creditCalls('invoices.create')[0][1][0];
+        $this->assertSame(['cus_1', 'send_invoice', 'exclude'], [$create['customer'], $create['collection_method'], $create['pending_invoice_items_behavior']]);
+        $this->assertStringContainsString('Creditfactuur voor factuur INV-in_paid', $create['description']);$this->assertStringContainsString('Minder seats', $create['description']);
+        $this->assertSame(['in_paid', 'INV-in_paid'], [$create['metadata']['credits_invoice'], $create['metadata']['credits_invoice_number']]);
+        $item = $this->creditCalls('invoiceItems.create')[0][1][0];
+        $this->assertSame([-334, 'in_credit1', ['txr_vat'], 'exclusive'], [$item['amount'], $item['invoice'], $item['tax_rates'], $item['tax_behavior']]);
+        $this->assertSame('Creditering: Extra seats (2 van 3) · factuur INV-in_paid', $item['description']);
+        $this->assertSame(0, count($this->creditCalls('invoices.pay')), 'een betaalde factuur wordt niet nog eens betaald; het bedrag is tegoed');
+        $meta = $this->stripe->invoiceStore['in_paid']->metadata;$this->assertSame(['il_2', 'CRD-in_credit1'], [$meta->credited_lines, $meta->credit_invoices]);
+        $this->assertDatabaseHas('stripe_admin_actions', ['admin_id' => $admin->id, 'action' => 'credit_invoice', 'stripe_object' => 'in_paid', 'succeeded' => true]);
+        $this->getJson('/api/v1/admin/stripe/invoices/in_paid')->assertOk()->assertJsonPath('credit_invoices.0.number', 'CRD-in_credit1')->assertJsonPath('credit_invoices.0.total', -334)->assertJsonPath('credited_lines', ['il_2']);
+        $this->postJson($url, ['confirm' => true, 'lines' => [['id' => 'il_2']]])->assertUnprocessable()->assertJsonPath('message', fn ($m) => str_contains($m, 'al gecrediteerd'));
+        $this->assertSame(1, count($this->creditCalls('invoices.create')));
     }
 
-    public function test_credit_note_on_an_open_invoice_needs_no_settlement_and_can_stop_the_subscription_right_after(): void {
+    public function test_an_open_invoice_that_is_fully_credited_is_paid_with_that_credit_and_the_subscription_can_stop(): void {
         $this->login();
-        $this->postJson('/api/v1/admin/stripe/invoices/in_open/credit-note', ['confirm' => true, 'lines' => [['id' => 'il_1'], ['id' => 'il_2']], 'subscription' => 'now'])
-            ->assertOk()->assertJsonPath('subscription.status', 'canceled');
-        $create = collect($this->stripe->calls)->first(fn ($c) => $c[0] === 'creditNotes.create')[1][0];
-        $this->assertArrayNotHasKey('refund_amount', $create);$this->assertArrayNotHasKey('credit_amount', $create);$this->assertSame('order_change', $create['reason']);
-        $this->assertSame(['sub_1', ['invoice_now' => false, 'prorate' => false]], collect($this->stripe->calls)->first(fn ($c) => $c[0] === 'subscriptions.cancel')[1]);
+        $res = $this->postJson(sprintf(self::CREDIT, 'in_open'), ['confirm' => true, 'lines' => [['id' => 'il_1'], ['id' => 'il_2']], 'subscription' => 'now'])->assertOk()
+            ->assertJsonPath('credit_invoice.total', -2889)->assertJsonPath('settled', true)->assertJsonPath('settle_error', null)->assertJsonPath('invoice.status', 'paid')->assertJsonPath('subscription.status', 'canceled');
+        $pay = $this->creditCalls('invoices.pay')[0][1];
+        $this->assertSame(['in_open', []], [$pay[0], $pay[1]], 'betaald met het tegoed, niet buiten Stripe');
+        $meta = $this->stripe->invoiceStore['in_open']->metadata;
+        $this->assertSame('CRD-in_credit1', $meta->credited_by);$this->assertSame('Verrekend met creditfactuur CRD-in_credit1', $meta->settled_note);
+        $order = array_column($this->stripe->calls, 0);
+        $this->assertLessThan(array_search('invoices.pay', $order), array_search('invoices.update', $order), 'de metadata staat er al vóór de betaling (de webhook leest die)');
+        $this->assertSame(['sub_1', ['invoice_now' => false, 'prorate' => false]], $this->creditCalls('subscriptions.cancel')[0][1]);
     }
 
-    public function test_credit_note_refuses_drafts_and_lines_from_other_invoices(): void {
+    public function test_a_partial_credit_on_an_open_invoice_leaves_it_open_and_keeps_the_credit(): void {
         $this->login();
-        $this->postJson('/api/v1/admin/stripe/invoices/in_draft/credit-note', ['confirm' => true, 'lines' => [['id' => 'il_1']]])->assertUnprocessable()->assertJsonPath('message', fn ($m) => str_contains($m, 'concept'));
-        $this->postJson('/api/v1/admin/stripe/invoices/in_open/credit-note', ['confirm' => true, 'lines' => [['id' => 'il_other']]])->assertUnprocessable();
-        $this->postJson('/api/v1/admin/stripe/invoices/in_open/credit-note', ['confirm' => true, 'lines' => [['id' => 'il_2', 'quantity' => 4]]])->assertUnprocessable();
-        $this->assertSame(0, collect($this->stripe->calls)->where(0, 'creditNotes.create')->count());
+        $this->postJson(sprintf(self::CREDIT, 'in_open'), ['confirm' => true, 'lines' => [['id' => 'il_2']]])->assertOk()->assertJsonPath('settled', false)->assertJsonPath('invoice.status', 'open');
+        $this->assertSame(0, count($this->creditCalls('invoices.pay')));
+        $meta = $this->stripe->invoiceStore['in_open']->metadata;$this->assertFalse(isset($meta->credited_by));$this->assertSame('il_2', $meta->credited_lines);
+    }
+
+    public function test_crediting_refuses_drafts_credit_invoices_and_wrong_lines(): void {
+        $this->login();
+        $this->postJson(sprintf(self::CREDIT, 'in_draft'), ['confirm' => true, 'lines' => [['id' => 'il_1']]])->assertUnprocessable()->assertJsonPath('message', fn ($m) => str_contains($m, 'concept'));
+        $this->postJson(sprintf(self::CREDIT, 'in_open'), ['confirm' => true, 'lines' => [['id' => 'il_other']]])->assertUnprocessable();
+        $this->postJson(sprintf(self::CREDIT, 'in_open'), ['confirm' => true, 'lines' => [['id' => 'il_2', 'quantity' => 4]]])->assertUnprocessable();
+        $this->postJson(sprintf(self::CREDIT, 'in_open'), ['confirm' => true, 'lines' => [['id' => 'il_1']]])->assertOk();
+        $this->postJson(sprintf(self::CREDIT, 'in_credit1'), ['confirm' => true, 'lines' => [['id' => 'il_c0']]])->assertUnprocessable()->assertJsonPath('message', fn ($m) => str_contains($m, 'creditfactuur'));
+        $this->assertSame(1, count($this->creditCalls('invoices.create')));
+    }
+
+    public function test_a_refused_credit_leaves_no_half_finished_credit_invoice_behind(): void {
+        $this->login();
+        $this->stripe->deny = ['invoiceItems.create'];
+        $res = $this->postJson(sprintf(self::CREDIT, 'in_open'), ['confirm' => true, 'lines' => [['id' => 'il_1']]])->assertUnprocessable();
+        $this->assertStringStartsWith('Stripe-fout: ', $res->json('message'));$res->assertJsonPath('stripe.missing_permission', 'invoice_write');
+        $this->assertSame(1, count($this->creditCalls('invoices.delete')));$this->assertArrayNotHasKey('in_credit1', $this->stripe->invoiceStore);
+        $this->assertDatabaseHas('stripe_errors', ['source' => 'admin.credit_invoice', 'handled' => false]);
+        $this->assertDatabaseHas('stripe_admin_actions', ['action' => 'credit_invoice', 'stripe_object' => 'in_open', 'succeeded' => false]);
+    }
+
+    public function test_when_settling_fails_the_credit_invoice_stays_and_the_original_is_not_marked_credited(): void {
+        $this->login();
+        $this->stripe->deny = ['invoices.pay'];
+        $this->postJson(sprintf(self::CREDIT, 'in_open'), ['confirm' => true, 'lines' => [['id' => 'il_1'], ['id' => 'il_2']]])->assertOk()
+            ->assertJsonPath('settled', false)->assertJsonPath('credit_invoice.number', 'CRD-in_credit1')->assertJsonPath('settle_error', fn ($m) => str_contains($m, 'Permission denied'));
+        $meta = $this->stripe->invoiceStore['in_open']->metadata;$this->assertFalse(isset($meta->credited_by));$this->assertSame('CRD-in_credit1', $meta->credit_invoices);
+        $this->assertDatabaseHas('stripe_errors', ['source' => 'admin.credit_invoice_settle', 'handled' => true]);
+        $this->assertArrayHasKey('in_credit1', $this->stripe->invoiceStore);
+    }
+
+    public function test_marking_paid_can_carry_a_note_in_the_invoice_metadata(): void {
+        $this->login();
+        $this->postJson('/api/v1/admin/stripe/invoices/in_open/mark-paid', ['confirm' => true, 'note' => 'Bank 18-10, ref 123'])->assertOk()->assertJsonPath('invoice.note', 'Bank 18-10, ref 123');
+        $this->assertSame('Bank 18-10, ref 123', $this->stripe->invoiceStore['in_open']->metadata->paid_out_of_band_note);
+        $this->assertSame(['invoices.retrieve', 'invoices.update', 'invoices.pay'], array_column($this->stripe->calls, 0));
     }
 
     public function test_the_linked_subscription_can_be_updated_or_stopped(): void {
