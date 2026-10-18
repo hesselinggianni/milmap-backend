@@ -94,6 +94,16 @@ class ClientErrorController extends Controller
             return true;
         }
 
+        // Een locatie-aanvraag die binnen zijn tijd geen fix kreeg (binnenshuis,
+        // net uit de achtergrond, vliegmodus). De app vangt dat zelf op en de
+        // gewone watch pikt de positie later op: een omstandigheid, geen defect.
+        // Nieuwe builds melden dit niet meer; oude sturen het bij elke terugkeer
+        // naar de kaart, dus het filter hoort ook hier.
+        if ($type === 'location_diag'
+            && preg_match('/getCurrentPosition mislukt.{1,5}code=(timeout|3|OS-PLUG-GLOC-0010)(\s|$)/u', $message)) {
+            return true;
+        }
+
         if ($type === 'api_error') {
             // Snelheidsbegrenzer: de gebruiker ziet "probeer het zo nog eens".
             if ((int) $status === 429) {
