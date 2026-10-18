@@ -122,6 +122,7 @@ class User extends Authenticatable implements HasLocalePreference
         return [
             'email_verified_at' => 'datetime',
             'archived_at'       => 'datetime',
+            'blocked_at'        => 'datetime',
             'password'          => 'hashed',
             'password_set_at'   => 'datetime',
             'settings'          => 'array',
@@ -574,6 +575,35 @@ class User extends Authenticatable implements HasLocalePreference
     public function isArchived(): bool
     {
         return ! is_null($this->archived_at);
+    }
+
+    // ── Handmatige blokkade (admin) ─────────────────────────────────
+    //
+    // Gezet vanuit admin.milmap.nl (bijv. bij extreem API-verbruik, zie
+    // Analytics → API-verbruik). Anders dan archiveren is dit omkeerbaar en
+    // blijft alle data staan: inloggen en elke geauthenticeerde route worden
+    // geweigerd (EnsureNotBlocked) tot een beheerder deblokkeert.
+
+    public function isBlocked(): bool
+    {
+        return ! is_null($this->blocked_at);
+    }
+
+    /** Melding voor de gebruiker bij inloggen/403 — bewust zonder de interne reden. */
+    public function blockedLoginMessage(): string
+    {
+        return 'This account has been blocked by MilMap. Contact support@milmap.nl if you think this is a mistake.';
+    }
+
+    /** Compacte blokkadestatus voor admin-responses. */
+    public function blockedState(): array
+    {
+        return [
+            'is_blocked'     => $this->isBlocked(),
+            'blocked_at'     => optional($this->blocked_at)->toIso8601String(),
+            'blocked_reason' => $this->blocked_reason,
+            'blocked_by_id'  => $this->blocked_by_id,
+        ];
     }
 
     /** Zet de e-mail op geverifieerd (idempotent). Roep dit ook aan bij betaling. */

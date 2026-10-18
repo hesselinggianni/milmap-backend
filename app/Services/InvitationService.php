@@ -119,6 +119,12 @@ class InvitationService
 
         $emailSent = $this->sendInviteEmail($invite, ! $existingUser);
 
+        // Pushmelding naar de toestellen van een bestaand account, na de respons
+        // zodat trage APNs/FCM-verbindingen het uitnodigen niet ophouden.
+        if ($existingUser) {
+            app()->terminating(fn () => InvitationPush::send($invite, $existingUser));
+        }
+
         return [
             'ok'         => true,
             'invitation' => $invite,

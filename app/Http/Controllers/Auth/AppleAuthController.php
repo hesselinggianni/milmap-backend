@@ -89,6 +89,11 @@ class AppleAuthController extends Controller
             $user->forceFill(['deletion_requested_at' => null, 'deletion_purge_at' => null])->save();
         }
 
+        // Handmatig geblokkeerd (admin): geen sessie uitgeven.
+        if ($user->isBlocked()) {
+            return response()->json(['message' => $user->blockedLoginMessage(), 'code' => 'account_blocked'], 403);
+        }
+
         $token = $user->createToken('API Token', ['user'], now()->addDays(7));
 
         return response()->json([

@@ -33,7 +33,7 @@ class LoginCodeController extends Controller
 
         // Geen account-enumeratie: altijd dezelfde 200, of het adres nu
         // bestaat of niet (zelfde aanpak als password/reset-link).
-        if (!$user || $user->isArchived()) {
+        if (!$user || $user->isArchived() || $user->isBlocked()) {
             return response()->json([
                 'message' => 'If this email address is known to us, you will receive a login code.',
             ], 200);

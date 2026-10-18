@@ -32,6 +32,15 @@ trait IssuesLoginSession
             ]);
         }
 
+        // Handmatig geblokkeerd door een beheerder (admin.milmap.nl): geen
+        // toegang tot een beheerder deblokkeert. Zelfde melding als de 403 van
+        // EnsureNotBlocked.
+        if ($user->isBlocked()) {
+            throw ValidationException::withMessages([
+                'email' => $user->blockedLoginMessage(),
+            ]);
+        }
+
         // Weer ingelogd binnen de bedenktijd = spijt, verwijderverzoek vervalt.
         if ($user->deletion_purge_at) {
             $user->forceFill([

@@ -365,21 +365,23 @@ class ApiUsageController extends Controller
         return $out;
     }
 
-    /** @return array<int, array{user_id: int, name: ?string, email: ?string, is_guest: bool}> */
+    /** @return array<int, array{user_id: int, name: ?string, email: ?string, is_guest: bool, is_blocked: bool}> */
     private function userInfo(array $ids): array
     {
         $out = [];
         if (in_array(0, $ids, true)) {
-            $out[0] = ['user_id' => 0, 'name' => 'Gast', 'email' => null, 'is_guest' => true];
+            $out[0] = ['user_id' => 0, 'name' => 'Gast', 'email' => null, 'is_guest' => true, 'is_blocked' => false];
         }
         $real = array_values(array_filter($ids));
         if ($real) {
-            foreach (DB::table('users')->whereIn('id', $real)->get(['id', 'first_name', 'last_name', 'email']) as $u) {
+            foreach (DB::table('users')->whereIn('id', $real)->get(['id', 'first_name', 'last_name', 'email', 'blocked_at']) as $u) {
                 $out[(int) $u->id] = [
                     'user_id'  => (int) $u->id,
                     'name'     => trim(($u->first_name ?? '') . ' ' . ($u->last_name ?? '')) ?: $u->email,
                     'email'    => $u->email,
                     'is_guest' => false,
+                    // Handmatig geblokkeerd (admin) — zo zie je in de top-lijst meteen wie al dicht staat.
+                    'is_blocked' => ! is_null($u->blocked_at),
                 ];
             }
         }

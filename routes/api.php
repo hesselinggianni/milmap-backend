@@ -424,7 +424,7 @@ Route::prefix('v1')->middleware(['api'])->group(function () {
 
 
 Route::prefix('v1')->middleware(['api'])->group(function () {
-    Route::middleware(['auth:sanctum', \App\Http\Middleware\TrackConnectDevice::class, \App\Http\Middleware\TrackLastSeen::class, \App\Http\Middleware\EnsureEmailVerified::class, \App\Http\Middleware\EnsureNotViewOnly::class])->group(function () {
+    Route::middleware(['auth:sanctum', \App\Http\Middleware\EnsureNotBlocked::class, \App\Http\Middleware\TrackConnectDevice::class, \App\Http\Middleware\TrackLastSeen::class, \App\Http\Middleware\EnsureEmailVerified::class, \App\Http\Middleware\EnsureNotViewOnly::class])->group(function () {
 
         /* User group */
 
@@ -1148,6 +1148,10 @@ Route::prefix('v1')->middleware(['api'])->group(function () {
             // Gratis (premium-)toegang toekennen/verlengen + handmatig e-mail verifiëren.
             Route::post('/admin/users/{userId}/grant-access', [AdminController::class, 'grantAccess']);
             Route::post('/admin/users/{userId}/verify-email', [AdminController::class, 'verifyUserEmail']);
+            // Handmatig blokkeren/deblokkeren (bijv. bij extreem API-verbruik): tokens
+            // ingetrokken, inloggen geweigerd, data blijft staan.
+            Route::post('/admin/users/{userId}/block', [AdminController::class, 'blockUser']);
+            Route::post('/admin/users/{userId}/unblock', [AdminController::class, 'unblockUser']);
             // Handmatige 1-op-1 mail vanuit de Mails-tab op de gebruikersdetailpagina.
             Route::post('/admin/users/{userId}/send-mail', [AdminController::class, 'sendUserMail']);
             Route::post('/admin/users/{userId}/send-chat', [AdminController::class, 'sendUserChat']);

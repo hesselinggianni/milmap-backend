@@ -28,7 +28,7 @@ class AdminController extends Controller
     {
         try {
             // Alleen tellingen — bewust geen kaarttitels/datums inladen.
-            $baseUsers = User::select('id', 'first_name', 'last_name', 'email', 'is_admin', 'is_demo', 'created_at', 'email_verified_at', 'last_seen_at', 'trial_ends_at')
+            $baseUsers = User::select('id', 'first_name', 'last_name', 'email', 'is_admin', 'is_demo', 'created_at', 'email_verified_at', 'last_seen_at', 'trial_ends_at', 'blocked_at')
                 ->withCount('maps')
                 ->get();
 
@@ -86,6 +86,7 @@ class AdminController extends Controller
                     'email'            => $user->email,
                     'is_admin'         => (bool) $user->is_admin,
                     'is_demo'          => (bool) $user->is_demo,
+                    'is_blocked'       => (bool) $user->blocked_at,
                     'mobile_devices'   => $mobileDevices->get($user->id, collect())->map(fn ($device) => [
                         'platform' => $device->platform,
                         'installation_id' => $device->installation_id,
@@ -449,6 +450,9 @@ class AdminController extends Controller
                     'updated_at'        => $user->updated_at,
                     'last_seen_at'      => $user->last_seen_at,
                     'archived_at'       => $user->archived_at,
+                    'blocked_at'        => $user->blocked_at,
+                    'blocked_reason'    => $user->blocked_reason,
+                    'is_blocked'        => $user->isBlocked(),
                     'plan'              => $user->plan(),
                     'subscribed'        => $user->subscribed(),
                     'trial_ends_at'     => $user->trial_ends_at,
@@ -539,6 +543,74 @@ class AdminController extends Controller
                     ? 'Gebruiker gemarkeerd als demo-account'
                     : 'Demo-markering verwijderd',
                 'is_demo' => (bool) $user->is_demo,
+            ], 200);
+        } catch (\Illuminate\Database\Eloquent\ModelNotFoundException $e) {
+            return response()->json(['message' => 'Gebruiker niet gevonden', 'error' => 'not_found'], 404);
+        }
+    }
+
+    /**
+     * POST /api/v1/admin/users/{userId}/block   body: { reason?: string }
+     * Handmatig blokkeren, bijv. bij extreem API-verbruik (Analytics →
+     * API-verbruik). Alle tokens worden ingetrokken zodat lopende sessies
+     * direct stoppen; inloggen wordt geweigerd tot `unblockUser`. Data blijft
+     * onaangeroerd. Beheerders (en jezelf) kun je niet blokkeren.
+     */
+    public function blockUser(Request $request, $userId)
+    {
+        $data = $request->validate(['reason' => 'nullable|string|max:500']);
+        $reason = isset($data['reason']) ? trim((string) $data['reason']) : '';
+
+        try {
+            $user  = User::findOrFail($userId);
+            $admin = $request->user();
+
+            if ($user->is_admin) {
+                return response()->json(['message' => 'Een beheerder kan niet geblokkeerd worden.', 'error' => 'cannot_block_admin'], 422);
+            }
+            if ($admin && (int) $admin->id === (int) $user->id) {
+                return response()->json(['message' => 'Je kunt jezelf niet blokkeren.', 'error' => 'cannot_block_self'], 422);
+            }
+
+            if (! $user->isBlocked()) {
+                $user->forceFill([
+                    'blocked_at'     => now(),
+                    'blocked_reason' => $reason !== '' ? $reason : null,
+                    'blocked_by_id'  => $admin?->id,
+                ])->save();
+            } elseif ($reason !== '') {
+                // Al geblokkeerd: alleen de reden bijwerken.
+                $user->forceFill(['blocked_reason' => $reason])->save();
+            }
+
+            // Lopende sessies/tokens intrekken zodat de blokkade direct ingaat.
+            $user->tokens()->delete();
+
+            Log::info('[admin] gebruiker geblokkeerd', ['user_id' => $user->id, 'by' => $admin?->id, 'reason' => $user->blocked_reason]);
+
+            return response()->json([
+                'message' => "{$user->full_name} is geblokkeerd en overal uitgelogd.",
+                'blocked' => $user->fresh()->blockedState(),
+            ], 200);
+        } catch (\Illuminate\Database\Eloquent\ModelNotFoundException $e) {
+            return response()->json(['message' => 'Gebruiker niet gevonden', 'error' => 'not_found'], 404);
+        }
+    }
+
+    /** POST /api/v1/admin/users/{userId}/unblock — heft een handmatige blokkade op. */
+    public function unblockUser(Request $request, $userId)
+    {
+        try {
+            $user = User::findOrFail($userId);
+
+            if ($user->isBlocked()) {
+                $user->forceFill(['blocked_at' => null, 'blocked_reason' => null, 'blocked_by_id' => null])->save();
+                Log::info('[admin] gebruiker gedeblokkeerd', ['user_id' => $user->id, 'by' => $request->user()?->id]);
+            }
+
+            return response()->json([
+                'message' => "{$user->full_name} is gedeblokkeerd en kan weer inloggen.",
+                'blocked' => $user->fresh()->blockedState(),
             ], 200);
         } catch (\Illuminate\Database\Eloquent\ModelNotFoundException $e) {
             return response()->json(['message' => 'Gebruiker niet gevonden', 'error' => 'not_found'], 404);
