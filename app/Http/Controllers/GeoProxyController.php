@@ -182,7 +182,9 @@ class GeoProxyController extends Controller
         if ($resultaat === null) {
             $resultaat = $this->overpassUpstream($data['query']);
             if (empty($resultaat['error'])) {
-                Cache::put($sleutel, $resultaat, now()->addHours(12));
+                // OSM-wegen en terreinkenmerken veranderen langzaam, en de publieke Overpass is vaak traag
+                // (tot ±30 s voor een klein gebied): één keer per week per gebied is genoeg.
+                Cache::put($sleutel, $resultaat, now()->addDays(7));
             }
         } else {
             ApiUsageMeter::record('overpass', 'query', ['cache_hits' => 1]);
@@ -200,10 +202,17 @@ class GeoProxyController extends Controller
     /** @return array{elements: array, error?: string} */
     private function overpassUpstream(string $query): array
     {
+        // Totaalbudget onder de 60 s van nginx: de eerste instantie mag lang duren (Overpass is
+        // soms druk), het vangnet krijgt wat er over is.
+        $start = microtime(true);
         foreach (self::OVERPASS_ENDPOINTS as $endpoint) {
+            $over = 55 - (microtime(true) - $start);
+            if ($over < 5) {
+                break;
+            }
             try {
                 $res = ApiUsageMeter::measure('overpass', 'query', fn () => Http::withHeaders(['User-Agent' => self::USER_AGENT])
-                    ->timeout(25) // Overpass mag traag zijn
+                    ->timeout((int) min(40, $over))
                     ->asForm()
                     ->post($endpoint, ['data' => $query]));
 
