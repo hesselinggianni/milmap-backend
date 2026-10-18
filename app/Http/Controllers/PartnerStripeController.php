@@ -84,6 +84,7 @@ class PartnerStripeController extends Controller
             // ontbrekende capability, live/test-mismatch, …). De partner-pagina
             // is authenticated, dus de melding zichtbaar maken is veilig.
             $stripeMsg = $e->getMessage();
+            \App\Services\StripeErrors::record($e, 'partner.onboarding', ['partner_id' => $partner->id]);
             Log::error('[partner] Stripe-onboarding mislukt (Stripe API)', [
                 'partner' => $partner->id,
                 'type'    => get_class($e),

@@ -9,7 +9,7 @@ class ConnectBillingController extends Controller {
     }
     /** Validatie van factuurgegevens; dezelfde regels voor de checkout en het Connect-account. */
     private function detailRules(string $p = ''): array {
-        return [$p.'company_name'=>'required|string|max:190', $p.'email'=>'required|email|max:190',
+        return [$p.'company_name'=>'required|string|max:190', $p.'email'=>'required|email|max:190', $p.'vat_id'=>'nullable|string|max:32',
             $p.'address'=>'required|array:line1,line2,postal_code,city,country', $p.'address.line1'=>'required|string|max:190', $p.'address.line2'=>'nullable|string|max:190',
             $p.'address.postal_code'=>'required|string|max:30', $p.'address.city'=>'required|string|max:100', $p.'address.country'=>'required|string|size:2|regex:/^[A-Z]{2}$/'];
     }
@@ -41,9 +41,12 @@ class ConnectBillingController extends Controller {
         app(\App\Services\ConnectManagement::class)->audit($organization->id,'billing_details.updated','ConnectOrganization',$organization->id);
         return response()->json(['billing_details'=>$organization->billingProfile($r->user()->email)]);
     }
-    public function index(Request $r, ConnectOrganization $organization) {
+    public function index(Request $r, ConnectOrganization $organization, ConnectBilling $billing) {
         $this->manager($r,$organization);
-        return response()->json(ConnectOrder::where('organization_id',$organization->id)->with('invoices')->latest()->paginate(30));
+        $orders=ConnectOrder::where('organization_id',$organization->id)->with('invoices')->latest()->paginate(30);
+        // Een factuur die Stripe nog niet had afgerond, staat hier zodra Stripe dat heeft gedaan (de eerste bestellingen volstaan).
+        foreach (array_slice($orders->items(),0,5) as $order) $billing->refreshInvoices($order);
+        return response()->json($orders);
     }
     public function cancel(Request $r, ConnectOrganization $organization, ConnectOrder $order, ConnectBilling $billing) {
         $this->manager($r,$organization); abort_unless((int)$order->organization_id===(int)$organization->id,404);
@@ -57,7 +60,7 @@ class ConnectBillingController extends Controller {
             return response()->json(['order'=>app(\App\Services\ConnectTrial::class)->order($organization,$r->user()->id,$trial),'trial'=>true],201);
         }
         $data=$r->validate(['request_id'=>'required|uuid','seats'=>'required|integer|min:1|max:100000','term_months'=>'required|integer|in:1,6,12','auto_renew'=>'sometimes|boolean','payment_method'=>'required|in:direct,invoice','embedded'=>'sometimes|boolean','accepted'=>'accepted','expected_unit_monthly_cents'=>'required|integer|min:1','expected_total_incl_cents'=>'required|integer|min:1','expected_currency'=>'required|string|size:3','pending_addition_id'=>'sometimes|nullable|uuid',
-            'billing_details'=>'required|array:company_name,email,address']+$this->detailRules('billing_details.'));
+            'billing_details'=>'required|array:company_name,email,address,vat_id']+$this->detailRules('billing_details.'));
         $order=$billing->order($organization,$r->user()->id,$data);
         $secret=$billing->embeddedSecret($order);
         return response()->json(['order'=>$order,'checkout_url'=>$order->checkout_url]+($secret ? ['client_secret'=>$secret,'publishable_key'=>$billing->publishableKey()] : []),201);

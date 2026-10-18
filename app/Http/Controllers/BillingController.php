@@ -507,8 +507,10 @@ class BillingController extends Controller implements HasMiddleware
                 'stripe_error' => $e->getMessage(),
             ]);
 
+            \App\Services\StripeErrors::record($e, 'billing.guest_checkout', ['plan' => $request->plan, 'price_id' => $priceId]);
+
             return response()->json([
-                'message' => 'Afrekenen is op dit moment niet beschikbaar. Probeer het later opnieuw of neem contact op met support.',
+                'message' => 'Afrekenen via Stripe is op dit moment niet beschikbaar (Stripe-fout). Probeer het later opnieuw of neem contact op met support.',
             ], 502);
         }
 

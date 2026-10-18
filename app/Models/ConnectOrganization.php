@@ -38,6 +38,7 @@ class ConnectOrganization extends Model
     {
         $d = $this->billing_details ?: []; $a = $d['address'] ?? [];
         return ['saved' => ! empty($a), 'email_saved' => (bool) $this->billing_email, 'company_name' => ($d['company_name'] ?? null) ?: $this->name, 'email' => $this->billing_email ?: ($this->contact_email ?: (string) $fallbackEmail),
+            'vat_id' => $d['vat_id'] ?? null,
             'address' => ['line1' => $a['line1'] ?? '', 'line2' => $a['line2'] ?? '', 'postal_code' => $a['postal_code'] ?? '', 'city' => $a['city'] ?? '', 'country' => ($a['country'] ?? null) ?: 'NL']];
     }
     public function members() { return $this->hasMany(ConnectMember::class, 'organization_id'); }

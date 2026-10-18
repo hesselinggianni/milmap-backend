@@ -8,7 +8,7 @@ use Illuminate\Support\Str;
 use Stripe\StripeClient;
 use Tests\TestCase;
 class ConnectStripeFake extends StripeClient {
-    public array $calls=[]; public bool $restricted=false; public bool $failCustomerUpdate=false; public bool $failCheckout=false; public bool $failSendInvoice=false; public bool $denyFinalize=false; public bool $denySend=false;
+    public array $calls=[]; public bool $restricted=false; public bool $failCustomerUpdate=false; public bool $failCheckout=false; public bool $failSendInvoice=false; public bool $denyFinalize=false; public bool $denySend=false; public array $taxIds=[];
     public int $unitAmount=200; public array $subscriptionObjects=[]; public array $invoiceObjects=[]; public ?\Closure $checkoutCreated=null;
     public function __construct() {}
     public function __get($name) { return $this->endpoint($name); }
@@ -25,19 +25,22 @@ class ConnectStripeFake extends StripeClient {
         if($method==='taxRates.create')return (object)['id'=>'txr_vat'];
         if($method==='customers.update'&&$this->failCustomerUpdate)throw \Stripe\Exception\InvalidRequestException::factory('Invalid address',400);
         if($method==='checkout.sessions.create'&&$this->failCheckout)throw \Stripe\Exception\ApiConnectionException::factory('Could not connect');
+        if($method==='customers.allTaxIds')return (object)['data'=>$this->taxIds];
+        if($method==='customers.createTaxId'){$this->taxIds[]=(object)['type'=>$args[1]['type'],'value'=>$args[1]['value']];return end($this->taxIds);}
         if($method==='customers.create'||$method==='customers.update')return (object)['id'=>'cus_org'];
         if($method==='checkout.sessions.create'){$n=count(array_filter($this->calls,fn($c)=>$c[0]===$method));$session=(object)['id'=>'cs_connect'.($n>1?'_'.$n:''),'url'=>($args[0]['ui_mode']??null)==='embedded' ? null : 'https://checkout.stripe.com/test-connect','client_secret'=>'cs_secret_'.$n,'status'=>'open'];if($this->checkoutCreated)($this->checkoutCreated)($session);return $session;}
         if($method==='checkout.sessions.retrieve')return (object)['id'=>$args[0],'status'=>'open','client_secret'=>'cs_secret_retrieved'];
         if($method==='subscriptions.create') {
             $n=count(array_filter($this->calls,fn($c)=>$c[0]===$method));$id='sub_connect'.($n>1?'_'.$n:'');$invoiceId='in_first'.($n>1?'_'.$n:'');
             $recurring=$args[0]['items'][0]['price_data']['recurring'];$months=$recurring['interval']==='year' ? 12 : $recurring['interval_count'];
-            $invoice=(object)['id'=>$invoiceId,'subscription'=>$id,'status'=>$this->denyFinalize ? 'draft' : 'open','number'=>'INV-'.$n,'total'=>1200,'currency'=>'eur','hosted_invoice_url'=>'https://invoice.stripe.com/test','invoice_pdf'=>'https://files.stripe.com/test.pdf',
+            $invoice=(object)['id'=>$invoiceId,'subscription'=>$id,'status'=>$this->denyFinalize ? 'draft' : 'open','number'=>'INV-'.$n,'total'=>1200,'currency'=>'eur','hosted_invoice_url'=>$this->denyFinalize ? null : 'https://invoice.stripe.com/test','invoice_pdf'=>$this->denyFinalize ? null : 'https://files.stripe.com/test.pdf',
                 'lines'=>(object)['data'=>[(object)['type'=>'subscription','subscription'=>$id,'period'=>(object)['start'=>now()->timestamp,'end'=>now()->addMonths($months)->timestamp]]]]];
             $this->invoiceObjects[$invoiceId]=$invoice;
             return $this->subscriptionObjects[$id]=(object)['id'=>$id,'latest_invoice'=>$invoice,'metadata'=>(object)$args[0]['metadata']];
         }
         if($method==='subscriptions.retrieve')return $this->subscriptionObjects[$args[0]];
-        if(($method==='invoices.finalizeInvoice'&&$this->denyFinalize)||($method==='invoices.sendInvoice'&&$this->denySend))throw \Stripe\Exception\PermissionException::factory('The provided key does not have the required permissions',403,null,null,null,'more_permissions_required');
+        if(($method==='invoices.finalizeInvoice'&&$this->denyFinalize)||($method==='invoices.sendInvoice'&&$this->denySend))throw \Stripe\Exception\PermissionException::factory("Permission denied. The provided key 'rk_live_...7ed9' does not have the required permissions for this endpoint. Enabling Invoices Write ('invoice_write') permissions on this key would allow this request to continue.",403,null,null,null,'more_permissions_required');
+        if($method==='invoices.all')return (object)['data'=>array_values($this->invoiceObjects)];
         if($method==='invoices.finalizeInvoice'){$this->invoiceObjects[$args[0]]->status='open';return $this->invoiceObjects[$args[0]];}
         if($method==='invoices.sendInvoice'&&$this->failSendInvoice)throw \Stripe\Exception\ApiConnectionException::factory('Could not connect');
         if(in_array($method,['invoices.sendInvoice','invoices.retrieve'],true))return $this->invoiceObjects[$args[0]];
@@ -147,8 +150,9 @@ class ConnectBillingTest extends TestCase {
     public function test_a_failed_order_names_the_reason_code_without_leaking_provider_text(): void {
         $this->stripe->failCheckout=true; \Illuminate\Support\Facades\Log::spy();
         $res=$this->postJson($this->path().'/orders',$this->payload())->assertUnprocessable();
-        $this->assertStringContainsString('(Reden: ApiConnectionException)',$res->json('message'));
-        $this->assertStringNotContainsString('Could not connect',$res->getContent());
+        $this->assertStringContainsString('(Stripe-fout: ApiConnectionException)',$res->json('message'));
+        $this->assertStringNotContainsString('Could not connect',$res->getContent());$this->assertStringContainsString('Stripe gaf een fout',$res->json('message'));
+        $this->assertDatabaseHas('stripe_errors',['source'=>'connect.order','exception'=>'ApiConnectionException','handled'=>false]);
         \Illuminate\Support\Facades\Log::shouldHaveReceived('error')->withArgs(fn ($m,$ctx) => $m==='Connect-bestelling mislukt bij Stripe' && ($ctx['exception'] ?? null)===\Stripe\Exception\ApiConnectionException::class && str_contains($ctx['error'],'Could not connect'))->once();
     }
     public function test_integer_strings_do_not_break_an_idempotent_order_retry(): void {
@@ -158,7 +162,7 @@ class ConnectBillingTest extends TestCase {
         $this->assertDatabaseCount('connect_orders',1);
     }
     public function test_invoice_order_creates_payable_invoice_without_granting_capacity(): void {
-        $res=$this->postJson($this->path().'/orders',$this->payload('invoice'))->assertCreated()->assertJsonPath('order.invoices.0.status','open');
+        $res=$this->postJson($this->path().'/orders',$this->payload('invoice'))->assertCreated()->assertJsonPath('order.invoices.0.status','open')->assertJsonPath('order.invoice_emailed',true);
         $this->assertSame(2,$this->org->fresh()->seat_limit);$this->assertDatabaseCount('connect_order_invoices',1);
         $call=collect($this->stripe->calls)->first(fn($c)=>$c[0]==='subscriptions.create');
         $this->assertSame('send_invoice',$call[1][0]['collection_method']);$this->assertSame(14,$call[1][0]['days_until_due']);
@@ -173,11 +177,75 @@ class ConnectBillingTest extends TestCase {
         $this->assertSame(2,$this->org->fresh()->seat_limit);
         \Illuminate\Support\Facades\Log::shouldHaveReceived('warning')->withArgs(fn ($m,$ctx=[]) => str_contains($m,'ontbrekend Stripe-recht') && ($ctx['stripe_code'] ?? null)==='more_permissions_required')->once();
         $this->assertSame('awaiting_payment',ConnectOrder::findOrFail($res->json('order.id'))->status);
+        $this->assertDatabaseHas('stripe_errors',['source'=>'connect.invoice_finalize','handled'=>true,'stripe_code'=>'more_permissions_required','missing_permission'=>'invoice_write']);
     }
     public function test_an_invoice_order_survives_a_key_that_may_not_send_invoices(): void {
         $this->stripe->denySend=true;
-        $this->postJson($this->path().'/orders',$this->payload('invoice'))->assertCreated()->assertJsonPath('order.invoices.0.status','open');
+        $this->postJson($this->path().'/orders',$this->payload('invoice'))->assertCreated()->assertJsonPath('order.invoices.0.status','open')->assertJsonPath('order.invoice_emailed',false);
         $this->assertSame(1,collect($this->stripe->calls)->where(0,'invoices.sendInvoice')->count());
+    }
+    public function test_a_draft_invoice_is_visible_in_the_account_and_gets_its_link_once_stripe_finalizes_it(): void {
+        $this->stripe->denyFinalize=true;
+        $res=$this->postJson($this->path().'/orders',$this->payload('invoice'))->assertCreated()->assertJsonPath('order.invoice_emailed',false);
+        $orderId=$res->json('order.id');
+        $this->getJson($this->path().'/orders')->assertOk()->assertJsonPath('data.0.invoices.0.status','draft')->assertJsonPath('data.0.invoices.0.hosted_invoice_url',null);
+        $invoice=$this->stripe->invoiceObjects['in_first'];$invoice->status='open';$invoice->hosted_invoice_url='https://invoice.stripe.com/test';$invoice->invoice_pdf='https://files.stripe.com/test.pdf';
+        // Binnen een minuut vraagt Connect Stripe niet opnieuw.
+        $this->getJson($this->path().'/orders')->assertJsonPath('data.0.invoices.0.status','draft');
+        \Illuminate\Support\Facades\Cache::forget('connect-invoice-refresh:'.$orderId);
+        $this->getJson($this->path().'/orders')->assertOk()->assertJsonPath('data.0.invoices.0.status','open')->assertJsonPath('data.0.invoices.0.hosted_invoice_url','https://invoice.stripe.com/test')->assertJsonPath('data.0.invoices.0.invoice_pdf','https://files.stripe.com/test.pdf');
+        $this->assertDatabaseCount('connect_order_invoices',1);
+    }
+    private function orderIn(string $country,?string $vatId,int $expectedIncl,string $method='direct'): \Illuminate\Testing\TestResponse {
+        $p=$this->payload($method,12);$p['billing_details']['address']['country']=$country;if($vatId!==null)$p['billing_details']['vat_id']=$vatId;$p['expected_total_incl_cents']=$expectedIncl;
+        return $this->postJson($this->path().'/orders',$p);
+    }
+    public function test_a_business_in_another_eu_country_with_a_valid_vat_number_gets_reverse_charge(): void {
+        \Illuminate\Support\Facades\Http::fake(['*'=>\Illuminate\Support\Facades\Http::response(['valid'=>true,'name'=>'ACME GMBH'])]);
+        $res=$this->orderIn('DE','de 123.456-789',7200)->assertCreated();
+        $order=ConnectOrder::findOrFail($res->json('order.id'));
+        $this->assertSame([0,'none',0,7200],[$order->vat_percent,$order->vat_method,$order->vat_cents,$order->total_incl_cents]);
+        $this->assertSame('reverse',$this->customerCalls('create')[0][1][0]['tax_exempt']);
+        $this->assertSame([['type'=>'eu_vat','value'=>'DE123456789']],array_map(fn($t)=>(array)$t,$this->stripe->taxIds));
+        $item=collect($this->stripe->calls)->first(fn($c)=>$c[0]==='checkout.sessions.create')[1][0]['line_items'][0];
+        $this->assertSame(2400,$item['price_data']['unit_amount']);$this->assertArrayNotHasKey('tax_rates',$item);
+        $this->assertSame('DE123456789',$this->org->fresh()->billing_details['vat_id']);$this->assertTrue($this->org->fresh()->billing_details['vat_valid']);
+    }
+    public function test_the_same_country_without_a_vat_number_pays_dutch_vat(): void {
+        $res=$this->orderIn('DE',null,8712)->assertCreated();
+        $this->assertSame(21,ConnectOrder::findOrFail($res->json('order.id'))->vat_percent);$this->assertSame('none',$this->customerCalls('create')[0][1][0]['tax_exempt']);$this->assertSame([],$this->stripe->taxIds);
+    }
+    public function test_outside_the_eu_there_is_no_dutch_vat_and_the_customer_is_exempt(): void {
+        $res=$this->orderIn('US','12-3456789',7200)->assertCreated();
+        $order=ConnectOrder::findOrFail($res->json('order.id'));$this->assertSame([0,'none',7200],[$order->vat_percent,$order->vat_method,$order->total_incl_cents]);
+        $this->assertSame('exempt',$this->customerCalls('create')[0][1][0]['tax_exempt']);$this->assertSame([],$this->stripe->taxIds);
+    }
+    public function test_a_dutch_customer_pays_21_percent_and_an_optional_vat_number_goes_on_the_invoice(): void {
+        $res=$this->orderIn('NL','NL123456789B01',8712,'invoice')->assertCreated();
+        $this->assertSame(21,ConnectOrder::findOrFail($res->json('order.id'))->vat_percent);$this->assertSame('none',$this->customerCalls('create')[0][1][0]['tax_exempt']);
+        $this->assertSame('NL123456789B01',$this->stripe->taxIds[0]->value);
+    }
+    public function test_the_total_the_customer_saw_must_match_the_treatment_for_the_country(): void {
+        \Illuminate\Support\Facades\Http::fake(['*'=>\Illuminate\Support\Facades\Http::response(['valid'=>true,'name'=>'ACME'])]);
+        $this->orderIn('DE','DE123456789',8712)->assertConflict();
+        $this->assertDatabaseCount('connect_orders',0);
+    }
+    public function test_a_vat_number_that_cannot_be_checked_or_is_invalid_stops_the_order_instead_of_guessing(): void {
+        \Illuminate\Support\Facades\Http::fake(['*'=>\Illuminate\Support\Facades\Http::sequence()->push('',503)->push(['valid'=>false,'name'=>'---'])]);
+        $this->orderIn('FR','FR12345678901',7200)->assertUnprocessable()->assertJsonPath('message',fn($m)=>str_contains($m,'niet worden gecontroleerd'));
+        $this->orderIn('FR','DE123456789',7200)->assertUnprocessable()->assertJsonPath('message',fn($m)=>str_contains($m,'niet geldig'));
+        $this->orderIn('BE','BE0123456789',7200)->assertUnprocessable()->assertJsonPath('message',fn($m)=>str_contains($m,'niet geldig'));
+        $this->assertDatabaseCount('connect_orders',0);
+    }
+    public function test_the_checkout_asks_which_vat_applies_and_what_data_it_needs(): void {
+        \Illuminate\Support\Facades\Http::fake(['*'=>\Illuminate\Support\Facades\Http::response(['valid'=>true,'name'=>'ACME GMBH'])]);
+        $url=$this->path().'/vat';
+        $this->postJson($url,['country'=>'NL'])->assertOk()->assertJsonPath('treatment','nl')->assertJsonPath('percent',21)->assertJsonPath('eu',true)->assertJsonPath('needs_vat_id_for_reverse_charge',false);
+        $this->postJson($url,['country'=>'de'])->assertOk()->assertJsonPath('treatment','eu_consumer')->assertJsonPath('percent',21)->assertJsonPath('prefix','DE')->assertJsonPath('needs_vat_id_for_reverse_charge',true);
+        $this->postJson($url,['country'=>'DE','vat_id'=>'DE 123456789'])->assertOk()->assertJsonPath('treatment','reverse_charge')->assertJsonPath('percent',0)->assertJsonPath('valid',true)->assertJsonPath('name','ACME GMBH')->assertJsonPath('vat_id','DE123456789');
+        $this->postJson($url,['country'=>'DE','vat_id'=>'BE0123456789'])->assertOk()->assertJsonPath('treatment','eu_consumer')->assertJsonPath('reason','format')->assertJsonPath('message','Een btw-nummer uit dit land begint met DE.');
+        $this->postJson($url,['country'=>'US','vat_id'=>'123'])->assertOk()->assertJsonPath('treatment','outside_eu')->assertJsonPath('percent',0)->assertJsonPath('eu',false);
+        $this->postJson($url,['country'=>'Nederland'])->assertUnprocessable();
     }
     public function test_checkout_completion_is_not_payment_and_paid_invoice_is_idempotent(): void {
         $res=$this->postJson($this->path().'/orders',$this->payload())->assertCreated();$order=ConnectOrder::findOrFail($res->json('order.id'));
@@ -339,7 +407,7 @@ class ConnectBillingTest extends TestCase {
             ->assertJsonPath('billing_details.email','owner@example.org')->assertJsonPath('billing_details.address.line1','')->assertJsonPath('billing_details.address.country','NL');
         $this->postJson($this->path().'/orders',$this->payload())->assertCreated();
         $org=$this->org->fresh();$this->assertSame('billing@example.org',$org->billing_email);
-        $this->assertSame(['company_name'=>'Workspace','address'=>['line1'=>'Street 1','line2'=>null,'postal_code'=>'1000AA','city'=>'Amsterdam','country'=>'NL']],$org->billing_details);
+        $this->assertSame(['company_name'=>'Workspace','address'=>['line1'=>'Street 1','line2'=>null,'postal_code'=>'1000AA','city'=>'Amsterdam','country'=>'NL'],'vat_id'=>null,'vat_valid'=>false],$org->billing_details);
         $this->assertStringNotContainsString('Street 1',DB::table('connect_organizations')->where('id',$org->id)->value('billing_details'));
         $this->getJson($this->path().'/catalog')->assertOk()->assertJsonPath('billing_details.saved',true)->assertJsonPath('billing_details.email_saved',true)->assertJsonPath('billing_details.email','billing@example.org')
             ->assertJsonPath('billing_details.address.line1','Street 1')->assertJsonPath('billing_details.address.postal_code','1000AA')->assertJsonPath('billing_details.address.city','Amsterdam');
@@ -361,7 +429,7 @@ class ConnectBillingTest extends TestCase {
         $this->putJson($this->path().'/details',$this->details())->assertOk()->assertJsonPath('billing_details.address.city','Rotterdam')->assertJsonPath('billing_details.address.line2','t.a.v. inkoop')->assertJsonPath('billing_details.email','facturen@example.org');
         $this->putJson($this->path().'/details',$changed['billing_details'])->assertOk();
         $updates=$this->customerCalls('update');$this->assertCount(3,$updates);
-        $this->assertSame(['name'=>'Workspace BV','email'=>'facturen@example.org','address'=>['line1'=>'Kade 2','line2'=>'t.a.v. inkoop','postal_code'=>'3011AA','city'=>'Rotterdam','country'=>'BE']],$updates[1][1][1]);
+        $this->assertSame(['name'=>'Workspace BV','email'=>'facturen@example.org','address'=>['line1'=>'Kade 2','line2'=>'t.a.v. inkoop','postal_code'=>'3011AA','city'=>'Rotterdam','country'=>'BE'],'tax_exempt'=>'none'],$updates[1][1][1]);
         $this->assertSame('',$updates[2][1][1]['address']['line2'],'een leeg adresregel 2 wordt bij de klant gewist');
         $this->assertCount(3,array_unique(array_map(fn($c)=>$c[1][2]['idempotency_key'],$updates)));
         // Oudere Connect-versies sturen alleen billing_email naar /account: ook dan volgt de klant.
@@ -400,8 +468,11 @@ class ConnectBillingTest extends TestCase {
     public function test_a_refused_customer_update_is_a_neutral_error_and_changes_nothing(): void {
         $this->postJson($this->path().'/orders',$this->payload())->assertCreated();
         $this->stripe->failCustomerUpdate=true;
-        $res=$this->putJson($this->path().'/details',$this->details())->assertUnprocessable()->assertJsonPath('message','De factuurgegevens konden niet worden bijgewerkt. Controleer je gegevens en probeer het opnieuw.');
-        $this->assertStringNotContainsString('Stripe',$res->getContent());
+        $res=$this->putJson($this->path().'/details',$this->details())->assertUnprocessable();
+        // De melding zegt duidelijk dat het een Stripe-fout is, maar herhaalt de tekst van Stripe niet.
+        $this->assertStringContainsString('Stripe gaf een fout',$res->json('message'));$this->assertStringContainsString('(Stripe-fout: InvalidRequestException)',$res->json('message'));
+        $this->assertStringNotContainsString('Invalid address',$res->getContent());
+        $this->assertDatabaseHas('stripe_errors',['source'=>'connect.billing_details','exception'=>'InvalidRequestException','handled'=>false]);
         $org=$this->org->fresh();$this->assertSame('billing@example.org',$org->billing_email);$this->assertSame('Amsterdam',$org->billing_details['address']['city']);
         $this->stripe->failCustomerUpdate=false;
         $this->putJson($this->path().'/details',$this->details())->assertOk();

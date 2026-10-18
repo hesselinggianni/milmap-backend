@@ -85,6 +85,7 @@ class ConnectBilling {
                 'inclusive'=>$inclusive,'country'=>'NL','jurisdiction'=>'NL','tax_type'=>'vat'],['idempotency_key'=>'connect-vat-'.$key]);
         } catch (\Stripe\Exception\ApiErrorException $e) {
             Log::warning('Connect: btw-tarief kon niet in Stripe worden aangemaakt; btw wordt in de prijs verwerkt',['error'=>$e->getMessage()]);
+            StripeErrors::record($e,'connect.tax_rate',['percent'=>$percent,'inclusive'=>$inclusive],true);
             Cache::put('connect_vat_tax_rate_unavailable',true,now()->addMinutes(10));
             return null;
         }
@@ -99,11 +100,19 @@ class ConnectBilling {
             $error=$e->getError(); $code=$e->getStripeCode() ?: ($error?->code ?? null) ?: (new \ReflectionClass($e))->getShortName(); $param=$error?->param ?? null;
             \Log::error('Connect-bestelling mislukt bij Stripe',['organization'=>$org->id,'exception'=>get_class($e),'http_status'=>$e->getHttpStatus(),'stripe_code'=>$e->getStripeCode(),'stripe_type'=>$error?->type ?? null,
                 'stripe_param'=>$param,'stripe_request_id'=>$e->getRequestId(),'error'=>$e->getMessage()]);
-            abort(422,'De bestelling kon niet worden verwerkt. Controleer je gegevens en probeer het opnieuw. (Reden: '.$code.($param ? ' · '.$param : '').')');
+            StripeErrors::record($e,'connect.order',['organization_id'=>$org->id,'request_id'=>$data['request_id'] ?? null,'payment_method'=>$data['payment_method'] ?? null]);
+            abort(422,'De bestelling kon niet worden verwerkt: Stripe gaf een fout. Controleer je gegevens en probeer het opnieuw. (Stripe-fout: '.$code.($param ? ' · '.$param : '').')');
         }
     }
     protected function placeOrder(ConnectOrganization $org, int $actorId, array $data): ConnectOrder {
         $quote=$this->quote($org);
+        // Btw volgt het land van de klant (en een geldig EU-btw-nummer); strikt: kan het btw-nummer niet worden gecontroleerd, dan geen gok maar een foutmelding.
+        $treatment=$this->treatmentFor($data['billing_details']['address']['country'],$data['billing_details']['vat_id'] ?? null,true);
+        if ($treatment['percent']!==$quote['vat_percent']) {
+            // Zonder Nederlandse btw (verlegd of buiten de EU): geen btw-tarief en geen btw in de prijs.
+            abort_if($quote['prices_include_vat'],422,'Voor deze prijs is een bestelling zonder Nederlandse btw niet beschikbaar. Neem contact op met MilMap.');
+            $quote=['vat_percent'=>$treatment['percent'],'vat_method'=>'none','tax_rate_id'=>null]+$quote;
+        }
         // Na de proefperiode (keuzemuur): wie minder licenties kiest dan er in gebruik zijn, moet eerst gebruikers of apparaten verwijderen.
         $wall=$org->needsPlan();
         if ($wall) { $used=$org->usedLicenses(); abort_if((int)$data['seats']<$used,422,"Je gebruikt nu {$used} licenties. Bestel er minimaal {$used} of verwijder eerst gebruikers of apparaten."); }
@@ -115,10 +124,10 @@ class ConnectBilling {
             : self::amounts($quote['unit_monthly_cents'],(int)$data['term_months'],(int)$data['seats'],$quote['prices_include_vat'],$quote['vat_method'],$quote['vat_percent']);
         // Wat de klant zag (totaal incl. btw) moet gelijk zijn aan wat Stripe afrekent.
         abort_if((int)($data['expected_total_incl_cents'] ?? 0)!==$amounts['incl_cents'],409,'Het totaalbedrag is gewijzigd. Ververs de checkout en controleer het nieuwe bedrag.');
-        $order=DB::transaction(function () use ($org,$actorId,$data,$quote,$amounts,$coterm) {
+        $order=DB::transaction(function () use ($org,$actorId,$data,$quote,$amounts,$coterm,$treatment) {
             $locked=ConnectOrganization::whereKey($org->id)->lockForUpdate()->firstOrFail();
             // De ingevulde factuurgegevens worden ook de gegevens van het account (volgende checkout en Connect-account).
-            $this->storeDetails($locked,$data['billing_details']);
+            $this->storeDetails($locked,$data['billing_details'],$treatment['treatment']==='reverse_charge');
             $existing=ConnectOrder::where('organization_id',$org->id)->where('request_id',$data['request_id'])->first();
             if ($existing) {
                 abort_unless($existing->seats===(int)$data['seats'] && $existing->term_months===(int)$data['term_months'] && $existing->payment_method===$data['payment_method'] && (bool)$existing->auto_renew===(bool)($data['auto_renew'] ?? true),409,'Deze bestelreferentie hoort bij een andere bestelling.');
@@ -142,16 +151,17 @@ class ConnectBilling {
         });
         $org->refresh();
         if ($order->stripe_checkout_id || ($order->stripe_subscription_id && in_array($order->status,['paid','cancelled'],true) && $order->invoices()->exists())) return $order->load('invoices');
-        $stripe=$this->stripe();
+        $stripe=$this->stripe(); $emailed=false;
         // A stable idempotency key also protects retries after Stripe accepted
         // a request but the network/DB write failed before the response arrived.
         // Parallel orders must share one Stripe customer, including when its first creation is still in flight.
         $org=DB::transaction(function () use ($org,$stripe) {
             $locked=ConnectOrganization::whereKey($org->id)->lockForUpdate()->firstOrFail();
             if (!$locked->stripe_customer_id) {
-                $payload=$this->customerPayload($locked); $hash=hash('sha256',json_encode($payload));
+                $payload=$this->customerPayload($locked); $hash=$this->customerHash($locked,$payload);
                 $customer=$stripe->customers->create($payload+['metadata'=>['connect_organization_id'=>(string)$locked->id]],['idempotency_key'=>'connect-customer-'.$locked->id.'-'.substr($hash,0,20)]);
                 $locked->forceFill(['stripe_customer_id'=>$customer->id,'stripe_customer_details_hash'=>$hash])->save();
+                $this->syncTaxId($stripe,$locked);
             } else $this->syncCustomer($locked,$stripe);
             return $locked;
         });
@@ -204,13 +214,39 @@ class ConnectBilling {
             $invoice=$subscription->latest_invoice;
             if (is_string($invoice)) $invoice=$stripe->invoices->retrieve($invoice,[]);
             if ($invoice->status==='draft') $invoice=$this->unlessPermissionDenied($order,$invoice,'afgerond',fn () => $stripe->invoices->finalizeInvoice($invoice->id,[],['idempotency_key'=>'connect-finalize-'.$invoice->id])) ?? $invoice;
-            if ($invoice->status==='open') $invoice=$this->unlessPermissionDenied($order,$invoice,'verstuurd',fn () => $stripe->invoices->sendInvoice($invoice->id,[],['idempotency_key'=>'connect-send-'.$invoice->id])) ?? $invoice;
+            if ($invoice->status==='open') {
+                $sent=$this->unlessPermissionDenied($order,$invoice,'verstuurd',fn () => $stripe->invoices->sendInvoice($invoice->id,[],['idempotency_key'=>'connect-send-'.$invoice->id]));
+                $emailed=$sent!==null; $invoice=$sent ?? $invoice;
+            }
             $this->recordInvoice($order,$invoice);
             // Keuzemuur + factuur: direct toegang tot de factuur betaald is (de echte licentie komt bij invoice.paid).
             if ($wall && ($invoice->status ?? '')!=='paid') $this->grantGrace($order);
         }
         app(ConnectManagement::class)->audit($org->id,'order.created','ConnectOrder',$order->id,['seats'=>$order->seats,'term_months'=>$order->term_months,'payment_method'=>$order->payment_method]);
-        return $order->fresh()->load('invoices');
+        // Alleen als Stripe de factuur ook echt mailde, mag de checkout dat tegen de klant zeggen.
+        return $order->fresh()->load('invoices')->setAttribute('invoice_emailed',$emailed);
+    }
+    /**
+     * Status, link en PDF van de facturen van een factuurbestelling bij Stripe verversen, zodat de klant de factuur in Connect ziet
+     * zodra Stripe die heeft afgerond (een concept wordt na ongeveer een uur vanzelf definitief) ook als de webhook niet aankwam.
+     * Hoogstens één keer per minuut per bestelling; een fout laat de lijst ongemoeid.
+     */
+    public function refreshInvoices(ConnectOrder $order): void {
+        if ($order->payment_method!=='invoice' || !$order->stripe_subscription_id) return;
+        $unfinished=$order->invoices->filter(fn ($i) => in_array($i->status,['draft','open'],true) && !$i->hosted_invoice_url);
+        if ($order->invoices->isNotEmpty() && $unfinished->isEmpty()) return;
+        if (!Cache::add('connect-invoice-refresh:'.$order->id,1,now()->addMinute())) return;
+        try {
+            $stripe=$this->stripe();
+            $invoices=$unfinished->isNotEmpty()
+                ? $unfinished->map(fn ($i) => $stripe->invoices->retrieve($i->stripe_invoice_id,[]))->all()
+                : $stripe->invoices->all(['subscription'=>$order->stripe_subscription_id,'limit'=>5])->data;
+            foreach ($invoices as $invoice) $this->recordInvoice($order,$invoice);
+        } catch (\Throwable $e) {
+            Log::warning('Connect: facturen konden niet bij Stripe worden ververst',['order'=>$order->id,'error'=>$e->getMessage()]);
+            if ($e instanceof \Stripe\Exception\ApiErrorException) StripeErrors::record($e,'connect.invoice_refresh',['order_id'=>$order->id],true);
+        }
+        $order->load('invoices');
     }
     /**
      * Een Stripe-sleutel zonder recht om facturen af te ronden of te versturen laat de bestelling niet mislukken: het abonnement en de
@@ -221,6 +257,7 @@ class ConnectBilling {
             return $call();
         } catch (\Stripe\Exception\ApiErrorException $e) {
             if (!$e instanceof \Stripe\Exception\PermissionException && $e->getStripeCode()!=='more_permissions_required') throw $e;
+            StripeErrors::record($e,'connect.invoice_'.($step==='afgerond' ? 'finalize' : 'send'),['order_id'=>$order->id,'stripe_invoice'=>$invoice->id],true);
             Log::warning("Connect: factuur kon door een ontbrekend Stripe-recht niet worden {$step}; de factuur staat in Stripe en moet daar worden afgerond, verstuurd of op betaald gezet",
                 ['order'=>$order->id,'stripe_invoice'=>$invoice->id,'stripe_code'=>$e->getStripeCode(),'stripe_request_id'=>$e->getRequestId(),'error'=>$e->getMessage()]);
             return null;
@@ -264,34 +301,42 @@ class ConnectBilling {
      */
     public function updateDetails(ConnectOrganization $org, array $details): ConnectOrganization {
         try {
-            $locked=DB::transaction(function () use ($org,$details) {
+            // Het btw-nummer controleren (VIES) gebeurt voordat de organisatie wordt vergrendeld.
+            // Oudere clients sturen maar een deel van de gegevens: wat ontbreekt, blijft zoals opgeslagen.
+            $current=$org->billing_details ?: [];
+            $reverse=$this->treatmentFor($details['address']['country'] ?? ($current['address']['country'] ?? 'NL'),array_key_exists('vat_id',$details) ? $details['vat_id'] : ($current['vat_id'] ?? null))['treatment']==='reverse_charge';
+            $locked=DB::transaction(function () use ($org,$details,$reverse) {
                 $locked=ConnectOrganization::whereKey($org->id)->lockForUpdate()->firstOrFail();
-                $this->storeDetails($locked,$details);
+                $this->storeDetails($locked,$details,$reverse);
                 $this->syncCustomer($locked);
                 return $locked;
             });
         } catch (\Stripe\Exception\ApiErrorException $e) {
             Log::error('Connect-factuurgegevens konden niet naar Stripe',['organization'=>$org->id,'error'=>$e->getMessage()]);
-            abort(422,'De factuurgegevens konden niet worden bijgewerkt. Controleer je gegevens en probeer het opnieuw.');
+            StripeErrors::record($e,'connect.billing_details',['organization_id'=>$org->id]);
+            abort(422,'De factuurgegevens konden niet worden bijgewerkt: Stripe gaf een fout. Controleer je gegevens en probeer het opnieuw. (Stripe-fout: '.($e->getStripeCode() ?: (new \ReflectionClass($e))->getShortName()).')');
         }
         $org->setRawAttributes($locked->getAttributes(),true);
         return $org;
     }
     /** Ingevulde factuurgegevens (ook gedeeltelijk) op de organisatie zetten; het e-mailadres staat in billing_email. */
-    protected function storeDetails(ConnectOrganization $org, array $details): void {
+    protected function storeDetails(ConnectOrganization $org, array $details, bool $vatValid = false): void {
         $clean=fn ($v) => ($v=trim((string)$v))==='' ? null : $v;
         $current=$org->billing_details ?: [];
         $company=array_key_exists('company_name',$details) ? $clean($details['company_name']) : ($current['company_name'] ?? null);
         $a=$details['address'] ?? null;
         $address=is_array($a) ? ['line1'=>$clean($a['line1'] ?? ''),'line2'=>$clean($a['line2'] ?? ''),'postal_code'=>$clean($a['postal_code'] ?? ''),'city'=>$clean($a['city'] ?? ''),'country'=>($c=$clean($a['country'] ?? ''))===null ? null : strtoupper($c)] : ($current['address'] ?? null);
+        $vatId=array_key_exists('vat_id',$details) ? $clean(ConnectVat::normalize($details['vat_id'])) : ($current['vat_id'] ?? null);
         $org->forceFill(['billing_email'=>array_key_exists('email',$details) ? $clean($details['email']) : $org->billing_email,
-            'billing_details'=>$company===null && $address===null ? null : ['company_name'=>$company,'address'=>$address]])->save();
+            'billing_details'=>$company===null && $address===null ? null : ['company_name'=>$company,'address'=>$address,'vat_id'=>$vatId,'vat_valid'=>$vatId!==null && $vatValid]])->save();
     }
     /** Wat de Stripe-klant krijgt: alleen opgeslagen velden, zodat niets bij Stripe wordt leeggemaakt dat hier nooit is ingevuld. */
     protected function customerPayload(ConnectOrganization $org): array {
         $d=$org->billing_details ?: []; $a=$d['address'] ?? null;
         return array_filter(['name'=>$d['company_name'] ?? null,'email'=>$org->billing_email,
-            'address'=>$a ? ['line1'=>$a['line1'],'line2'=>$a['line2'] ?? '','postal_code'=>$a['postal_code'],'city'=>$a['city'],'country'=>$a['country']] : null],fn ($v) => $v!==null && $v!=='');
+            'address'=>$a ? ['line1'=>$a['line1'],'line2'=>$a['line2'] ?? '','postal_code'=>$a['postal_code'],'city'=>$a['city'],'country'=>$a['country']] : null,
+            // Btw-verlegd (EU-bedrijf met geldig btw-nummer) en buiten de EU: Stripe berekent bij deze klant geen btw.
+            'tax_exempt'=>$a ? ConnectVat::treatment($a['country'],(bool)($d['vat_valid'] ?? false),$this->vatPercent())['tax_exempt'] : null],fn ($v) => $v!==null && $v!=='');
     }
     /**
      * Stripe-klant alleen bijwerken als de gegevens afwijken van wat er laatst naartoe is gestuurd (hash op de organisatie).
@@ -301,10 +346,54 @@ class ConnectBilling {
     protected function syncCustomer(ConnectOrganization $org, ?StripeClient $stripe = null): void {
         if (!$org->stripe_customer_id) return;
         $payload=$this->customerPayload($org); if (!$payload) return;
-        $hash=hash('sha256',json_encode($payload));
+        $hash=$this->customerHash($org,$payload);
         if (hash_equals((string)$org->stripe_customer_details_hash,$hash)) return;
-        ($stripe ?? $this->stripe())->customers->update($org->stripe_customer_id,$payload,['idempotency_key'=>'connect-customer-sync-'.$org->id.'-'.Str::uuid()]);
+        $stripe??=$this->stripe();
+        $stripe->customers->update($org->stripe_customer_id,$payload,['idempotency_key'=>'connect-customer-sync-'.$org->id.'-'.Str::uuid()]);
+        $this->syncTaxId($stripe,$org);
         $org->forceFill(['stripe_customer_details_hash'=>$hash])->save();
+    }
+    /** Het btw-nummer hoort bij de gegevens die naar Stripe gaan: een wijziging daarvan moet de klant opnieuw synchroniseren. */
+    private function customerHash(ConnectOrganization $org, array $payload): string {
+        return hash('sha256',json_encode($payload+['vat_tax_id'=>$this->taxIdFor($org)]));
+    }
+    /** Alleen een EU-btw-nummer dat op de factuur hoort: NL altijd (vorm gecontroleerd), een ander EU-land als VIES het geldig vond. */
+    private function taxIdFor(ConnectOrganization $org): ?string {
+        $d=$org->billing_details ?: []; $country=strtoupper((string)($d['address']['country'] ?? '')); $vatId=$d['vat_id'] ?? null;
+        return $vatId && ConnectVat::isEu($country) && ($country==='NL' || ($d['vat_valid'] ?? false)) ? $vatId : null;
+    }
+    /** Zet het btw-nummer als belasting-ID bij de Stripe-klant, zodat het op de factuur staat (bij btw-verlegging verplicht). */
+    protected function syncTaxId(StripeClient $stripe, ConnectOrganization $org): void {
+        $vatId=$this->taxIdFor($org); if (!$vatId || !$org->stripe_customer_id) return;
+        $known=collect($stripe->customers->allTaxIds($org->stripe_customer_id,['limit'=>20])->data)->contains(fn ($t) => strtoupper((string)$t->value)===$vatId);
+        if ($known) return;
+        try {
+            $stripe->customers->createTaxId($org->stripe_customer_id,['type'=>'eu_vat','value'=>$vatId]);
+        } catch (\Stripe\Exception\InvalidRequestException $e) {
+            // Bij btw-verlegging is het btw-nummer op de factuur verplicht; bij een Nederlands nummer is het een extra.
+            if ($org->billing_details['vat_valid'] ?? false) throw $e;
+            StripeErrors::record($e,'connect.tax_id',['organization_id'=>$org->id],true);
+        }
+    }
+    /**
+     * Btw-behandeling van een klant: land plus (EU-)btw-nummer, volgens ConnectVat. $strict (bij bestellen): een nummer dat niet te controleren
+     * of niet geldig is, geeft een foutmelding in plaats van een gok.
+     * @return array{treatment:string,percent:int,label:string,tax_exempt:string,valid:?bool,name:?string,reason:?string,vat_id:?string}
+     */
+    public function treatmentFor(string $country, ?string $vatId, bool $strict = false): array {
+        $country=strtoupper($country); $vatId=ConnectVat::normalize($vatId); $valid=null; $name=null; $reason=null;
+        if ($vatId!=='') {
+            if (!ConnectVat::isEu($country)) $reason='outside_eu';
+            elseif (!ConnectVat::wellFormed($country,$vatId)) { $valid=false; $reason='format'; }
+            elseif ($country==='NL') $valid=true; // binnenlands heeft het nummer geen invloed op de btw: de vorm volstaat
+            else {
+                $check=app(ConnectVat::class)->check($country,$vatId); $valid=$check['valid']; $name=$check['name'];
+                $reason=$valid===null ? 'unavailable' : ($valid ? null : 'invalid');
+            }
+        }
+        abort_if($strict && $reason==='unavailable',422,'Het btw-nummer kon nu niet worden gecontroleerd. Probeer het over een paar minuten opnieuw, of laat het leeg voor Nederlandse btw.');
+        abort_if($strict && in_array($reason,['format','invalid'],true),422,'Het btw-nummer is niet geldig. Controleer het of laat het leeg.');
+        return ConnectVat::treatment($country,$valid===true && $country!=='NL',$this->vatPercent())+['valid'=>$valid,'name'=>$name,'reason'=>$reason,'vat_id'=>$vatId!=='' ? $vatId : null];
     }
     /** Eigen Stripe-product per klant (custom abonnement), eenmalig via de API aangemaakt. */
     protected function productFor(ConnectOrganization $org, string $fallback): string {
@@ -315,6 +404,7 @@ class ConnectBilling {
         } catch (\Stripe\Exception\PermissionException $e) {
             // Sleutel zonder 'product_write': bestellen moet blijven werken, dan onder het product van de seatprijs.
             Log::warning('Connect: eigen Stripe-product kon niet worden aangemaakt; seatproduct gebruikt',['organization'=>$org->id,'error'=>$e->getMessage()]);
+            StripeErrors::record($e,'connect.product',['organization_id'=>$org->id],true);
             return $fallback;
         }
         $org->forceFill(['stripe_product_id'=>$product->id])->save();

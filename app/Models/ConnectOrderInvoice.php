@@ -4,4 +4,5 @@ use Illuminate\Database\Eloquent\Model;
 class ConnectOrderInvoice extends Model {
     protected $guarded = ['id'];
     protected $casts = ['total_cents'=>'integer','period_start'=>'datetime','period_end'=>'datetime','paid_at'=>'datetime'];
+    public function order() { return $this->belongsTo(ConnectOrder::class,'order_id'); }
 }

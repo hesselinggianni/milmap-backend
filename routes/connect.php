@@ -31,6 +31,8 @@ Route::prefix('v1/connect')->group(function () {
         Route::get('access', [ConnectController::class, 'access']);
         Route::get('organizations/{organization}/billing/catalog', [\App\Http\Controllers\ConnectBillingController::class, 'catalog']);
         Route::put('organizations/{organization}/billing/details', [\App\Http\Controllers\ConnectBillingController::class, 'updateDetails'])->middleware('throttle:20,1');
+        // Btw-behandeling van de klant (land + optioneel btw-nummer, gecontroleerd bij de EU) voor de checkout.
+        Route::post('organizations/{organization}/billing/vat', [\App\Http\Controllers\ConnectVatController::class, 'check'])->middleware('throttle:30,1');
         Route::get('organizations/{organization}/billing/orders', [\App\Http\Controllers\ConnectBillingController::class, 'index']);
         Route::post('organizations/{organization}/billing/orders', [\App\Http\Controllers\ConnectBillingController::class, 'store'])->middleware('throttle:10,1');
         Route::post('organizations/{organization}/billing/orders/{order}/cancel', [\App\Http\Controllers\ConnectBillingController::class, 'cancel'])->middleware('throttle:10,1');
