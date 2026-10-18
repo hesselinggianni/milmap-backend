@@ -232,6 +232,23 @@ Route::prefix('v1')->middleware(['api'])->group(function () {
         ->withoutMiddleware('throttle:api')
         ->middleware('throttle:600,1');
 
+    // PDOK/Kadaster-tegels (BRT-achtergrondkaart + TOPraster) — cachende proxy,
+    // zie PdokTileController. Dit is een BASISKAART (tientallen tegels per pan)
+    // en een school met 400 iPads deelt één NAT-IP: daarom een véél ruimere
+    // per-IP-throttle dan de overlay-proxy's hierboven. Cache-hits zijn goedkoop;
+    // het dekkingsgebied + zoombereik in de controller begrenzen wat er ooit
+    // naar PDOK kan gaan.
+    Route::get('/tiles/top50-preview', [\App\Http\Controllers\Top50PreviewController::class, 'show'])
+        ->withoutMiddleware('throttle:api')
+        ->middleware('throttle:600,1');
+
+    Route::get('/tiles/pdok/{layer}/{z}/{x}/{y}', [\App\Http\Controllers\PdokTileController::class, 'show'])
+        ->whereIn('layer', array_keys(\App\Http\Controllers\PdokTileController::LAYERS))
+        // Begrensde cijfers (geen TypeError/500 bij absurd grote waarden).
+        ->where(['z' => '[0-9]{1,2}', 'x' => '[0-9]{1,8}', 'y' => '[0-9]{1,8}'])
+        ->withoutMiddleware('throttle:api')
+        ->middleware('throttle:30000,1');
+
     // Cachende proxy voor publieke OSM-diensten (Nominatim, Overpass). Deze
     // werden rechtstreeks vanuit de app aangeroepen, waardoor de POSITIE van de
     // gebruiker plus zijn IP naar een derde partij ging — zie GeoProxyController.

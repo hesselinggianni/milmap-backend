@@ -45,6 +45,38 @@ return [
         'gebco_base' => env('GEBCO_WMS_BASE', 'https://www.gebco.net/data_and_products/gebco_web_services/web_map_service/mapserv'),
     ],
 
+    // PDOK/Kadaster-kaarttegels op onze eigen server (PdokTileController,
+    // tiles:warm-pdok). PDOK vraagt afnemers die hun webservices koppelen om een
+    // Referer mee te sturen (PDC 5.2); gaat mee met elke upstream-call.
+    'pdok' => [
+        'referer' => env('PDOK_REFERER', 'https://milmap.nl'),
+
+        // Tegels worden als WebP opgeslagen (App\Support\TileWebp). Kwaliteit
+        // 1–99 = lossy, 100 = lossless. Kaarttegels met tekst/lijnen: ≥ 85.
+        'webp_quality' => (int) env('PDOK_WEBP_QUALITY', 90),
+
+        // Beveiliging van de lazy-fetch (zie PdokTileController::show): maximaal zoveel
+        // échte upstream-aanvragen per minuut, en geen nieuwe tegels bewaren onder
+        // zoveel GB vrije schijfruimte.
+        'upstream_per_minute' => (int) env('PDOK_UPSTREAM_PER_MINUTE', 1200),
+        'min_free_gb'         => (float) env('PDOK_MIN_FREE_GB', 3),
+
+        'cwebp'        => env('PDOK_CWEBP_BIN', 'cwebp'),
+
+        // De "kloon": wat `php artisan tiles:warm-pdok` zonder argumenten voor
+        // heel Nederland binnenhaalt. Alleen de zoomniveaus die de app ook echt
+        // opvraagt (even niveaus door de even-only tegelrasters in
+        // baseLayers.js). TOP50 heeft een eigen permanente piramide, gebouwd
+        // uit de landelijke GeoTIFF-download door scripts/build-top50.py.
+        // top25 z16 (±1,1 mln tegels) bewust niet: dat vult de proxy lazy —
+        // `--layer=top25 --zoom=16` haalt 'm alsnog volledig binnen.
+        'clone' => [
+            'brt'   => [0, 2, 4, 6, 8, 10, 12, 14],
+            'top25' => [14],
+            // TOP50 is generated offline by scripts/build-top50.py, never WMS-warmed.
+        ],
+    ],
+
     'slack' => [
         'notifications' => [
             'bot_user_oauth_token' => env('SLACK_BOT_USER_OAUTH_TOKEN'),

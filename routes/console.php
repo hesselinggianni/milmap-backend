@@ -17,6 +17,17 @@ Schedule::command('tiles:prune-terrain')->dailyAt('04:10');
 // StaticMapController) — andere map, dus los commando, zelfde ritme.
 Schedule::command('tiles:prune-static')->dailyAt('04:20');
 
+// PDOK-kaarttegels op onze eigen server (zie PdokTileController): dagelijks
+// verlopen tegels opruimen en twee keer per maand de "kloon" (heel NL, zie
+// config services.pdok.clone) aanvullen — alleen tegels ouder dan de TTL worden
+// opnieuw opgehaald, dus de BRT-updates (±5×/jaar) sijpelen vanzelf door.
+Schedule::command('tiles:prune-pdok')->dailyAt('04:30');
+Schedule::command('tiles:warm-pdok')
+    ->twiceMonthly(1, 15, '04:45')
+    ->withoutOverlapping()
+    ->runInBackground()
+    ->appendOutputTo(storage_path('logs/pdok-warm.log'));
+
 // ── De rest van app/Console/Kernel.php::schedule() stond hier NOOIT actief:
 // die methode wordt door de Laravel 11-bootstrap niet geladen (geen
 // ->withSchedule() in bootstrap/app.php), dus onderstaande commands draaiden
