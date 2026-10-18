@@ -174,23 +174,50 @@ class GeoProxyController extends Controller
 
         $sleutel = 'geo:overpass:' . sha1($data['query']);
 
-        $upstream = false;
-        $resultaat = Cache::remember($sleutel, now()->addHours(12), function () use ($data, &$upstream) {
-            $upstream = true;
+        // Alleen GESLAAGDE antwoorden cachen. Een time-out of storing mag geen 12 uur lang als
+        // "geen wegen hier" blijven staan: de padenmotor van Kompas Opdracht zou er stil
+        // verkeerde routes mee maken. Een mislukking krijgt `error` mee (HTTP 200 blijft, zodat
+        // aanroepers die alleen `elements` lezen niet breken).
+        $resultaat = Cache::get($sleutel);
+        if ($resultaat === null) {
+            $resultaat = $this->overpassUpstream($data['query']);
+            if (empty($resultaat['error'])) {
+                Cache::put($sleutel, $resultaat, now()->addHours(12));
+            }
+        } else {
+            ApiUsageMeter::record('overpass', 'query', ['cache_hits' => 1]);
+        }
+
+        return response()->json($resultaat);
+    }
+
+    /** Publieke Overpass-instances, in volgorde van voorkeur. Een tweede dient als vangnet: ze zijn vaak druk. */
+    private const OVERPASS_ENDPOINTS = [
+        'https://overpass-api.de/api/interpreter',
+        'https://overpass.kumi.systems/api/interpreter',
+    ];
+
+    /** @return array{elements: array, error?: string} */
+    private function overpassUpstream(string $query): array
+    {
+        foreach (self::OVERPASS_ENDPOINTS as $endpoint) {
             try {
                 $res = ApiUsageMeter::measure('overpass', 'query', fn () => Http::withHeaders(['User-Agent' => self::USER_AGENT])
                     ->timeout(25) // Overpass mag traag zijn
                     ->asForm()
-                    ->post('https://overpass-api.de/api/interpreter', ['data' => $data['query']]));
+                    ->post($endpoint, ['data' => $query]));
 
-                return $res->successful() ? $res->json() : ['elements' => []];
+                $json = $res->successful() ? $res->json() : null;
+                // Overpass meldt een afgebroken query als HTTP 200 met een `remark`.
+                $aborted = is_array($json) && isset($json['remark']) && str_contains((string) $json['remark'], 'runtime error');
+                if (is_array($json) && ! $aborted) {
+                    return $json;
+                }
             } catch (\Throwable $e) {
-                Log::warning('[geo-proxy] overpass mislukt: ' . $e->getMessage());
-                return ['elements' => []];
+                Log::warning('[geo-proxy] overpass mislukt (' . parse_url($endpoint, PHP_URL_HOST) . '): ' . $e->getMessage());
             }
-        });
-        if (!$upstream) ApiUsageMeter::record('overpass', 'query', ['cache_hits' => 1]);
+        }
 
-        return response()->json($resultaat);
+        return ['elements' => [], 'error' => 'upstream'];
     }
 }

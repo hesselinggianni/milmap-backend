@@ -242,6 +242,7 @@ class ApiUsageTest extends TestCase
         Http::fake([
             'nominatim.openstreetmap.org/*' => Http::response(['address' => ['city' => 'Oirschot', 'country_code' => 'nl']]),
             'overpass-api.de/*'             => Http::response('kapot', 504),
+            'overpass.kumi.systems/*'       => Http::response('kapot', 504), // vangnet-instantie van de proxy
         ]);
         $user = $this->user();
 
@@ -249,14 +250,14 @@ class ApiUsageTest extends TestCase
         $this->client($user, '203.0.113.50')->getJson('/api/v1/geo/reverse?lat=51.5&lon=5.3')->assertOk(); // uit cache
         $this->client(null, '203.0.113.50')->getJson('/api/v1/geo/reverse?lat=51.5&lon=5.3')->assertOk();  // gast, cache
         $this->client(null)->postJson('/api/v1/geo/overpass', ['query' => '[out:json];node(1);out;'])->assertOk();
-        Http::assertSentCount(2);
+        Http::assertSentCount(3); // 1× Nominatim + 2× Overpass (beide instanties geprobeerd)
 
         $rows = $this->rows()->keyBy(fn ($r) => $r->provider . ':' . $r->user_id);
         $this->assertSame(['reverse', 'server', ApiUsageMeter::networkHash('203.0.113.50'), 2, 1, 0],
             [$rows["nominatim:{$user->id}"]->kind, $rows["nominatim:{$user->id}"]->source, $rows["nominatim:{$user->id}"]->network_hash,
              (int) $rows["nominatim:{$user->id}"]->requests, (int) $rows["nominatim:{$user->id}"]->cache_hits, (int) $rows["nominatim:{$user->id}"]->errors]);
         $this->assertSame([1, 1], [(int) $rows['nominatim:0']->requests, (int) $rows['nominatim:0']->cache_hits]);
-        $this->assertSame([1, 1, 0], [(int) $rows['overpass:0']->requests, (int) $rows['overpass:0']->errors, (int) $rows['overpass:0']->cache_hits]);
+        $this->assertSame([2, 2, 0], [(int) $rows['overpass:0']->requests, (int) $rows['overpass:0']->errors, (int) $rows['overpass:0']->cache_hits]);
     }
 
     public function test_meter_never_throws_even_when_table_is_missing(): void
