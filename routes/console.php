@@ -92,8 +92,9 @@ Schedule::command('accounts:purge')->dailyAt('04:20');
 Schedule::command('geoip:update')->monthlyOn(5, '04:40')->withoutOverlapping();
 
 // API-verbruikslog (admin → Analytics → API-verbruik) max. 180 dagen bewaren
-// — zie App\Models\ApiUsageHourly::prunable() en config/api_usage.php.
-Schedule::command('model:prune', ['--model' => [\App\Models\ApiUsageHourly::class]])->dailyAt('04:50')->withoutOverlapping();
+// — zie App\Models\ApiUsageHourly::prunable() en config/api_usage.php. De foutredenen
+// (ApiUsageErrorReason) volgen dezelfde retentie.
+Schedule::command('model:prune', ['--model' => [\App\Models\ApiUsageHourly::class, \App\Models\ApiUsageErrorReason::class]])->dailyAt('04:50')->withoutOverlapping();
 
 // Connect: een maand voor het verlopen van de licentie een melding + e-mail naar de beheerders.
 Schedule::command('connect:renewal-reminders')->dailyAt('09:00')->withoutOverlapping();

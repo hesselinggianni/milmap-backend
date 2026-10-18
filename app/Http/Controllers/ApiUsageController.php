@@ -9,6 +9,7 @@ use Illuminate\Http\Request;
 use Illuminate\Http\Response;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\RateLimiter;
+use Illuminate\Support\Facades\Schema;
 use Throwable;
 
 /**
@@ -17,6 +18,10 @@ use Throwable;
  *  POST /api/v1/api-usage                       ingest vanuit de app (gast of ingelogd)
  *  GET  /api/v1/admin/api-usage                 admin → Analytics → API-verbruik
  *  GET  /api/v1/admin/users/{userId}/api-usage  verbruik van één gebruiker
+ *
+ * Bij fouten stuurt de app ook de reden mee (`error_reasons`: korte codes als
+ * http_429 of network, zie de migratie van api_usage_error_reasons); de admin
+ * krijgt die als `error_reasons` terug.
  *
  * De app telt alleen DIRECTE toestel→derde-partij-calls (Open-Meteo, OSRM,
  * kaarttegels, …) en stuurt die elke ~5 min. als batch. Calls via onze eigen
@@ -57,6 +62,9 @@ class ApiUsageController extends Controller
             'items.*.kind'     => ['required', 'string', 'regex:/^[a-z0-9_]{1,40}$/'],
             'items.*.requests' => ['required', 'integer', 'min:0', 'max:' . self::MAX_COUNT],
             'items.*.errors'   => ['nullable', 'integer', 'min:0', 'max:' . self::MAX_COUNT],
+            // { "http_429": 3, "network": 1 } — waarom de fouten mislukten; alles optioneel (oude app-versies).
+            'items.*.error_reasons'   => ['nullable', 'array', 'max:20'],
+            'items.*.error_reasons.*' => ['integer', 'min:0', 'max:' . self::MAX_COUNT],
         ]);
 
         $bucket  = ApiUsageMeter::bucket();
@@ -65,6 +73,7 @@ class ApiUsageController extends Controller
         // Dubbele (provider, kind)-paren in één batch samenvoegen: één rij per
         // (uur, provider, kind, gebruiker, netwerk) en één upsert per verzoek.
         $rows = [];
+        $reasonRows = [];
         foreach ($data['items'] as $item) {
             $requests = (int) $item['requests'];
             $errors   = (int) ($item['errors'] ?? 0);
@@ -79,6 +88,18 @@ class ApiUsageController extends Controller
             ];
             $rows[$k]['requests'] += $requests;
             $rows[$k]['errors']   += $errors;
+
+            // Redenen per item vastleggen; wat niet verklaard is wordt 'unknown'.
+            if ($errors > 0) {
+                $allocated = ApiUsageMeter::allocateReasons($errors, (array) ($item['error_reasons'] ?? []));
+                foreach ($allocated as $reason => $n) {
+                    $reasonRows[$k . '|' . $reason] ??= [
+                        'bucket' => $bucket, 'provider' => $provider, 'kind' => $item['kind'], 'source' => 'client',
+                        'user_id' => $userId, 'network_hash' => $network, 'reason' => $reason, 'count' => 0,
+                    ];
+                    $reasonRows[$k . '|' . $reason]['count'] += $n;
+                }
+            }
         }
 
         try {
@@ -87,6 +108,14 @@ class ApiUsageController extends Controller
             ApiUsageMeter::reportQuietly($e);
             // 5xx: de client voegt de tellers terug in zijn buffer en probeert later opnieuw.
             return response()->json(['message' => 'Kon verbruik niet opslaan.'], 503);
+        }
+
+        // Los van de tellers: mislukt dit (bv. tabel nog niet gemigreerd), dan blijven de
+        // tellers staan en probeert de client het niet opnieuw (dat zou ze dubbel tellen).
+        try {
+            ApiUsageMeter::writeReasons(array_values($reasonRows));
+        } catch (Throwable $e) {
+            ApiUsageMeter::reportQuietly($e);
         }
 
         return response()->noContent();
@@ -126,6 +155,7 @@ class ApiUsageController extends Controller
             'series'       => $this->series($base(), $granularity),
             'top_users'    => $this->topUsers($base),
             'top_networks' => $this->topNetworks($base),
+            'error_reasons' => $this->errorReasons($from, $provider, $userId, $network),
             'warnings'     => $this->warnings($from, $provider, $network),
         ]);
     }
@@ -176,6 +206,7 @@ class ApiUsageController extends Controller
             'by_kind'     => $byKind,
             'series'      => $this->series($base(), $granularity),
             'networks'    => $networks,
+            'error_reasons' => $this->errorReasons($from, null, $userId),
         ]);
     }
 
@@ -230,6 +261,42 @@ class ApiUsageController extends Controller
         }
 
         return $out;
+    }
+
+    /**
+     * Waarom verzoeken mislukten: per dienst, soort, bron en reden het aantal
+     * fouten (meeste eerst). Leeg zolang de tabel er nog niet is of er nog niets
+     * vastgelegd is — fouten van vóór de introductie staan wel in `errors`.
+     *
+     * @return list<array{provider: string, kind: string, source: string, reason: string, count: int}>
+     */
+    private function errorReasons(CarbonImmutable $from, ?string $provider = null, ?int $userId = null, ?string $network = null): array
+    {
+        try {
+            if (! Schema::hasTable(ApiUsageMeter::REASONS_TABLE)) {
+                return [];
+            }
+
+            return DB::table(ApiUsageMeter::REASONS_TABLE)
+                ->where('bucket', '>=', $from->format('Y-m-d H:i:s'))
+                ->when($provider, fn ($q) => $q->where('provider', $provider))
+                ->when($userId !== null, fn ($q) => $q->where('user_id', $userId))
+                ->when($network, fn ($q) => $q->where('network_hash', $network))
+                ->groupBy('provider', 'kind', 'source', 'reason')
+                ->select('provider', 'kind', 'source', 'reason', DB::raw('SUM(count) as n'))
+                ->orderByRaw('SUM(count) DESC')
+                ->limit(200)
+                ->get()
+                ->map(fn ($r) => [
+                    'provider' => $r->provider, 'kind' => $r->kind, 'source' => $r->source,
+                    'reason' => $r->reason, 'count' => (int) $r->n,
+                ])
+                ->all();
+        } catch (Throwable $e) {
+            ApiUsageMeter::reportQuietly($e);
+
+            return [];
+        }
     }
 
     private function totals($query): array

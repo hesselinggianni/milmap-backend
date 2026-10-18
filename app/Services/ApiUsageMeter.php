@@ -2,6 +2,8 @@
 
 namespace App\Services;
 
+use Illuminate\Http\Client\ConnectionException;
+use Illuminate\Http\Client\RequestException;
 use Illuminate\Http\Client\Response as HttpResponse;
 use Illuminate\Support\Facades\Cache;
 use Illuminate\Support\Facades\DB;
@@ -28,10 +30,17 @@ use WeakReference;
  * Conventie: `requests` = alle verzoeken die wij voor de dienst afhandelden;
  * een cache-hit telt als requests+1 én cache_hits+1, een echte upstream-call
  * als requests+1 (en errors+1 bij non-2xx/exception). Upstream = requests − cache_hits.
+ *
+ * Bij een fout onthouden we ook waarom, in api_usage_error_reasons: een korte
+ * code (http_429, network, timeout, …; zie de migratie) naast de teller
+ * `errors`. Geen URL's of foutteksten.
  */
 class ApiUsageMeter
 {
     public const TABLE = 'api_usage_hourly';
+
+    /** Per rij van TABLE hoeveel fouten om welke reden mislukten. */
+    public const REASONS_TABLE = 'api_usage_error_reasons';
 
     /** Kolommen van de unique key (volgorde = conflict-target van de upsert). */
     public const KEY = ['bucket', 'provider', 'kind', 'source', 'user_id', 'network_hash'];
@@ -39,13 +48,17 @@ class ApiUsageMeter
     /** @var array<string, array<string, mixed>> Opgetelde rijen van dit verzoek. */
     private static array $buffer = [];
 
+    /** @var array<string, array<string, mixed>> Opgetelde foutredenen van dit verzoek. */
+    private static array $reasonBuffer = [];
+
     /** App-instantie waarvoor al een terminating-flush is ingepland. */
     private static ?WeakReference $scheduledFor = null;
 
     /**
      * Eén meting optellen. $opts: requests (1), errors (0), cache_hits (0),
-     * user_id (huidige Sanctum-gebruiker of 0), network_hash (van het huidige
-     * verzoek), source ('server').
+     * reason (code voor deze fouten, zie allocateReasons; zonder = 'unknown') of
+     * reasons ([code => aantal]), user_id (huidige Sanctum-gebruiker of 0),
+     * network_hash (van het huidige verzoek), source ('server').
      */
     public static function record(string $provider, string $kind, array $opts = []): void
     {
@@ -77,6 +90,20 @@ class ApiUsageMeter
                 self::$buffer[$key] = $row + ['requests' => $requests, 'errors' => $errors, 'cache_hits' => $cacheHits];
             }
 
+            if ($errors > 0) {
+                $given = isset($opts['reasons']) && is_array($opts['reasons'])
+                    ? $opts['reasons']
+                    : [(string) ($opts['reason'] ?? 'unknown') => $errors];
+                foreach (self::allocateReasons($errors, $given) as $reason => $n) {
+                    $rk = $key . '|' . $reason;
+                    if (isset(self::$reasonBuffer[$rk])) {
+                        self::$reasonBuffer[$rk]['count'] += $n;
+                    } else {
+                        self::$reasonBuffer[$rk] = $row + ['reason' => $reason, 'count' => $n];
+                    }
+                }
+            }
+
             self::scheduleFlush();
         } catch (Throwable $e) {
             self::reportQuietly($e);
@@ -85,7 +112,8 @@ class ApiUsageMeter
 
     /**
      * Voer een uitgaande call uit en tel 'm: requests+1, errors+1 bij een
-     * exception of een niet-2xx Http-respons. De exception van de call zelf
+     * exception of een niet-2xx Http-respons (met reden: http_<status>,
+     * timeout, network, …). De exception van de call zelf
      * wordt ongewijzigd doorgegooid — het gedrag van de aanroeper verandert niet.
      * $opts['ok'] (callable(Response): bool) overschrijft wat "geslaagd" is,
      * bv. een 3xx bij het uitklappen van redirects.
@@ -102,7 +130,7 @@ class ApiUsageMeter
         try {
             $result = $call();
         } catch (Throwable $e) {
-            self::record($provider, $kind, ['errors' => 1] + $opts);
+            self::record($provider, $kind, ['errors' => 1, 'reason' => self::exceptionReason($e)] + $opts);
             throw $e;
         }
 
@@ -111,7 +139,10 @@ class ApiUsageMeter
         } catch (Throwable) {
             $failed = false;
         }
-        self::record($provider, $kind, ['errors' => $failed ? 1 : 0] + $opts);
+        self::record($provider, $kind, [
+            'errors' => $failed ? 1 : 0,
+            'reason' => $failed ? self::httpReason($result->status()) : null,
+        ] + $opts);
 
         // Een derde partij die ons afknijpt: ook zichtbaar in admin → Te veel verzoeken.
         if ($result instanceof HttpResponse && $result->status() === 429) {
@@ -128,14 +159,21 @@ class ApiUsageMeter
     /** Gebufferde tellers nu wegschrijven (ook bruikbaar in tests/commands). */
     public static function flush(): void
     {
-        $rows = array_values(self::$buffer);
+        $rows    = array_values(self::$buffer);
+        $reasons = array_values(self::$reasonBuffer);
         self::$buffer = [];
-        if (! $rows) {
-            return;
-        }
+        self::$reasonBuffer = [];
 
         try {
             self::write($rows);
+        } catch (Throwable $e) {
+            self::reportQuietly($e);
+        }
+
+        // Los van de tellers: een ontbrekende redenentabel (deploy vóór migratie)
+        // mag het tellen zelf niet raken.
+        try {
+            self::writeReasons($reasons);
         } catch (Throwable $e) {
             self::reportQuietly($e);
         }
@@ -145,6 +183,7 @@ class ApiUsageMeter
     public static function discard(): void
     {
         self::$buffer = [];
+        self::$reasonBuffer = [];
         self::$scheduledFor = null;
     }
 
@@ -160,25 +199,44 @@ class ApiUsageMeter
             return;
         }
 
-        $connection = DB::connection();
-        $driver     = $connection->getDriverName();
-        $alias      = (bool) $connection->getConfig('use_upsert_alias');
-
-        $increment = function (string $column) use ($driver, $alias) {
-            if (in_array($driver, ['mysql', 'mariadb'], true)) {
-                $incoming = $alias ? "`laravel_upsert_alias`.`{$column}`" : "VALUES(`{$column}`)";
-                return DB::raw("`{$column}` + {$incoming}");
-            }
-            return DB::raw("\"{$column}\" + excluded.\"{$column}\"");
-        };
-
         foreach (array_chunk($rows, 200) as $chunk) {
             DB::table(self::TABLE)->upsert($chunk, self::KEY, [
-                'requests'   => $increment('requests'),
-                'errors'     => $increment('errors'),
-                'cache_hits' => $increment('cache_hits'),
+                'requests'   => self::increment('requests'),
+                'errors'     => self::increment('errors'),
+                'cache_hits' => self::increment('cache_hits'),
             ]);
         }
+    }
+
+    /**
+     * Foutredenen atomair optellen in REASONS_TABLE. Rijen: alle KEY-kolommen
+     * plus reason en count. Gooit door bij een DB-fout.
+     */
+    public static function writeReasons(array $rows): void
+    {
+        if (! $rows) {
+            return;
+        }
+
+        foreach (array_chunk($rows, 200) as $chunk) {
+            DB::table(self::REASONS_TABLE)->upsert($chunk, [...self::KEY, 'reason'], [
+                'count' => self::increment('count'),
+            ]);
+        }
+    }
+
+    /** `kolom = kolom + nieuwe waarde` voor de upsert (MySQL/MariaDB of SQLite/Postgres). */
+    private static function increment(string $column)
+    {
+        $connection = DB::connection();
+        $driver     = $connection->getDriverName();
+
+        if (in_array($driver, ['mysql', 'mariadb'], true)) {
+            $incoming = $connection->getConfig('use_upsert_alias') ? "`laravel_upsert_alias`.`{$column}`" : "VALUES(`{$column}`)";
+            return DB::raw("`{$column}` + {$incoming}");
+        }
+
+        return DB::raw("\"{$column}\" + excluded.\"{$column}\"");
     }
 
     // ── Helpers ──────────────────────────────────────────────────────────
@@ -202,6 +260,61 @@ class ApiUsageMeter
         $kind = strtolower(trim($kind));
 
         return preg_match('/^[a-z0-9_]{1,40}$/', $kind) ? $kind : 'other';
+    }
+
+    /** Foutreden als korte code; alles wat geen geldige code is wordt 'unknown'. */
+    public static function reason(string $reason): string
+    {
+        $reason = strtolower(trim($reason));
+
+        return preg_match('/^[a-z0-9_]{1,24}$/', $reason) ? $reason : 'unknown';
+    }
+
+    /** 'http_429' voor een niet-2xx antwoord van de derde partij. */
+    public static function httpReason(int $status): string
+    {
+        return $status >= 100 && $status <= 599 ? 'http_' . $status : 'unknown';
+    }
+
+    /** Reden voor een call die een exception gooide: timeout, network, http_<status> of exception. */
+    public static function exceptionReason(Throwable $e): string
+    {
+        if ($e instanceof RequestException && $e->response) {
+            return self::httpReason($e->response->status());
+        }
+        if ($e instanceof ConnectionException) {
+            return preg_match('/timed out|timeout|cURL error 28/i', $e->getMessage()) ? 'timeout' : 'network';
+        }
+
+        return 'exception';
+    }
+
+    /**
+     * Verdeel `$errors` fouten over `[reden => aantal]`: nooit meer dan het
+     * totaal, ongeldige codes worden 'unknown' en wat niet verklaard is ook.
+     * De som van het resultaat is dus altijd precies `$errors`.
+     *
+     * @param  array<string|int, mixed>  $reasons
+     * @return array<string, int>
+     */
+    public static function allocateReasons(int $errors, array $reasons): array
+    {
+        $out  = [];
+        $left = max(0, $errors);
+        foreach ($reasons as $reason => $n) {
+            $take = min($left, max(0, (int) $n));
+            if ($take === 0) {
+                continue;
+            }
+            $code       = self::reason((string) $reason);
+            $out[$code] = ($out[$code] ?? 0) + $take;
+            $left      -= $take;
+        }
+        if ($left > 0) {
+            $out['unknown'] = ($out['unknown'] ?? 0) + $left;
+        }
+
+        return $out;
     }
 
     /** Eerste 16 hex van HMAC-SHA256(ip, app.key); '' als er geen IP is. */
