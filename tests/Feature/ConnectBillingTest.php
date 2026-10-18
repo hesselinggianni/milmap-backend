@@ -142,6 +142,13 @@ class ConnectBillingTest extends TestCase {
         $this->assertSame(1,collect($this->stripe->calls)->where(0,'checkout.sessions.create')->count());
         $this->assertDatabaseCount('connect_orders',1);
     }
+    public function test_a_failed_order_names_the_reason_code_without_leaking_provider_text(): void {
+        $this->stripe->failCheckout=true; \Illuminate\Support\Facades\Log::spy();
+        $res=$this->postJson($this->path().'/orders',$this->payload())->assertUnprocessable();
+        $this->assertStringContainsString('(Reden: ApiConnectionException)',$res->json('message'));
+        $this->assertStringNotContainsString('Could not connect',$res->getContent());
+        \Illuminate\Support\Facades\Log::shouldHaveReceived('error')->withArgs(fn ($m,$ctx) => $m==='Connect-bestelling mislukt bij Stripe' && ($ctx['exception'] ?? null)===\Stripe\Exception\ApiConnectionException::class && str_contains($ctx['error'],'Could not connect'))->once();
+    }
     public function test_integer_strings_do_not_break_an_idempotent_order_retry(): void {
         $payload=$this->payload();$payload['seats']='3';$payload['term_months']='12';
         $first=$this->postJson($this->path().'/orders',$payload)->assertCreated()->json('order.id');
@@ -456,5 +463,59 @@ class ConnectBillingTest extends TestCase {
         $this->deleteJson($base.'/'.$second)->assertOk()->assertJsonPath('pending_addition.status','cancelled');
         $this->postJson($this->path().'/orders',$this->payload()+['pending_addition_id'=>$second])->assertUnprocessable();
         $this->assertNull(ConnectPendingAddition::find($second)->rows);
+    }
+    /** Organisatie waarvan de proefperiode afgelopen is; de eigenaar is dezelfde als $this->owner. 3 gebruikers + 3 apparaten = 6 licenties in gebruik. */
+    private function wallOrg(): ConnectOrganization {
+        $org=ConnectOrganization::create(['name'=>'Na de proef','seat_limit'=>25,'status'=>'active','starts_at'=>now()->subDays(31),'ends_at'=>now()->subDay()]);
+        $org->licenses()->create(['name'=>'Proeflicentie','seat_count'=>25,'currency'=>'EUR','starts_at'=>now()->subDays(31),'ends_at'=>now()->subDay(),'is_trial'=>true]);
+        ConnectMember::create(['organization_id'=>$org->id,'user_id'=>$this->owner->id,'role'=>'owner','status'=>'active','email'=>$this->owner->email,'first_name'=>'Owner','last_name'=>'Test']);
+        foreach ([1,2] as $n) ConnectMember::create(['organization_id'=>$org->id,'role'=>'member','status'=>'active','email'=>"lid{$n}@example.org",'first_name'=>'Lid','last_name'=>(string)$n]);
+        foreach ([1,2,3] as $n) ConnectAllowedDevice::create(['organization_id'=>$org->id,'name'=>'iPad '.$n,'udid'=>sprintf('00008103-%016X',$n),'platform'=>'ios']);
+        return $org;
+    }
+    private function wallPayload(string $method,int $seats,int $months=12): array {
+        return ['seats'=>$seats,'expected_total_incl_cents'=>$months*242*$seats]+$this->payload($method,$months);
+    }
+    public function test_after_the_trial_a_plan_below_the_devices_in_use_is_refused_until_some_are_removed(): void {
+        $org=$this->wallOrg(); $url='/api/v1/connect/organizations/'.$org->id.'/billing/orders';
+        $this->assertTrue($org->needsPlan()); $this->assertSame(6,$org->usedLicenses());
+        $this->postJson($url,$this->wallPayload('invoice',5))->assertUnprocessable()->assertJsonPath('message','Je gebruikt nu 6 licenties. Bestel er minimaal 6 of verwijder eerst gebruikers of apparaten.');
+        $this->assertDatabaseCount('connect_orders',0);
+        // Een apparaat verwijderen maakt 5 licenties genoeg.
+        $device=ConnectAllowedDevice::where('organization_id',$org->id)->first(); $this->deleteJson('/api/v1/connect/organizations/'.$org->id.'/allowed-devices/'.$device->id)->assertNoContent();
+        $this->postJson($url,$this->wallPayload('invoice',5))->assertCreated();
+    }
+    public function test_choosing_invoice_after_the_trial_gives_access_until_the_invoice_is_paid_and_never_counts_twice(): void {
+        $org=$this->wallOrg(); $url='/api/v1/connect/organizations/'.$org->id.'/billing/orders';
+        $res=$this->postJson($url,$this->wallPayload('invoice',6))->assertCreated()->assertJsonPath('order.invoices.0.status','open');
+        $org=$org->fresh(); $this->assertTrue($org->licensed()); $this->assertFalse($org->needsPlan()); $this->assertSame(6,$org->seat_limit);
+        $grace=$org->licenses()->active()->sole(); $this->assertFalse($grace->is_trial);
+        $this->assertEqualsWithDelta(ConnectBilling::GRACE_DAYS,now()->diffInDays($grace->ends_at,false),1);
+        $this->assertNotNull($org->graceInfo()); $this->assertNull($org->trialInfo());
+        // Betaald: de tijdelijke toegang maakt plaats voor de echte licentie; de seats tellen niet dubbel.
+        $order=ConnectOrder::findOrFail($res->json('order.id')); $this->billing->webhook('invoice.paid',$this->invoice($order,'in_wall'));
+        $org=$org->fresh(); $this->assertSame(6,$org->seat_limit); $this->assertNull($org->graceInfo());
+        $this->assertSame(0,$org->licenses()->where('source_reference','like',ConnectBilling::GRACE_PREFIX.'%')->count());
+        $this->assertSame(1,$org->licenses()->where('source_reference','stripe-invoice:in_wall')->count());
+    }
+    public function test_an_unpaid_invoice_brings_the_wall_back_and_does_not_give_a_second_grace_period(): void {
+        $org=$this->wallOrg(); $url='/api/v1/connect/organizations/'.$org->id.'/billing/orders';
+        $this->postJson($url,$this->wallPayload('invoice',6))->assertCreated();
+        $org->licenses()->where('source_reference','like',ConnectBilling::GRACE_PREFIX.'%')->update(['starts_at'=>now()->subDays(15),'ends_at'=>now()->subDay()]);
+        $org=$org->fresh(); $this->assertFalse($org->licensed()); $this->assertTrue($org->needsPlan()); $this->assertTrue($org->trialInfo()['wall']);
+        $this->postJson($url,$this->wallPayload('invoice',6))->assertCreated();
+        $this->assertFalse($org->fresh()->licensed(),'een tweede factuur levert geen nieuw uitstel op');
+        $this->assertTrue($org->fresh()->needsPlan());
+    }
+    public function test_paying_directly_after_the_trial_activates_only_when_the_payment_is_confirmed(): void {
+        $org=$this->wallOrg(); $url='/api/v1/connect/organizations/'.$org->id.'/billing/orders';
+        $res=$this->postJson($url,$this->wallPayload('direct',6))->assertCreated(); $this->assertNotEmpty($res->json('checkout_url'));
+        $this->assertFalse($org->fresh()->licensed()); $this->assertTrue($org->fresh()->needsPlan());
+        $order=ConnectOrder::findOrFail($res->json('order.id')); $this->billing->webhook('invoice.paid',$this->invoice($order,'in_direct'));
+        $org=$org->fresh(); $this->assertTrue($org->licensed()); $this->assertFalse($org->needsPlan()); $this->assertSame(6,$org->seat_limit);
+    }
+    public function test_extra_seats_on_a_running_paid_license_ignore_the_invoice_grace_period(): void {
+        $org=$this->wallOrg(); $this->postJson('/api/v1/connect/organizations/'.$org->id.'/billing/orders',$this->wallPayload('invoice',6))->assertCreated();
+        $this->assertNull($this->billing->coterm($org->fresh(),12,200),'tijdelijke toegang is geen betaalde licentie om mee te lopen');
     }
 }

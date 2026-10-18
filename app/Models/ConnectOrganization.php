@@ -55,6 +55,45 @@ class ConnectOrganization extends Model
         if ($this->licenses()->exists()) return $this->licenses()->active()->exists();
         return $this->starts_at && $this->starts_at <= now() && $this->ends_at && $this->ends_at > now();
     }
+    /** Lopende proefperiode: er is een actieve licentie en alle actieve licenties zijn proeflicenties. */
+    public function onTrial(): bool
+    {
+        if ($this->status !== 'active') return false;
+        $active = $this->licenses()->active()->get();
+        return $active->isNotEmpty() && $active->every(fn ($l) => $l->is_trial);
+    }
+    /**
+     * Proefperiode voorbij en nog niets betaald: Connect toont dan de keuzemuur (aantal licenties kiezen of
+     * apparaten verwijderen, daarna direct betalen of op factuur). Tijdelijke toegang op een openstaande factuur
+     * (ConnectBilling::GRACE_PREFIX) telt niet als betaald; een betaalde of geplande licentie wel.
+     */
+    public function needsPlan(): bool
+    {
+        if ($this->status !== 'active' || $this->licensed()) return false;
+        $licenses = $this->licenses()->get();
+        if (! $licenses->contains(fn ($l) => $l->is_trial)) return false;
+        return ! $licenses->contains(fn ($l) => ! $l->is_trial && ! $l->hasGraceReference());
+    }
+    /** Toegang op basis van een openstaande factuur: tot wanneer, of null. */
+    public function graceInfo(): ?array
+    {
+        $grace = $this->licenses()->active()->get()->first(fn ($l) => $l->hasGraceReference());
+        if (! $grace) return null;
+        return ['ends_at' => $grace->ends_at, 'days_left' => max(0, (int) ceil(now()->diffInSeconds($grace->ends_at, false) / 86400))];
+    }
+    /**
+     * Voor Connect: wanneer de proefperiode eindigt (of eindigde) en of de keuzemuur getoond moet worden.
+     * null = geen proefperiode (meer), bijvoorbeeld omdat er al een betaalde licentie is.
+     */
+    public function trialInfo(): ?array
+    {
+        $active = $this->onTrial(); $wall = ! $active && $this->needsPlan();
+        if (! $active && ! $wall) return null;
+        $trial = $this->licenses()->where('is_trial', true)->orderByDesc('ends_at')->first();
+        if (! $trial) return null;
+        return ['active' => $active, 'wall' => $wall, 'ends_at' => $trial->ends_at, 'days_left' => max(0, (int) ceil(now()->diffInSeconds($trial->ends_at, false) / 86400)),
+            'seats' => $active ? $this->seat_limit : 0, 'max_seats' => \App\Services\ConnectTrial::MAX_SEATS];
+    }
     private function activeLicenseTotal(string $column, $legacy): int
     {
         if ($this->relationLoaded('licenses')) {

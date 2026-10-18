@@ -105,6 +105,8 @@ class ConnectPendingAdditions
 
     private function paid(ConnectPendingAddition $p): bool {
         if (!$p->order_id) return false;
+        // Tijdens de proefperiode is de bestelling gratis: de licenties staan er direct.
+        if (ConnectOrder::whereKey($p->order_id)->where('payment_method', 'trial')->exists()) return true;
         // invoice.finalized may already contain status=paid before invoice.paid grants the seats.
         // Polling must wait for the verified payment and capacity transaction to finish.
         $references = ConnectOrderInvoice::where('order_id', $p->order_id)->where('status', 'paid')->pluck('stripe_invoice_id')

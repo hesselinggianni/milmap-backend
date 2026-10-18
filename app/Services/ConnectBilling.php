@@ -8,6 +8,13 @@ use Illuminate\Support\Carbon;
 use Illuminate\Support\Str;
 use Stripe\StripeClient;
 class ConnectBilling {
+    /**
+     * Na de proefperiode krijgt wie "op factuur" kiest meteen toegang, zo lang als de betaaltermijn van de factuur.
+     * Die tijdelijke licentie (source_reference 'invoice-grace:<bestelling>') verdwijnt zodra de factuur betaald is
+     * en wordt dan vervangen door de echte licentie; wordt er niet betaald, dan verloopt ze en komt de keuzemuur terug.
+     */
+    public const GRACE_PREFIX = 'invoice-grace:';
+    public const GRACE_DAYS = 14;
     protected function stripe(): StripeClient { abort_unless(config('billing.stripe_secret'),503,'Online betalen is nog niet beschikbaar. Probeer het later opnieuw.'); return new StripeClient(['api_key'=>config('billing.stripe_secret')]); }
     public function quote(?ConnectOrganization $org = null): array {
         // Een klantspecifieke Stripe-prijs (admin koppelt die aan de organisatie) gaat voor de algemene seatprijs.
@@ -30,7 +37,7 @@ class ConnectBilling {
      * @return array{ends_at:Carbon,remaining_days:int,term_days:int,unit_term_cents:int}|null
      */
     public function coterm(ConnectOrganization $org, int $months, int $unitMonthly): ?array {
-        $end=$org->licenses()->where('is_trial',false)->where('starts_at','<=',now())->where('ends_at','>',now())->min('ends_at');
+        $end=$org->licenses()->where('is_trial',false)->where(fn ($q) => $q->whereNull('source_reference')->orWhere('source_reference','not like',self::GRACE_PREFIX.'%'))->where('starts_at','<=',now())->where('ends_at','>',now())->min('ends_at');
         if (!$end) return null;
         $end=Carbon::parse($end)->utc();
         $remaining=(int)ceil(now()->floatDiffInDays($end,true));
@@ -88,12 +95,18 @@ class ConnectBilling {
         try {
             return $this->placeOrder($org,$actorId,$data);
         } catch (\Stripe\Exception\ApiErrorException $e) {
-            \Log::error('Connect-bestelling mislukt bij Stripe',['organization'=>$org->id,'error'=>$e->getMessage()]);
-            abort(422,'De bestelling kon niet worden verwerkt. Controleer je gegevens en probeer het opnieuw.');
+            // De echte reden staat in de log; de klant krijgt een neutrale zin plus een korte code (geen Stripe-tekst) zodat een melding te herleiden is.
+            $error=$e->getError(); $code=$e->getStripeCode() ?: ($error?->code ?? null) ?: (new \ReflectionClass($e))->getShortName(); $param=$error?->param ?? null;
+            \Log::error('Connect-bestelling mislukt bij Stripe',['organization'=>$org->id,'exception'=>get_class($e),'http_status'=>$e->getHttpStatus(),'stripe_code'=>$e->getStripeCode(),'stripe_type'=>$error?->type ?? null,
+                'stripe_param'=>$param,'stripe_request_id'=>$e->getRequestId(),'error'=>$e->getMessage()]);
+            abort(422,'De bestelling kon niet worden verwerkt. Controleer je gegevens en probeer het opnieuw. (Reden: '.$code.($param ? ' · '.$param : '').')');
         }
     }
     protected function placeOrder(ConnectOrganization $org, int $actorId, array $data): ConnectOrder {
         $quote=$this->quote($org);
+        // Na de proefperiode (keuzemuur): wie minder licenties kiest dan er in gebruik zijn, moet eerst gebruikers of apparaten verwijderen.
+        $wall=$org->needsPlan();
+        if ($wall) { $used=$org->usedLicenses(); abort_if((int)$data['seats']<$used,422,"Je gebruikt nu {$used} licenties. Bestel er minimaal {$used} of verwijder eerst gebruikers of apparaten."); }
         abort_unless((int)$data['expected_unit_monthly_cents']===$quote['unit_monthly_cents'] && $data['expected_currency']===$quote['currency'],409,'De seatprijs is gewijzigd. Ververs de checkout en controleer het nieuwe bedrag.');
         $coterm=$this->coterm($org,(int)$data['term_months'],$quote['unit_monthly_cents']);
         // Meeloop-bestelling: nu pro rata tot de einddatum van de lopende licentie, daarna het volle bedrag per termijn.
@@ -193,9 +206,20 @@ class ConnectBilling {
             if ($invoice->status==='draft') $invoice=$stripe->invoices->finalizeInvoice($invoice->id,[],['idempotency_key'=>'connect-finalize-'.$invoice->id]);
             if ($invoice->status==='open') $invoice=$stripe->invoices->sendInvoice($invoice->id,[],['idempotency_key'=>'connect-send-'.$invoice->id]);
             $this->recordInvoice($order,$invoice);
+            // Keuzemuur + factuur: direct toegang tot de factuur betaald is (de echte licentie komt bij invoice.paid).
+            if ($wall && ($invoice->status ?? '')!=='paid') $this->grantGrace($order);
         }
         app(ConnectManagement::class)->audit($org->id,'order.created','ConnectOrder',$order->id,['seats'=>$order->seats,'term_months'=>$order->term_months,'payment_method'=>$order->payment_method]);
         return $order->fresh()->load('invoices');
+    }
+    /** Tijdelijke toegang voor de betaaltermijn van de factuur; dubbel aanroepen levert dezelfde licentie op. */
+    private function grantGrace(ConnectOrder $order): void {
+        $org=ConnectOrganization::findOrFail($order->organization_id);
+        // Eén keer per organisatie: wie de factuur niet betaalt, krijgt niet nogmaals uitstel met een nieuwe bestelling.
+        if ($org->licenses()->where('source_reference','like',self::GRACE_PREFIX.'%')->where('source_reference','<>',self::GRACE_PREFIX.$order->id)->exists()) return;
+        app(ConnectLicensing::class)->add($org,['name'=>'Connect · '.$order->seats.' seats · wacht op betaling factuur','seat_count'=>$order->seats,
+            'monthly_price_cents'=>$order->unit_monthly_cents*$order->seats,'currency'=>$order->currency,
+            'starts_at'=>now(),'ends_at'=>now()->addDays(self::GRACE_DAYS),'source_reference'=>self::GRACE_PREFIX.$order->id]);
     }
     /** A webhook may arrive before the request that created its Stripe object returns. */
     private function awaitingPayment(ConnectOrder $order, array $attributes): ConnectOrder {
@@ -367,6 +391,8 @@ class ConnectBilling {
                     // A finalized invoice may already say "paid" before invoice.paid is delivered.
                     // Capacity, rather than invoice status, is the provisioning idempotency marker.
                     $provisioned=$order->organization->licenses()->where('source_reference','stripe-invoice:'.$object->id)->exists();
+                    // De tijdelijke toegang op de openstaande factuur maakt plaats voor de betaalde licentie (anders tellen de seats dubbel).
+                    $order->organization->licenses()->where('source_reference',self::GRACE_PREFIX.$order->id)->delete();
                     app(ConnectLicensing::class)->add($order->organization,[
                         'name'=>'Connect · '.$order->seats.' seats · '.$order->term_months.' maanden','seat_count'=>$order->seats,
                         'monthly_price_cents'=>$order->unit_monthly_cents*$order->seats,'currency'=>$order->currency,

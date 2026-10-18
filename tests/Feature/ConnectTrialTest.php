@@ -3,6 +3,7 @@
 namespace Tests\Feature;
 
 use App\Models\ConnectOrganization;
+use App\Models\ConnectOrder;
 use App\Models\User;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Facades\Mail;
@@ -67,5 +68,90 @@ class ConnectTrialTest extends TestCase
         $this->actingAs($user->fresh(), 'sanctum');
         $this->postJson('/api/v1/connect/trial', ['name' => 'Te laat'])->assertForbidden();
         $this->assertDatabaseCount('connect_organizations', 0);
+    }
+
+    private function startTrial(?User $user = null): ConnectOrganization
+    {
+        $this->actingAs($user ?? $this->user(), 'sanctum');
+        return ConnectOrganization::findOrFail($this->postJson('/api/v1/connect/trial', ['name' => 'Basisschool De Brug'])->assertCreated()->json('organization.id'));
+    }
+
+    private function orderUrl(ConnectOrganization $organization): string { return "/api/v1/connect/organizations/{$organization->id}/billing/orders"; }
+
+    public function test_the_dashboard_data_tells_until_when_the_trial_runs(): void
+    {
+        $organization = $this->startTrial();
+        $trial = $this->getJson("/api/v1/connect/organizations/{$organization->id}")->assertOk()->json('trial');
+        $this->assertTrue($trial['active']);
+        $this->assertFalse($trial['wall']);
+        $this->assertSame(30, $trial['days_left']);
+        $this->assertSame(25, $trial['seats']);
+        $this->assertSame($organization->licenses()->sole()->ends_at->toIso8601String(), \Illuminate\Support\Carbon::parse($trial['ends_at'])->toIso8601String());
+    }
+
+    public function test_ordering_during_the_trial_costs_nothing_and_adds_seats_to_the_trial_license(): void
+    {
+        $organization = $this->startTrial();
+        $body = ['request_id' => (string) \Illuminate\Support\Str::uuid(), 'seats' => 5, 'accepted' => true];
+        // Geen Stripe nodig (niet geconfigureerd in de test): een proefbestelling raakt de betaalprovider niet.
+        $order = $this->postJson($this->orderUrl($organization), $body)->assertCreated()->assertJsonPath('trial', true)->assertJsonPath('order.status', 'trial')->assertJsonPath('order.seats', 5)->assertJsonPath('order.total_incl_cents', 0);
+        $this->assertSame(30, $organization->fresh()->seat_limit);
+        $this->assertSame(30, $organization->licenses()->sole()->seat_count);
+        $this->assertTrue($organization->licenses()->sole()->is_trial);
+        // Opnieuw versturen (dubbelklik, herladen) telt niet dubbel.
+        $this->postJson($this->orderUrl($organization), $body)->assertCreated()->assertJsonPath('order.id', $order->json('order.id'));
+        $this->assertSame(30, $organization->fresh()->seat_limit);
+        $this->assertDatabaseCount('connect_orders', 1);
+        $this->postJson($this->orderUrl($organization), ['seats' => 6] + $body)->assertStatus(409);
+        $this->getJson("/api/v1/connect/organizations/{$organization->id}/billing/orders")->assertOk()->assertJsonPath('data.0.status', 'trial');
+    }
+
+    public function test_the_trial_order_needs_consent_and_stays_below_the_trial_cap(): void
+    {
+        $organization = $this->startTrial();
+        $uuid = fn () => (string) \Illuminate\Support\Str::uuid();
+        $this->postJson($this->orderUrl($organization), ['request_id' => $uuid(), 'seats' => 5])->assertUnprocessable();
+        $this->postJson($this->orderUrl($organization), ['request_id' => $uuid(), 'seats' => \App\Services\ConnectTrial::MAX_SEATS, 'accepted' => true])->assertUnprocessable();
+        $this->assertSame(25, $organization->fresh()->seat_limit);
+        $this->postJson($this->orderUrl($organization), ['request_id' => $uuid(), 'seats' => \App\Services\ConnectTrial::MAX_SEATS - 25, 'accepted' => true])->assertCreated();
+        $this->assertSame(\App\Services\ConnectTrial::MAX_SEATS, $organization->fresh()->seat_limit);
+    }
+
+    public function test_more_users_than_free_seats_are_added_straight_away_after_a_free_trial_order(): void
+    {
+        $organization = $this->startTrial();
+        $devices = collect(range(1, 30))->map(fn ($n) => ['name' => 'iPad '.$n, 'udid' => sprintf('00008103-%016X', $n)])->all();
+        $pending = $this->postJson("/api/v1/connect/organizations/{$organization->id}/pending-additions", ['kind' => 'devices', 'devices' => $devices])->assertCreated()->json('pending_addition');
+        $this->assertSame(6, $pending['seats_needed']);
+        $this->postJson($this->orderUrl($organization), ['request_id' => (string) \Illuminate\Support\Str::uuid(), 'seats' => 6, 'accepted' => true, 'pending_addition_id' => $pending['id']])->assertCreated();
+        $this->assertDatabaseCount('connect_allowed_devices', 30);
+        $this->assertSame('completed', $this->getJson("/api/v1/connect/organizations/{$organization->id}/pending-additions/{$pending['id']}")->assertOk()->json('pending_addition.status'));
+    }
+
+    public function test_the_checkout_catalog_works_during_the_trial_without_a_seat_price(): void
+    {
+        $organization = $this->startTrial();
+        $catalog = $this->getJson("/api/v1/connect/organizations/{$organization->id}/billing/catalog")->assertOk();
+        $catalog->assertJsonPath('pricing', null)->assertJsonPath('trial.active', true)->assertJsonPath('trial.days_left', 30);
+    }
+
+    public function test_after_the_trial_the_wall_shows_and_a_paid_license_removes_it(): void
+    {
+        $organization = $this->startTrial();
+        $organization->licenses()->update(['starts_at' => now()->subDays(31), 'ends_at' => now()->subDay()]);
+        $show = $this->getJson("/api/v1/connect/organizations/{$organization->id}")->assertOk();
+        $show->assertJsonPath('licensed', false)->assertJsonPath('trial.wall', true)->assertJsonPath('trial.active', false)->assertJsonPath('trial.seats', 0);
+        // Een trial-bestelling kan niet meer (geen actieve proefperiode).
+        $this->postJson($this->orderUrl($organization), ['request_id' => (string) \Illuminate\Support\Str::uuid(), 'seats' => 5, 'accepted' => true])->assertUnprocessable();
+        $organization->licenses()->create(['name' => 'Connect · 10 seats · 12 maanden', 'seat_count' => 10, 'currency' => 'EUR', 'starts_at' => now(), 'ends_at' => now()->addYear(), 'source_reference' => 'stripe-invoice:in_x']);
+        $this->getJson("/api/v1/connect/organizations/{$organization->id}")->assertOk()->assertJsonPath('trial', null)->assertJsonPath('licensed', true);
+    }
+
+    public function test_an_organization_that_never_had_a_trial_gets_no_wall(): void
+    {
+        $organization = $this->startTrial();
+        $organization->licenses()->delete();
+        $organization->licenses()->create(['name' => 'Enterprise', 'seat_count' => 10, 'currency' => 'EUR', 'starts_at' => now()->subYear(), 'ends_at' => now()->subDay()]);
+        $this->getJson("/api/v1/connect/organizations/{$organization->id}")->assertOk()->assertJsonPath('trial', null)->assertJsonPath('licensed', false);
     }
 }
