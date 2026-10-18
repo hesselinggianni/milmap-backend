@@ -939,6 +939,7 @@ Route::prefix('v1')->middleware(['api'])->group(function () {
         // Admin routes (protected by AdminAuth middleware)
         Route::middleware('admin.auth')->group(function () {
             Route::get('/admin/stats', [AdminController::class, 'getDashboardStats']);
+            Route::get('/admin/map-storage', [\App\Http\Controllers\AdminMapStorageController::class, 'index']);
             Route::get('/admin/revenue', [AdminController::class, 'getRevenue']);
 
             // ── App-gebruiksanalyse (meest bezochte routes + knoppen) ───
