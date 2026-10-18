@@ -215,6 +215,13 @@ Route::prefix('v1')->middleware(['api'])->group(function () {
     // Publiek: OpenLayers laadt tiles als <img> zonder auth-headers. Eigen ruime
     // throttle i.p.v. throttle:api — één kaart-pan is al tientallen tiles en zou
     // anders het reguliere API-budget (60/min) van de gebruiker opeten.
+    Route::get('/tiles/mapbox-overview/{style}/{language}/{z}/{x}/{y}', [\App\Http\Controllers\MapboxOverviewTileController::class, 'show'])
+        ->whereIn('style', \App\Http\Controllers\MapboxOverviewTileController::STYLES)
+        ->where('language', '[a-z]{2}(-[A-Za-z]{2})?')
+        ->whereNumber(['z', 'x', 'y'])
+        ->withoutMiddleware('throttle:api')
+        ->middleware('throttle:30000,1');
+
     Route::get('/tiles/terrain/{z}/{x}/{y}', [\App\Http\Controllers\TerrainTileController::class, 'show'])
         ->whereNumber(['z', 'x', 'y'])
         ->withoutMiddleware('throttle:api')

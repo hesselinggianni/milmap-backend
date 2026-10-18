@@ -34,6 +34,7 @@ return [
     // pk-variant), dus de token hoort in .env — lokaal én op de server.
     'mapbox' => [
         'token' => env('MAPBOX_TOKEN'),
+        'python' => env('MAPBOX_PYTHON_BIN', PHP_OS_FAMILY === 'Darwin' && is_file('/Applications/Xcode.app/Contents/Developer/usr/bin/python3') ? '/Applications/Xcode.app/Contents/Developer/usr/bin/python3' : 'python3'),
     ],
 
     // Bathymetrie WMS-bronnen voor de waterdiepte-laag (BathymetryTileController).
