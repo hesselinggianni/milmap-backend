@@ -18,6 +18,8 @@ Route::prefix('v1/connect')->group(function () {
     });
     Route::middleware('auth:sanctum')->group(function () {
         Route::post('invitations/accept', [ConnectController::class, 'accept'])->middleware('throttle:20,1');
+        // Zelf een proefperiode starten: organisatie + proeflicentie (30 dagen) voor een ingelogde gebruiker zonder organisatie.
+        Route::post('trial', [ConnectController::class, 'startTrial'])->middleware('throttle:5,10');
         Route::get('organizations', [ConnectController::class, 'index']);
         Route::post('authorize-action', [\App\Http\Controllers\ConnectManagementController::class, 'authorizeAction']);
         Route::match(['GET', 'PUT'], 'organizations/{organization}/policy', [\App\Http\Controllers\ConnectManagementController::class, 'policy']);

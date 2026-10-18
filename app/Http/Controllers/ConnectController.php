@@ -27,6 +27,12 @@ class ConnectController extends Controller {
         $memberships = ConnectMember::with('organization')->where('user_id', $r->user()->id)->where('status', 'active')->get();
         return response()->json(['management' => app(\App\Services\ConnectManagement::class)->context($r->user()), 'enterprise' => $memberships->contains(fn ($m) => $m->organization?->licensed()), 'memberships' => $memberships->map(fn ($m) => ['organization' => $m->organization, 'role' => $m->role, 'licensed' => (bool) $m->organization?->licensed()])->values()]);
     }
+    public function startTrial(Request $r) {
+        $data = $r->validate(['name' => 'required|string|max:160']);
+        abort_if($r->user()->isEmailVerificationWalled(), 403, 'Bevestig eerst je e-mailadres om de proefperiode te starten.');
+        $organization = app(\App\Services\ConnectTrial::class)->start($r->user(), trim($data['name']));
+        return response()->json(['message' => 'Je proefperiode van '.\App\Services\ConnectTrial::DAYS.' dagen is gestart.', 'organization' => $organization], 201);
+    }
     public function requestQuote(Request $r) {
         $data = $r->validate(['company_name'=>'required|string|max:190','contact_name'=>'required|string|max:190','email'=>'required|email|max:190','billing_email'=>'nullable|email|max:190','phone'=>'nullable|string|max:50','seat_count'=>'required|integer|min:1|max:100000','purpose'=>'nullable|string|max:190','requirements'=>'nullable|string|max:5000']);
         $data['user_id'] = $r->user('sanctum')?->id; $quote = app(\App\Services\ConnectApplication::class)->create($data);
