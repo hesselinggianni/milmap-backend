@@ -37,18 +37,19 @@ class EnforceConnectManagement {
             if ($path === 'user/password' && $user->connect_device_account) return $deny('password');
             if ((str_contains($path, 'garmin') || str_contains($path, 'integrations')) && !$service->allows($user, 'integrations')) return $deny('integrations');
         }
+        // Gemarkeerde gebieden (reports) vallen buiten Connect: geen recht (maken/wijzigen/verwijderen), geen
+        // organisatiecontrole op de kaart en geen auditregel. Alleen de toegangsblokkade hierboven blijft gelden.
+        $markedArea = (bool) preg_match('#^reports(?:/|$)#', $path);
         // The resource's organisation controls its data, including access by
         // existing external collaborators and personal-account sessions.
         $resource = null;
-        foreach (['maps' => Map::class, 'missions' => Mission::class, 'routemaps' => RouteMap::class] as $prefix => $model) {
-            if (preg_match('#^'.$prefix.'/([^/]+)#', $path, $match)) { $resource = $model::find($match[1]); break; }
+        if (!$markedArea) {
+            foreach (['maps' => Map::class, 'missions' => Mission::class, 'routemaps' => RouteMap::class] as $prefix => $model) {
+                if (preg_match('#^'.$prefix.'/([^/]+)#', $path, $match)) { $resource = $model::find($match[1]); break; }
+            }
+            if (!$resource && $r->input('map_id')) $resource = Map::find($r->input('map_id'));
+            if (!$resource && $r->input('mission_id')) $resource = Mission::find($r->input('mission_id'));
         }
-        if (!$resource && preg_match('#^reports/([^/]+)#', $path, $match)) {
-            $report = \App\Models\Report::find($match[1]);
-            if ($report?->map_id) $resource = Map::find($report->map_id);
-        }
-        if (!$resource && $r->input('map_id')) $resource = Map::find($r->input('map_id'));
-        if (!$resource && $r->input('mission_id')) $resource = Mission::find($r->input('mission_id'));
         // The parent map remains authoritative for routes, including legacy
         // rows created by external collaborators before ownership inheritance.
         $resourceOrg = $resource instanceof RouteMap ? $resource->map?->connectOrganization : $resource?->connectOrganization;
@@ -83,10 +84,10 @@ class EnforceConnectManagement {
         } elseif ($r->isMethod('POST') && preg_match('#^(?:maps/[^/]+/user-locations/update|missions/[^/]+/tracks)$#', $path)) {
             // Live locatie op een kaart en live GPS-tracking in een missie: eigen recht, niet 'create'.
             $permission = 'share_location';
-        } elseif ($write && preg_match('#^(maps|routemaps|missions|reports|activities|sites|ogroup-templates|task-templates|exercise-sites|nine-lines|trash|me/media)(/|$)#', $path)) {
+        } elseif ($write && !$markedArea && preg_match('#^(maps|routemaps|missions|activities|sites|ogroup-templates|task-templates|exercise-sites|nine-lines|trash|me/media)(/|$)#', $path)) {
             $permission = $r->isMethod('DELETE') ? 'delete' : ($r->isMethod('POST') && !preg_match('#/(restore|reorder|status|sync)(/|$)#', $path) ? 'create' : 'edit');
         }
-        if ($write && !$permission && !$stopSharing && $context['managed'] && !preg_match('#^(user/(profile|settings|password|sessions)|login(?:/|$)|logout(?:-all)?$|push-token$|auth/|security/|me/notifications/|weather-alerts/access$|invitations/)#', $path)) {
+        if ($write && !$permission && !$stopSharing && !$markedArea && $context['managed'] && !preg_match('#^(user/(profile|settings|password|sessions)|login(?:/|$)|logout(?:-all)?$|push-token$|auth/|security/|me/notifications/|weather-alerts/access$|invitations/)#', $path)) {
             $permission = $r->isMethod('DELETE') ? 'delete' : 'edit';
         }
         if ($permission && $context['managed'] && !$service->allows($user, $permission)) return $deny($permission);
@@ -101,7 +102,7 @@ class EnforceConnectManagement {
         if ($permission === 'share_location') {
             try { $auditThis = \Illuminate\Support\Facades\Cache::add('connect_audit_loc:'.$user->id.':'.$path, 1, now()->addHour()); } catch (\Throwable) { $auditThis = true; }
         }
-        if ($write && $orgId && $auditThis && $response->getStatusCode() < 400) {
+        if ($write && $orgId && $auditThis && !$markedArea && $response->getStatusCode() < 400) {
             $service->audit($orgId, $r->method().' '.$r->route()->uri(), $resource ? class_basename($resource) : null, $resource?->id);
         }
         $response->headers->set('X-Milmap-Management', base64_encode(json_encode(['user_id' => $user->id] + $service->context($user))));

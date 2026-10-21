@@ -53,6 +53,19 @@ class ConnectManagementTest extends TestCase {
         $this->putJson('/api/v1/maps/'.$id,['title'=>'Denied edit'])->assertForbidden(); $this->deleteJson('/api/v1/maps/'.$id)->assertForbidden();
         $this->assertDatabaseHas('connect_audit_events',['organization_id'=>$this->org->id,'action'=>'action.authorized']);
     }
+    public function test_marked_areas_are_not_governed_by_the_management_policy(): void {
+        [$d,$token]=$this->device(); $this->org->update(['management_policy'=>['create'=>false,'edit'=>false,'delete'=>false,'share_external'=>false]]);
+        $this->token($token);
+        $map=Map::create(['owner_id'=>$d->user_id,'title'=>'Work','status'=>'active']);
+        // Een gemarkeerd gebied (report) maken, wijzigen en verwijderen heeft geen Connect-recht nodig.
+        $res=$this->postJson('/api/v1/reports',['map_id'=>$map->id,'category'=>'area','type'=>'danger','latitude'=>52.1,'longitude'=>5.1])->assertSuccessful();
+        $id=$res->json('id') ?? $res->json('data.id');
+        $this->putJson('/api/v1/reports/'.$id,['description'=>'Changed'])->assertSuccessful();
+        $this->deleteJson('/api/v1/reports/'.$id)->assertSuccessful();
+        $this->assertDatabaseMissing('connect_audit_events',['organization_id'=>$this->org->id,'action'=>'DELETE api/v1/reports/{id}']);
+        // Alle andere werkgegevens blijven wel onder het beleid vallen.
+        $this->deleteJson('/api/v1/maps/'.$map->id)->assertForbidden()->assertJsonPath('permission','delete');
+    }
     public function test_existing_public_links_obey_updated_policy(): void {
         [$d,$token]=$this->device(); $this->org->update(['management_policy'=>['public_links'=>true]]); $this->token($token);
         $map=Map::create(['owner_id'=>$d->user_id,'title'=>'Work','status'=>'active']);
