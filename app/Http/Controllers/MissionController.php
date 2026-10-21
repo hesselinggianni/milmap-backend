@@ -17,6 +17,10 @@ class MissionController extends Controller
         'gpx', 'kml', 'kmz', 'geojson', 'zip',
     ];
 
+    /** Video voor een presentatiepagina: eigen (hogere) limiet en alleen echte videotypes. */
+    private const OGROUP_VIDEO_EXTENSIONS = ['mp4', 'm4v', 'webm', 'mov'];
+    private const OGROUP_VIDEO_MIMES = ['video/mp4', 'video/x-m4v', 'video/webm', 'video/quicktime'];
+
     /**
      * List all missions the user can see: ones they own plus ones they were
      * invited to and accepted.
@@ -354,7 +358,8 @@ class MissionController extends Controller
 
     /**
      * Upload een bestand voor een "bestand"-veld in een custom O-group-
-     * template (zie ogroupTemplateModel.js, veldtype "file"). Slaat alleen het
+     * template (zie ogroupTemplateModel.js, veldtype "file"), of een video voor
+     * een presentatiepagina (mp4/m4v/webm/mov, max 100 MB). Slaat alleen het
      * bestand op en geeft { url, name } terug — het invoegen in
      * ogroup.values.<fase>.fields.<veld> gebeurt via de gewone missie-update
      * (PUT /api/v1/missions/{id}), net als bij elk ander veldtype.
@@ -372,9 +377,18 @@ class MissionController extends Controller
         // Whitelist op extensie: het bestand komt op de PUBLIEKE disk en wordt
         // met deze extensie geserveerd. Zonder whitelist kon een .php/.html/.svg
         // geüpload worden (code-executie resp. stored XSS op het API-domein).
+        // Een video (presentatiepagina, speelt automatisch af) mag tot 100 MB — gelijk aan upload_max_filesize —
+        // en moet ook echt een videotype zijn; alle andere bijlagen blijven 10 MB.
+        $isVideo = in_array(
+            strtolower((string) $request->file('file')?->getClientOriginalExtension()),
+            self::OGROUP_VIDEO_EXTENSIONS,
+            true,
+        );
         $request->validate([
-            'file' => 'required|file|max:10240' // 10MB, zelfde limiet als waypoint-foto's
-                . '|extensions:' . implode(',', self::OGROUP_FILE_EXTENSIONS),
+            'file' => $isVideo
+                ? 'required|file|max:102400|mimetypes:' . implode(',', self::OGROUP_VIDEO_MIMES)
+                : 'required|file|max:10240' // 10MB, zelfde limiet als waypoint-foto's
+                    . '|extensions:' . implode(',', self::OGROUP_FILE_EXTENSIONS),
         ]);
 
         $file = $request->file('file');
