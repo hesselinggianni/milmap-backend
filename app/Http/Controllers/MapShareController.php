@@ -10,9 +10,19 @@ use App\Models\RouteMap;
 use App\Models\UserLocation;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Auth;
+use Illuminate\Validation\Rule;
 
 class MapShareController extends Controller
 {
+    /**
+     * Basiskaarten die een deellink als standaardkaart mag hebben (settings.baseTheme): de Mapbox-stijlen en de
+     * nationale topokaarten van de app (zie MilMap-Frontend src/config/shareThemes.js). Leeg = de kaart opent met
+     * zijn eigen kaartinstelling. Een vaste lijst, zodat een link nooit naar een willekeurige tegelbron wijst.
+     */
+    public const BASE_THEMES = [
+        'outdoors-v12', 'streets-v11', 'satellite-v9', 'satellite-streets-v11',
+        'top25', 'norge-top25', 'de-topplus', 'usa-topo', 'pl-topo', 'lt-topo',
+    ];
 
     /**
      * Welke kaartdata een deellink mag tonen. De eigenaar kiest dit per link in
@@ -96,17 +106,20 @@ class MapShareController extends Controller
         $request->validate([
             'route_map_ids' => 'nullable|array',
             'settings' => 'nullable|array',
+            'settings.baseTheme' => ['nullable', 'string', Rule::in(self::BASE_THEMES)],
             'title' => 'nullable|string|max:255',
             'expires_at' => 'nullable|date',
             'share_live_location' => 'nullable|boolean',
             'content' => 'nullable|array',
         ]);
 
-        $settings = $request->settings ?? [
+        // De basisinstellingen blijven altijd bestaan, ook als de client alleen een deel meestuurt (bv. alleen de
+        // standaardkaart `baseTheme`).
+        $settings = array_replace([
             'showTable' => true,
             'showMarkers' => true,
             'showLines' => true,
-        ];
+        ], $request->settings ?? []);
         if ($request->has('share_live_location')) {
             $settings['shareLiveLocation'] = (bool) $request->boolean('share_live_location');
         }
@@ -141,6 +154,7 @@ class MapShareController extends Controller
             'title'                => 'sometimes|nullable|string|max:255',
             'expires_at'           => 'sometimes|nullable|date',
             'settings'             => 'sometimes|nullable|array',
+            'settings.baseTheme'   => ['sometimes', 'nullable', 'string', Rule::in(self::BASE_THEMES)],
             'share_live_location'  => 'sometimes|boolean',
             'content'              => 'sometimes|array',
         ]);
