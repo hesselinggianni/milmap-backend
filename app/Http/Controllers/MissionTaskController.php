@@ -345,9 +345,16 @@ class MissionTaskController extends Controller
     {
         $hasTeamKey  = $request->has('assigned_team_id');
         $hasUsersKey = $request->has('assignee_user_ids') || $request->has('assignee_user_id');
+        $hasPartKey  = $request->has('assignee_participants');
 
-        if (! $hasTeamKey && ! $hasUsersKey) {
+        if (! $hasTeamKey && ! $hasUsersKey && ! $hasPartKey) {
             return; // niets aan toewijzing veranderen
+        }
+
+        // Handmatige deelnemers (zonder account): alleen aanpassen als ze
+        // meekomen; een PATCH met enkel gebruikers laat ze ongemoeid.
+        if ($hasPartKey) {
+            $task->forceFill(['assignee_participants' => $this->normalizeParticipants($data['assignee_participants'] ?? [])]);
         }
 
         $teamId = $hasTeamKey ? ($data['assigned_team_id'] ?? null) : $task->assigned_team_id;
@@ -361,7 +368,7 @@ class MissionTaskController extends Controller
             $single = $data['assignee_user_id'] ?? null;
             $userIds = $single ? [(int) $single] : [];
         } elseif (! $hasTeamKey) {
-            // alleen team-key veranderd; behoud bestaande leden
+            // geen gebruikers-sleutel (alleen deelnemers veranderd); behoud bestaande leden
             $userIds = $task->assignees()->pluck('users.id')->all();
         }
 
@@ -369,8 +376,9 @@ class MissionTaskController extends Controller
             // Heel team wint → individuele leden wissen.
             $task->assignees()->sync([]);
             $task->forceFill([
-                'assigned_team_id' => $teamId,
-                'assignee_user_id' => null,
+                'assigned_team_id'      => $teamId,
+                'assignee_user_id'      => null,
+                'assignee_participants' => null,
             ])->save();
             return;
         }
@@ -383,6 +391,21 @@ class MissionTaskController extends Controller
         ])->save();
     }
 
+    /** Handmatige deelnemers → unieke [{ name, role }] (op naam, hoofdletterongevoelig); leeg = null. */
+    private function normalizeParticipants($list): ?array
+    {
+        $out = [];
+        foreach ((array) $list as $p) {
+            $name = trim((string) ($p['name'] ?? ''));
+            if ($name === '' || isset($out[mb_strtolower($name)])) {
+                continue;
+            }
+            $role = trim((string) ($p['role'] ?? ''));
+            $out[mb_strtolower($name)] = ['name' => $name, 'role' => $role !== '' ? $role : null];
+        }
+        return $out ? array_values($out) : null;
+    }
+
     /** Gemeenschappelijke validatieregels voor store/update. */
     private function rules(bool $isUpdate = false): array
     {
@@ -393,6 +416,9 @@ class MissionTaskController extends Controller
             'assignee_user_ids.*' => 'integer|exists:users,id',
             'assignee_user_id'    => 'nullable|integer|exists:users,id', // legacy single
             'assigned_team_id'    => 'nullable|uuid|exists:teams,id',
+            'assignee_participants'        => 'nullable|array|max:25',
+            'assignee_participants.*.name' => 'required|string|max:120',
+            'assignee_participants.*.role' => 'nullable|string|max:120',
             'parent_id'           => 'nullable|uuid|exists:mission_tasks,id',
             'phase_key'           => 'nullable|string|max:96',
             'due_at'              => 'nullable|date',
@@ -466,6 +492,11 @@ class MissionTaskController extends Controller
             'assignees'    => $people->all(),
             // Legacy single (eerste assignee) — o.a. de PDF-export leest dit.
             'assignee'     => $people->first() ?: null,
+            // Handmatige deelnemers (zonder account) — momentopname [{ name, role }].
+            'participants' => collect($t->assignee_participants ?? [])
+                ->map(fn ($p) => ['name' => $p['name'] ?? '', 'role' => $p['role'] ?? null])
+                ->filter(fn ($p) => $p['name'] !== '')
+                ->values()->all(),
             'team'         => $t->team ? [
                 'id'    => $t->team->id,
                 'name'  => $t->team->name,

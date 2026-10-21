@@ -17,6 +17,7 @@ class MissionTask extends Model
         'phase_key',
         'assignee_user_id',
         'assigned_team_id',
+        'assignee_participants',
         'title',
         'description',
         'status',
@@ -27,7 +28,9 @@ class MissionTask extends Model
     ];
 
     protected $casts = [
-        'due_at' => 'datetime',
+        'due_at'                => 'datetime',
+        // Handmatige deelnemers (zonder account): [{ name, role }].
+        'assignee_participants' => 'array',
     ];
 
     public const STATUSES = ['todo', 'doing', 'done'];
