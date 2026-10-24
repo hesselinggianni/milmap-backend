@@ -11,6 +11,10 @@ class ConnectManagement {
     public const PERMISSIONS = ['create', 'edit', 'delete', 'share_internal', 'share_external', 'public_links', 'export', 'integrations', 'reset_account', 'share_location'];
     // Rechten die nieuwer zijn dan oudere portaalbuilds; die mogen ontbreken in een policy-update.
     public const OPTIONAL_PERMISSIONS = ['reset_account', 'share_location'];
+    // Rechten die bepalen wat buitenstaanders met de gegevens van de organisatie kunnen: uitnodigingen en openbare links worden
+    // bij de ontvanger aan het beleid van de organisatie getoetst. Ook voor eigenaars en beheerders volgen deze het beleid;
+    // een uitzondering voor hen zou uitnodigingen en links opleveren die achteraf toch geweigerd worden. Aanzetten kan in het portaal.
+    public const ORG_WIDE_PERMISSIONS = ['share_external', 'public_links'];
     public const DEFAULTS = [
         'create' => true, 'edit' => true, 'delete' => false, 'share_internal' => true,
         'share_external' => false, 'public_links' => false, 'export' => false, 'integrations' => false, 'reset_account' => true,
@@ -32,6 +36,10 @@ class ConnectManagement {
         $external = ConnectOrganization::withActiveLicense()->where('management_policy->share_external', true)->pluck('id')->all();
         $result = [$internal, $external]; $request->attributes->set($key, $result); return $result;
     }
+    /** Eigenaar of beheerder van de organisatie (dezelfde rollen als het Connect-portaal gebruikt); een apparaataccount nooit. */
+    private function isManager(?ConnectMember $member, User $user): bool {
+        return $member && !$user->connect_device_account && $member->status === 'active' && in_array($member->role, ['owner', 'admin'], true);
+    }
     public function policy(ConnectOrganization $org): array { return array_replace(self::DEFAULTS, array_intersect_key($org->management_policy ?? [], self::DEFAULTS)); }
     public function context(User $user): array {
         $key = 'connect_context_'.$user->id;
@@ -52,6 +60,13 @@ class ConnectManagement {
         $permissions = array_intersect_key($policy, array_flip(self::PERMISSIONS));
         // Member settings may narrow the organisation policy, never bypass it.
         foreach (array_intersect_key($member?->permissions ?? [], $permissions) as $key => $value) $permissions[$key] = $permissions[$key] && (bool) $value;
+        // Eigenaars en beheerders (de leden die het portaal beheren) zijn nooit beperkt door het beleid van hun eigen
+        // organisatie voor hun eigen werk: zij kunnen het beleid toch al wijzigen, dus een recht dat uit staat mag hen niet
+        // in de weg zitten. Ook hun persoonlijke instellingen als lid (hierboven) vernauwen dat niet.
+        // Alleen een actieve licentie telt nog: zonder blijft alles dicht (zie hieronder).
+        if ($this->isManager($member, $user)) foreach (self::PERMISSIONS as $permission) {
+            if (!in_array($permission, self::ORG_WIDE_PERMISSIONS, true)) $permissions[$permission] = true;
+        }
         if (!$active) $permissions = array_fill_keys(self::PERMISSIONS, false);
         $until = $active ? now()->addHours((int) $policy['offline_hours']) : now();
         if ($org?->ends_at && $until->gt($org->ends_at)) $until = $org->ends_at;

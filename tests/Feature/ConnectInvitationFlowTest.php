@@ -70,10 +70,20 @@ class ConnectInvitationFlowTest extends TestCase
 
     public function test_sharing_switched_off_after_invite_refuses_accept_with_a_clear_message(): void
     {
-        [$owner, $inside, , $org, $mission] = $this->setup_org();
-        $r = app(InvitationService::class)->createInvite($mission, $inside->email, 'viewer', $owner);
+        [, $inside, , $org, $mission] = $this->setup_org();
+        // Een gewoon lid nodigt uit (een eigenaar of beheerder is vrij van het beleid, zie de test hieronder).
+        $colleague = $this->user('colleague');
+        ConnectMember::create(['organization_id' => $org->id, 'user_id' => $colleague->id, 'email' => $colleague->email, 'first_name' => 'C', 'last_name' => 'U', 'role' => 'member', 'status' => 'active', 'tags' => []]);
+        $r = app(InvitationService::class)->createInvite($mission, $inside->email, 'viewer', $colleague);
         $org->forceFill(['management_policy' => ['share_internal' => false]])->save();
         $this->as($inside)->postJson('/api/v1/invitations/token/'.$r['invitation']->token.'/accept')
             ->assertForbidden()->assertJsonFragment(['message' => 'Delen is door de organisatie uitgeschakeld.']);
+    }
+
+    public function test_owner_is_not_bound_by_the_internal_sharing_policy_of_their_own_organisation(): void
+    {
+        [$owner, $inside, , $org, $mission] = $this->setup_org(['share_internal' => false]);
+        $r = app(InvitationService::class)->createInvite($mission, $inside->email, 'viewer', $owner);
+        $this->as($inside)->postJson('/api/v1/invitations/token/'.$r['invitation']->token.'/accept')->assertOk();
     }
 }

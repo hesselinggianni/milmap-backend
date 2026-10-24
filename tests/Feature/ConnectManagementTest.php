@@ -284,4 +284,52 @@ class ConnectManagementTest extends TestCase {
         // Onbekende sleutels blijven geweigerd.
         $this->manager()->putJson($base.'/members/'.$member->id.'/permissions',['permissions'=>['admin'=>true]])->assertUnprocessable();
     }
+    private function user(string $role): User {
+        $u=User::create(['first_name'=>ucfirst($role),'last_name'=>'Test','email'=>Str::uuid().'@example.org','password'=>bcrypt('Password123!'),'email_verified_at'=>now()]);
+        ConnectMember::create(['organization_id'=>$this->org->id,'user_id'=>$u->id,'email'=>$u->email,'first_name'=>ucfirst($role),'last_name'=>'Test','role'=>$role,'status'=>'active']);
+        return $u;
+    }
+    private function actingAsUser(User $u): self { auth()->forgetGuards(); $this->withHeaders(['Authorization'=>'']); Sanctum::actingAs($u); return $this; }
+    private function strictPolicy(): array { return ['create'=>false,'edit'=>false,'delete'=>false,'share_internal'=>false,'share_external'=>false,'public_links'=>false,'export'=>false,'integrations'=>false,'reset_account'=>false,'share_location'=>false]; }
+    public function test_owners_and_admins_are_not_bound_by_their_own_organisations_policy(): void {
+        $this->org->update(['management_policy'=>$this->strictPolicy()]);
+        $admin=$this->user('admin'); $member=$this->user('member');
+        foreach ([$this->admin,$admin] as $manager) {
+            $c=$this->actingAsUser($manager)->getJson('/api/v1/users/me')->assertOk()->json('connect_management.permissions');
+            foreach (['create','edit','delete','share_internal','export','integrations','reset_account','share_location'] as $p) $this->assertTrue($c[$p],$manager->email.' '.$p);
+            // Rechten die bepalen wat buitenstaanders kunnen blijven het beleid van de organisatie volgen.
+            $this->assertFalse($c['share_external']); $this->assertFalse($c['public_links']);
+        }
+        $c=$this->actingAsUser($member)->getJson('/api/v1/users/me')->assertOk()->json('connect_management.permissions');
+        foreach (ConnectManagement::PERMISSIONS as $p) $this->assertFalse($c[$p],'member '.$p);
+    }
+    public function test_owner_and_admin_can_delete_while_a_plain_member_cannot(): void {
+        $this->org->update(['management_policy'=>$this->strictPolicy()]);
+        $admin=$this->user('admin'); $member=$this->user('member');
+        foreach ([$this->admin,$admin] as $manager) {
+            $map=Map::create(['owner_id'=>$manager->id,'title'=>'Mine','status'=>'active','connect_organization_id'=>$this->org->id]);
+            $this->actingAsUser($manager)->deleteJson('/api/v1/maps/'.$map->id)->assertSuccessful();
+            $this->postJson('/api/v1/connect/authorize-action',['permission'=>'delete'])->assertOk();
+        }
+        $map=Map::create(['owner_id'=>$member->id,'title'=>'Theirs','status'=>'active','connect_organization_id'=>$this->org->id]);
+        $this->actingAsUser($member)->deleteJson('/api/v1/maps/'.$map->id)->assertForbidden()->assertJsonPath('permission','delete');
+    }
+    public function test_manager_exemption_ignores_personal_member_overrides_but_not_the_licence(): void {
+        $this->org->update(['management_policy'=>$this->strictPolicy()]);
+        ConnectMember::where('user_id',$this->admin->id)->update(['permissions'=>['delete'=>false,'edit'=>false]]);
+        $this->actingAsUser($this->admin)->getJson('/api/v1/users/me')->assertOk()->assertJsonPath('connect_management.permissions.delete',true)->assertJsonPath('connect_management.permissions.edit',true);
+        // Zonder actieve licentie blijft alles dicht, ook voor de eigenaar.
+        $this->org->update(['ends_at'=>now()->subMinute()]);
+        $c=$this->actingAsUser($this->admin)->getJson('/api/v1/users/me')->assertOk()->json('connect_management');
+        $this->assertFalse($c['active']); $this->assertFalse($c['permissions']['delete']);
+    }
+    public function test_outsider_sharing_still_follows_the_policy_for_owners(): void {
+        $this->org->update(['management_policy'=>$this->strictPolicy()]);
+        $map=Map::create(['owner_id'=>$this->admin->id,'title'=>'Mine','status'=>'active','connect_organization_id'=>$this->org->id]);
+        $this->actingAsUser($this->admin)->postJson('/api/v1/maps/'.$map->id.'/shares',[])->assertForbidden()->assertJsonPath('permission','public_links');
+        $this->postJson('/api/v1/connect/authorize-action',['permission'=>'share_external'])->assertForbidden();
+        // Aanzetten in het portaal werkt voor de eigenaar zoals altijd.
+        $this->org->update(['management_policy'=>array_replace($this->strictPolicy(),['public_links'=>true])]);
+        $this->actingAsUser($this->admin)->postJson('/api/v1/maps/'.$map->id.'/shares',[])->assertCreated();
+    }
 }
