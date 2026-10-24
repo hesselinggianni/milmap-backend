@@ -130,17 +130,8 @@ class MissionController extends Controller
         // kaart-limiet in MapController@store. Tijdens de proefperiode of met
         // een abonnement is dit onbeperkt. Ná de idempotentie-check hierboven,
         // zodat een herhaalde offline-sync van een bestaande missie niet botst.
-        $user = $request->user();
-        if ($user && ! ($user->is_admin ?? false) && ! $user->hasPremiumAccess()) {
-            $ownedMissions = Mission::where('owner_id', $user->id)->count();
-            if ($ownedMissions >= \App\Models\User::FREE_MISSION_LIMIT) {
-                return response()->json([
-                    'message' => 'Je gratis account kan ' . \App\Models\User::FREE_MISSION_LIMIT
-                        . ' missie aanmaken. Neem een abonnement voor onbeperkte missies.',
-                    'code'    => 'subscription_required',
-                    'feature' => 'missions',
-                ], 402);
-            }
+        if ($limited = $this->freeLimitResponse($request)) {
+            return $limited;
         }
 
         $mission = new Mission([
@@ -170,6 +161,127 @@ class MissionController extends Controller
         $mission->save();
 
         return response()->json(['data' => $this->present($mission, Auth::id())], 201);
+    }
+
+    /**
+     * Copy a mission (owner, editor or admin). The caller becomes the owner of
+     * the copy, which starts in planning: the O-group, briefing, radio nets,
+     * risks and tasks (reset to todo) come along; people (collaborators, linked
+     * team, task assignees), tracks, debrief, route maps, approval/lock and
+     * exercise data stay with the original.
+     * POST /api/v1/missions/{id}/duplicate
+     */
+    public function duplicate(Request $request, $id)
+    {
+        $source = Mission::findOrFail($id);
+        $userId = (int) Auth::id();
+
+        if (!$source->canEdit($userId)) {
+            abort(403, 'You do not have permission to copy this mission');
+        }
+
+        $data = $request->validate([
+            'name' => 'nullable|string|max:255',
+            'include_tasks' => 'sometimes|boolean',
+        ]);
+
+        if ($limited = $this->freeLimitResponse($request)) {
+            return $limited;
+        }
+
+        // Een kaartkoppeling mag alleen naar een kaart van de eigenaar (zie
+        // validateMapLink): bij een kopie van iemand anders valt ze weg.
+        $map = $source->map;
+        if ($map && ($map['source'] ?? 'server') !== 'local'
+            && !\App\Models\Map::whereKey($map['id'] ?? '')->where('owner_id', $userId)->exists()) {
+            $map = null;
+        }
+
+        $copy = \Illuminate\Support\Facades\DB::transaction(function () use ($source, $data, $userId, $map, $request) {
+            $copy = new Mission([
+                'owner_id' => $userId,
+                'name' => trim($data['name'] ?? '') !== '' ? trim($data['name']) : $source->name . ' (kopie)',
+                'mission_number' => $source->mission_number,
+                'classification' => $source->classification,
+                'description' => $source->description,
+                'status' => 'planning',
+                'date' => $source->date,
+                'time' => $source->time,
+                'ogroup' => $source->ogroup,
+                'template_info' => $source->template_info,
+                'map' => $map,
+                'area' => $source->area,
+                'logo' => $source->logo,
+                'game_mode' => 'standard',
+            ]);
+            $copy->save();
+
+            if ($briefing = $source->briefing) {
+                $briefing->replicate()->fill(['mission_id' => $copy->id])->save();
+            }
+            foreach ($source->radioChannels as $channel) {
+                $channel->replicate()->fill(['mission_id' => $copy->id])->save();
+            }
+            foreach ($source->risks as $risk) {
+                $risk->replicate()->fill(['mission_id' => $copy->id])->save();
+            }
+
+            if ($request->boolean('include_tasks', true)) {
+                $this->copyTasks($source, $copy, $userId);
+            }
+
+            return $copy;
+        });
+
+        return response()->json(['data' => $this->present($copy, $userId)], 201);
+    }
+
+    /**
+     * Tasks (with subtasks) for a mission copy: open again, without the people
+     * that were assigned (they are not on the copy), manual participants stay.
+     */
+    private function copyTasks(Mission $source, Mission $copy, int $userId): void
+    {
+        $tasks = \App\Models\MissionTask::where('mission_id', $source->id)->orderBy('order_index')->get();
+        $newIds = [];
+        // Ouders vóór kinderen, ook bij meerdere niveaus.
+        $pending = $tasks;
+        while ($pending->isNotEmpty()) {
+            $ready = $pending->filter(fn ($t) => !$t->parent_id || isset($newIds[$t->parent_id]) || !$tasks->contains('id', $t->parent_id));
+            if ($ready->isEmpty()) {
+                break;
+            }
+            foreach ($ready as $t) {
+                $new = $t->replicate()->fill([
+                    'mission_id' => $copy->id,
+                    'parent_id' => $t->parent_id ? ($newIds[$t->parent_id] ?? null) : null,
+                    'assignee_user_id' => $t->assignee_user_id === $userId ? $userId : null,
+                    'assigned_team_id' => null,
+                    'status' => 'todo',
+                    'created_by' => $userId,
+                ]);
+                $new->save();
+                $newIds[$t->id] = $new->id;
+            }
+            $pending = $pending->reject(fn ($t) => isset($newIds[$t->id]));
+        }
+    }
+
+    /** 402-antwoord als een gratis account zijn missielimiet al heeft bereikt, anders null. */
+    private function freeLimitResponse(Request $request): ?\Illuminate\Http\JsonResponse
+    {
+        $user = $request->user();
+        if ($user && ! ($user->is_admin ?? false) && ! $user->hasPremiumAccess()
+            && Mission::where('owner_id', $user->id)->count() >= \App\Models\User::FREE_MISSION_LIMIT) {
+            return response()->json([
+                'message' => 'Je gratis account kan ' . \App\Models\User::FREE_MISSION_LIMIT
+                    . ' missie aanmaken. Neem een abonnement voor onbeperkte missies.',
+                'code'    => 'subscription_required',
+                'feature' => 'missions',
+            ], 402);
+        }
+
+        return null;
     }
 
     /**
