@@ -22,6 +22,12 @@ class MissionController extends Controller
     private const OGROUP_VIDEO_MIMES = ['video/mp4', 'video/x-m4v', 'video/webm', 'video/quicktime'];
 
     /**
+     * Missiestatus: de ingebouwde statussen (planning, active, complete) of een eigen status. De definities van eigen
+     * statussen (label, kleur) staan in de app; de missie bewaart alleen de sleutel, een korte slug zonder spaties.
+     */
+    private const STATUS_KEY_PATTERN = '/^[A-Za-z0-9][A-Za-z0-9_-]*$/';
+
+    /**
      * List all missions the user can see: ones they own plus ones they were
      * invited to and accepted.
      * GET /api/v1/missions
@@ -87,7 +93,7 @@ class MissionController extends Controller
         $data = $request->validate([
             'name' => 'required|string|max:255',
             'description' => 'nullable|string',
-            'status' => 'nullable|in:planning,active,complete',
+            'status' => ['nullable', 'string', 'max:64', 'regex:'.self::STATUS_KEY_PATTERN],
             'date' => 'nullable|date',
             'time' => 'nullable|string',
             'ogroup' => 'nullable|array',
@@ -300,7 +306,7 @@ class MissionController extends Controller
         $data = $request->validate([
             'name' => 'sometimes|required|string|max:255',
             'description' => 'nullable|string',
-            'status' => 'nullable|in:planning,active,complete',
+            'status' => ['nullable', 'string', 'max:64', 'regex:'.self::STATUS_KEY_PATTERN],
             'date' => 'nullable|date',
             'time' => 'nullable|string',
             'ogroup' => 'nullable|array',
