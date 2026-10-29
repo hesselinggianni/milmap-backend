@@ -104,7 +104,57 @@ class ClientErrorController extends Controller
             return true;
         }
 
+        // Locatiestroom die zichzelf herstelde, of een toestel waarop de
+        // gebruiker Locatievoorzieningen uit zette / de toestemming weigerde.
+        // "Hersteld" is het goede pad van de herstart-logica (de eerste positie
+        // komt pas als het toestel weer een fix heeft, soms uren later in de
+        // achtergrond) en OS-PLUG-GLOC-0002 is een tijdelijke "locatie even
+        // onbekend" van iOS waar de app zelf een herstart op plant. Een herstart
+        // die géén positie oplevert blijft zichtbaar via andere meldingen.
+        if ($type === 'location_diag') {
+            if (preg_match('/locatiestream hersteld na/u', $message)) {
+                return true;
+            }
+            if (preg_match('/location services are not enabled|location permission request was denied|code=OS-PLUG-GLOC-0003/i', $message)) {
+                return true;
+            }
+            if (preg_match('/getCurrentPosition mislukt.{1,5}code=OS-PLUG-GLOC-0002(\s|$)/u', $message)) {
+                return true;
+            }
+        }
+
+        // Horloge: een afgebroken verzoek (URLError.cancelled) ontstaat als het
+        // scherm verdwijnt terwijl het laadt — geen netwerkprobleem.
+        if ($type === 'watch_diag' && preg_match('/mislukt\s.{1,3}\scancell?ed$/iu', $message)) {
+            return true;
+        }
+
+        // Prestatiemeting van de navigatie: alleen een venster dat echt slecht
+        // liep is een bevinding. Dezelfde drempels als perfDiagnostics.js
+        // (isBevinding); oudere builds sturen élk venster, ook de goede.
+        if ($type === 'perf_diag' && $this->isGoedePerformance($message)) {
+            return true;
+        }
+
+        // Scripts die niet van ons zijn: in-app-browsers, wallet-extensies en
+        // dergelijke injecteren code in de pagina (stackframes zonder bestand of
+        // met de pagina zelf als bron, bv. `window.ethereum.selectedAddress`).
+        // Een fout van onze eigen bundel heeft altijd een .js-bestand in de stack.
+        if (in_array($type, ['js_error', 'unhandled_rejection'], true)
+            && $this->isGeinjecteerdScript($data['stack'] ?? '')) {
+            return true;
+        }
+
         if ($type === 'api_error') {
+            // Kaart/missie bestaat niet (meer) op de server: verwijderd door
+            // jezelf of een ander toestel, of een verouderde verwijzing. De app
+            // vangt dit op en valt terug op lokale data.
+            if ((int) $status === 404
+                && strtoupper($data['method'] ?? '') === 'GET'
+                && preg_match('/No query results for model \[App\\\\+Models\\\\+(Mission|Map)\]/', ($data['response'] ?? '') . ' ' . $message)) {
+                return true;
+            }
+
             // Snelheidsbegrenzer: de gebruiker ziet "probeer het zo nog eens".
             if ((int) $status === 429) {
                 return true;
@@ -131,5 +181,50 @@ class ClientErrorController extends Controller
         }
 
         return false;
+    }
+
+    /**
+     * "nav perf #3: 56fps, 34 jank (0 zwaar), …" — true als het venster goed
+     * liep. Oudere builds sturen geen "(N zwaar)"; dan telt alleen fps + jank.
+     * Een bericht dat we niet kunnen lezen wordt nooit weggefilterd.
+     */
+    private function isGoedePerformance(string $message): bool
+    {
+        if (! preg_match('/nav perf #\d+: (\d+)fps, (\d+) jank(?: \((\d+) zwaar\))?/', $message, $m)) {
+            return false;
+        }
+
+        $fps    = (int) $m[1];
+        $jank   = (int) $m[2];
+        $zwaar  = (int) ($m[3] ?? 0);
+        $frames = max(1, $fps * 15); // meetvenster is ~15s
+
+        if ($zwaar >= 3) {
+            return false;
+        }
+
+        // Gedrosseld op ~30fps (spaarstand/thermisch): geen bevinding, en de
+        // jank-teller van oudere builds telt dan elk frame mee.
+        if ($fps >= 25 && $fps <= 34) {
+            return true;
+        }
+
+        if ($fps < 45) {
+            return false;
+        }
+
+        return $jank / $frames <= 0.1;
+    }
+
+    /**
+     * Stack zonder enig .js-bestand = code die niet uit onze bundel komt
+     * (geëvalueerd/geïnjecteerd door een webview of extensie). Zonder stack
+     * valt er niets te zeggen, dus dan niet filteren.
+     */
+    private function isGeinjecteerdScript(string $stack): bool
+    {
+        $stack = trim($stack);
+
+        return $stack !== '' && ! preg_match('/\.m?js\b/i', $stack);
     }
 }
