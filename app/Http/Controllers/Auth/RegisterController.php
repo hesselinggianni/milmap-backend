@@ -8,8 +8,6 @@ use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Hash;
 use Illuminate\Validation\ValidationException;
 use Illuminate\Support\Facades\Validator;
-use Illuminate\Support\Facades\Mail;
-use App\Mail\NewUserRegistered;
 use App\Models\ChatInvite;
 use App\Models\Conversation;
 use App\Services\InvitationService;
@@ -71,7 +69,12 @@ class RegisterController extends Controller
         // User::hasPremiumAccess() + RequiresPremium-middleware).
         $userProvidedPassword = $request->filled('password');
 
-        $user = User::create([
+        // Herkomst (pagina-URL, verwijzer, land) bewaren voor het periodieke
+        // admin-overzicht (AdminDigestService). Niet-fillable kolommen, dus
+        // bewust via unguarded i.p.v. de fillable-lijst van User open te zetten.
+        $origin = \App\Support\SignupOrigin::forUser($request);
+
+        $user = User::unguarded(fn () => User::create($origin + [
             'email' => $request->email,
             // Elk account krijgt altijd een wachtwoord-hash — de `password`-
             // kolom is nooit NULL. Gaf de gebruiker zelf geen wachtwoord op
@@ -89,7 +92,7 @@ class RegisterController extends Controller
             'first_name' => $request->input('first_name'),
             'last_name'  => $request->input('last_name'),
             'trial_ends_at' => now()->addDays(User::APP_TRIAL_DAYS),
-        ]);
+        ]));
 
         // Maak direct een Stripe-customer aan zodat de gebruiker al in Stripe
         // staat voor toekomstige facturatie (het "€0-abonnement" dat de klant
@@ -125,21 +128,9 @@ class RegisterController extends Controller
         // event on their Hub timeline (and can jump straight into the chat).
         $this->acceptChatInvites($user);
 
-        // Registratie-herkomst voor de admin-notificatie: de frontend stuurt de
-        // pagina-URL (`source_url`) + externe verwijzer (`referrer`) mee. Valt
-        // terug op de HTTP Referer-header als de client 't niet meestuurt
-        // (oudere app-versies). Puur informatief; wordt niet opgeslagen.
-        $sourceUrl = $request->input('source_url') ?: $request->header('Referer');
-        $referrer  = $request->input('referrer');
-        $sourceUrl = self::labelSourceUrl($sourceUrl);
-
-        // Admin-notificatie "nieuwe gebruiker" — mag de registratie nooit
-        // breken als de mailserver hapert. Stil loggen en doorgaan.
-        try {
-            Mail::to('hesselinggianni@gmail.com')->send(new NewUserRegistered($user, $sourceUrl, $referrer));
-        } catch (\Throwable $e) {
-            Log::warning('[register] kon admin-notificatie niet versturen: ' . $e->getMessage());
-        }
+        // Geen losse admin-mail per registratie meer: nieuwe gebruikers staan met
+        // abonnement, herkomst-URL en land in het periodieke overzicht
+        // (zie AdminDigestService; herkomst is hierboven bewaard via SignupOrigin).
 
         // Verificatiemail: gratis accounts moeten hun e-mail bevestigen (nep-account
         // weren). Bij guest-checkout/betaling wordt het account elders automatisch

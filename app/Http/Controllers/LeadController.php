@@ -3,7 +3,6 @@
 namespace App\Http\Controllers;
 
 use App\Mail\AppDownloadMail;
-use App\Mail\NewLeadNotification;
 use App\Models\Lead;
 use App\Services\CrmLeadPushService;
 use App\Services\LaunchCouponService;
@@ -82,6 +81,11 @@ class LeadController extends Controller
             // Hoogst bereikte stap in de trechter (1..5): laat zien waar
             // iemand afhaakt. Stap 5 is het aanmaken van het account.
             'funnel_step' => ['nullable', 'integer', 'min:1', 'max:5'],
+            // Pagina waarop het formulier stond + externe verwijzer, voor het
+            // periodieke admin-overzicht (AdminDigestService). Het land halen
+            // we server-side uit het IP (SignupOrigin).
+            'source_url'  => ['nullable', 'string', 'max:500'],
+            'referrer'    => ['nullable', 'string', 'max:500'],
         ]);
 
         $email = mb_strtolower(trim($data['email']));
@@ -95,7 +99,7 @@ class LeadController extends Controller
                 'user_agent' => substr((string) $request->userAgent(), 0, 255),
                 'platform'   => self::detectPlatform((string) $request->userAgent()),
                 'language'   => self::taalVanBezoeker($request, $data['locale'] ?? null),
-            ],
+            ] + \App\Support\SignupOrigin::forLead($request),
         );
 
         // Funnel-antwoorden bijwerken, ook (juist) op een lead die er al was.
@@ -128,14 +132,8 @@ class LeadController extends Controller
         if ($lead->wasRecentlyCreated) {
             app(CrmLeadPushService::class)->push($lead);
 
-            // Admin-notificatie bij elke nieuwe lead (zelfde patroon als
-            // NewUserRegistered bij registratie). Best-effort: een mailfout
-            // mag de lead-opslag/response nooit breken.
-            try {
-                Mail::to('hesselinggianni@gmail.com')->send(new NewLeadNotification($lead));
-            } catch (\Throwable $e) {
-                Log::warning('[leads] kon admin-notificatie niet versturen: ' . $e->getMessage());
-            }
+            // Geen losse admin-mail per nieuwe lead meer: leads staan met herkomst
+            // en land in het periodieke overzicht (zie AdminDigestService).
         }
 
         // Exit-intent op /pricing belooft "we mailen je 20% korting" — die mail

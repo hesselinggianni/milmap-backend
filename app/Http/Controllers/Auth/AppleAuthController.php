@@ -79,7 +79,7 @@ class AppleAuthController extends Controller
         }
 
         if (! $user) {
-            $user = $this->createUser($appleSub, $email, $data);
+            $user = $this->createUser($appleSub, $email, $data, \App\Support\SignupOrigin::forUser($request));
             $nieuw = true;
         }
 
@@ -146,7 +146,7 @@ class AppleAuthController extends Controller
         });
     }
 
-    private function createUser(string $appleSub, ?string $email, array $data): User
+    private function createUser(string $appleSub, ?string $email, array $data, array $origin = []): User
     {
         // Zonder e-mail (verborgen én geen doorstuuradres) toch een uniek,
         // niet-routeerbaar adres: de rest van de app gaat ervan uit dat elke
@@ -159,6 +159,8 @@ class AppleAuthController extends Controller
             'email'      => $email,
         ]);
         $user->apple_sub = $appleSub;
+        // Herkomst voor het periodieke admin-overzicht (AdminDigestService).
+        $user->forceFill($origin);
         // Apple heeft het adres zelf geverifieerd; de e-mailmuur hoeft dus niet
         // opnieuw om bevestiging te vragen.
         $user->email_verified_at = now();

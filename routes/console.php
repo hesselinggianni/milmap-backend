@@ -61,6 +61,27 @@ Schedule::command('users:archive-unverified')
     ->runInBackground()
     ->appendOutputTo(storage_path('logs/archive-unverified.log'));
 
+// Admin-overzichtsmails over de VORIGE volledige periode (Amsterdamse tijd):
+// elke ochtend 07:00 een dagoverzicht van gisteren; op maandag het weekoverzicht
+// van de week ervoor; op de 1e het maand-, (1 jan/apr/jul/okt) kwartaal- en
+// (1 jan) jaaroverzicht. Wie aanmeldde voor welk abonnement, via welke URL en
+// uit welk land, plus de totaalstand — zie AdminDigestService. De tijdzone staat
+// er expliciet bij omdat de app zelf op UTC draait. De periodes staan een paar
+// minuten uit elkaar zodat ze op de 1e netjes op volgorde in de inbox landen.
+foreach ([
+    'day'     => fn ($e) => $e->dailyAt('07:00'),
+    'week'    => fn ($e) => $e->weeklyOn(1, '07:05'),
+    'month'   => fn ($e) => $e->monthlyOn(1, '07:10'),
+    'quarter' => fn ($e) => $e->cron('15 7 1 1,4,7,10 *'),
+    'year'    => fn ($e) => $e->cron('20 7 1 1 *'),
+] as $kind => $when) {
+    $when(Schedule::command('digest:send', [$kind]))
+        ->timezone('Europe/Amsterdam')
+        ->withoutOverlapping()
+        ->runInBackground()
+        ->appendOutputTo(storage_path('logs/admin-digest.log'));
+}
+
 // Genereer elke ochtend automatisch sales-taken uit de actieve signalen
 // (aflopende trials, churn-risico, niet-benaderde leads, enz.), zodat de
 // takenlijst dagelijks up-to-date staat met concrete verkoop-acties.

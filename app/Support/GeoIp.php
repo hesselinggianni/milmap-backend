@@ -60,6 +60,22 @@ class GeoIp
         });
     }
 
+    /**
+     * Land van een los IP-adres, uitsluitend via de lokale database (geen
+     * externe call, geen Cloudflare-header). Voor achteraf-verrijking van rijen
+     * die alleen een IP bewaarden (oude leads); null als de database ontbreekt
+     * of het IP privé/onbekend is.
+     */
+    public static function countryForIp(?string $ip): ?string
+    {
+        $path = self::databasePath();
+        if (! $ip || ! is_file($path) || self::isPrivate($ip)) {
+            return null;
+        }
+
+        return self::lookupLocal($path, $ip);
+    }
+
     public static function databasePath(): string
     {
         return storage_path('app/geoip/dbip-country-lite.mmdb');

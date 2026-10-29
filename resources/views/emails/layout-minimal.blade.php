@@ -14,7 +14,7 @@
          style="background-color:#ffffff;border-top:1px solid #e5e7eb;">
     <tr>
       <td align="center" style="padding:48px 24px 56px;">
-        <table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0" style="max-width:520px;">
+        <table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0" style="max-width:@yield('maxwidth', '520')px;">
           <tr>
             <td style="padding:0 0 56px;">
                     <svg xmlns="http://www.w3.org/2000/svg" width="150" height="25" viewBox="0 0 944 160"

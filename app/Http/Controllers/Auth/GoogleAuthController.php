@@ -75,7 +75,7 @@ class GoogleAuthController extends Controller
         }
 
         if (! $user) {
-            $user = $this->createUser($googleSub, $email, $claims);
+            $user = $this->createUser($googleSub, $email, $claims, \App\Support\SignupOrigin::forUser($request));
             $nieuw = true;
         }
 
@@ -142,7 +142,7 @@ class GoogleAuthController extends Controller
         });
     }
 
-    private function createUser(string $googleSub, ?string $email, array $claims): User
+    private function createUser(string $googleSub, ?string $email, array $claims, array $origin = []): User
     {
         // Google geeft altijd een geverifieerd e-mailadres mee, maar voor de
         // zeldzame edge-case zonder e-mail toch een uniek, niet-routeerbaar
@@ -163,6 +163,8 @@ class GoogleAuthController extends Controller
             'email'      => $email,
         ]);
         $user->google_sub = $googleSub;
+        // Herkomst voor het periodieke admin-overzicht (AdminDigestService).
+        $user->forceFill($origin);
         // Google heeft het adres zelf geverifieerd; de e-mailmuur hoeft dus
         // niet opnieuw om bevestiging te vragen.
         $user->email_verified_at = now();
