@@ -56,9 +56,10 @@ class GeoProxyController extends Controller
         $lon  = round((float) $data['lon'], 4);   // en het vergroot meteen de cache-trefkans
         $lang = $data['lang'] ?? 'nl';
 
-        $sleutel = "geo:rev:{$lang}:{$lat}:{$lon}";
+        // v2: antwoord bevat nu ook `postcode`; oude cache-items hadden dat veld niet.
+        $sleutel = "geo:rev:v2:{$lang}:{$lat}:{$lon}";
 
-        $leeg = ['place' => null, 'city' => null, 'region' => null, 'country' => null, 'countryCode' => null];
+        $leeg = ['place' => null, 'city' => null, 'region' => null, 'country' => null, 'countryCode' => null, 'postcode' => null];
 
         // API-verbruik: upstream-call telt in de closure, anders een cache-hit.
         $upstream = false;
@@ -79,6 +80,7 @@ class GeoProxyController extends Controller
                 $regio  = $adres['state'] ?? $adres['region'] ?? '';
                 $land   = $adres['country'] ?? '';
                 $code   = isset($adres['country_code']) ? strtoupper($adres['country_code']) : '';
+                $postcode = $adres['postcode'] ?? '';
 
                 return [
                     'place'       => implode(', ', array_filter([$plaats, $code])) ?: null,
@@ -86,6 +88,7 @@ class GeoProxyController extends Controller
                     'region'      => $regio ?: null,
                     'country'     => $land ?: null,
                     'countryCode' => $code ?: null,
+                    'postcode'    => $postcode ?: null,
                 ];
             } catch (\Throwable $e) {
                 Log::warning('[geo-proxy] reverse mislukt: ' . $e->getMessage());
