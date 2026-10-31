@@ -23,10 +23,20 @@ use Illuminate\Support\Str;
  */
 class OtaUpdateController extends Controller
 {
+    /**
+     * `production` = wat iedereen krijgt. `beta` = testkanaal: toestellen die
+     * zich daarvoor aanmelden (Account → Beta-updates) krijgen daar de nieuwste
+     * bundel van, maar óók productie-bundels als die nieuwer zijn (een
+     * hotfix mag een beta-tester nooit ontgaan).
+     */
+    public const CHANNELS = ['production', 'beta'];
+
     public function check(Request $request)
     {
         $platform = strtolower((string) $request->input('platform', 'all'));
-        $channel = $request->input('channel') ?: $request->input('defaultChannel') ?: 'production';
+        $channel = $request->input('channel') ?: $request->input('defaultChannel');
+        $channel = in_array($channel, self::CHANNELS, true) ? $channel : 'production';
+        $channels = $channel === 'beta' ? ['beta', 'production'] : ['production'];
         // Installed Capgo protocol: version_name = active OTA bundle;
         // version_build = native marketing baseline. Desktop sends its active
         // bundle in version_build and has no version_name.
@@ -36,7 +46,7 @@ class OtaUpdateController extends Controller
             ->header('Cache-Control', 'private, no-store, max-age=0');
         if (!\App\Support\OtaVersion::parts($current)) return $none();
 
-        $build = OtaBuild::query()->where('active', true)->where('channel', $channel)
+        $build = OtaBuild::query()->where('active', true)->whereIn('channel', $channels)
             ->whereIn('platform', array_unique([$platform, 'all']))->get()
             ->filter(function ($build) use ($native) {
                 if (!\App\Support\OtaVersion::parts($build->version)) return false;
@@ -63,7 +73,7 @@ class OtaUpdateController extends Controller
         $validator = Validator::make($request->all(), [
             'version'  => ['required', 'string', 'max:32'],
             'platform' => ['nullable', 'string', 'in:all,ios,android'],
-            'channel'  => ['nullable', 'string', 'max:32'],
+            'channel'  => ['nullable', 'string', 'in:' . implode(',', self::CHANNELS)],
             // 'boolean' accepteert alleen 1/0/"1"/"0"/true/false — niet de string
             // "false"/"true" die curl -F meestuurt. 'in' dekt beide vormen.
             'mandatory' => ['nullable', 'in:0,1,true,false'],
@@ -76,7 +86,7 @@ class OtaUpdateController extends Controller
         }
 
         $platform = $request->input('platform', 'all');
-        $channel  = $request->input('channel', 'production');
+        $channel  = $request->input('channel') ?: 'production';
         $version  = $request->input('version');
         $file     = $request->file('bundle');
 
