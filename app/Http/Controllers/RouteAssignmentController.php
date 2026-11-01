@@ -184,6 +184,7 @@ class RouteAssignmentController extends Controller
     {
         $this->authorizeMap($mapId, requireEdit: true);
         $validated = $this->validatePayload($request, creating: true);
+        $this->assertDevicesAllowed($validated['participants'] ?? [], []);
 
         $assignment = DB::transaction(function () use ($validated, $mapId) {
             $assignment = RouteAssignment::create([
@@ -223,6 +224,9 @@ class RouteAssignmentController extends Controller
     {
         [$assignment, $role] = $this->load($id, 'edit');
         $validated = $this->validatePayload($request, creating: false);
+        if (array_key_exists('participants', $validated)) {
+            $this->assertDevicesAllowed($validated['participants'] ?? [], $assignment->participants ?? []);
+        }
 
         if ($request->filled('expected_version') && (int) $request->input('expected_version') !== $assignment->updated_at->timestamp) {
             $last = $assignment->logs()->latest('id')->first();
@@ -388,7 +392,9 @@ class RouteAssignmentController extends Controller
             }
         }
         if (array_key_exists('participants', $new)) {
-            $noResult = fn (array $list) => array_map(fn ($p) => array_diff_key($p, ['result' => 1]), array_values($list));
+            // Beoordelen en per deelnemer een andere route kiezen (Overzicht) mogen ook in productie; de
+            // wijziging van route_code komt gewoon in het bewerkingslog (diffParticipants).
+            $noResult = fn (array $list) => array_map(fn ($p) => array_diff_key($p, ['result' => 1, 'route_code' => 1]), array_values($list));
             if ($noResult($new['participants'] ?? []) != $noResult($a->participants ?? [])) {
                 return 'deelnemers en routekoppeling';
             }
@@ -402,7 +408,7 @@ class RouteAssignmentController extends Controller
         'offset' => 'Letter-offset', 'orderMode' => 'Volgorde koers/paden', 'longestFirst' => 'Langste route eerst',
         'mode' => 'Uitvoering (papier/app)', 'print' => 'A4-print', 'emergency' => 'Noodprocedure', 'startId' => 'Start/finish-waypoint',
     ];
-    private const IGNORED_SETTINGS = ['seed', 'view', 'showPrikkerOnMap', 'posts', 'status'];
+    private const IGNORED_SETTINGS = ['seed', 'view', 'showPrikkerOnMap', 'posts', 'status', 'group'];
 
     private function diff(RouteAssignment $a, array $new): array
     {
@@ -506,6 +512,9 @@ class RouteAssignmentController extends Controller
             if (($q['order'] ?? null) !== ($p['order'] ?? null)) {
                 $out[] = sprintf('%s: volgorde gewijzigd', $name);
             }
+            if (($q['device_id'] ?? null) !== ($p['device_id'] ?? null)) {
+                $out[] = sprintf('%s: Connect-apparaat %s', $name, empty($p['device_id']) ? 'ontkoppeld' : 'gekoppeld');
+            }
             if (($q['result'] ?? null) != ($p['result'] ?? null)) {
                 $qr = $q['result'] ?? [];
                 $pr = $p['result'] ?? [];
@@ -527,13 +536,27 @@ class RouteAssignmentController extends Controller
         return $out;
     }
 
+    /**
+     * Een Connect-apparaat koppelen mag alleen aan wie de apparaten van die organisatie in Connect ziet
+     * (zelfde regel als de apparatenlijst). Een apparaat dat al aan de training hangt blijft gewoon staan,
+     * zodat een medewerker zonder dat recht de training nog kan opslaan.
+     */
+    private function assertDevicesAllowed(array $participants, array $stored): void
+    {
+        $known = collect($stored)->pluck('device_id')->filter()->map(fn ($id) => (int) $id)->all();
+        $wanted = collect($participants)->pluck('device_id')->filter()->map(fn ($id) => (int) $id)->diff($known)->values()->all();
+        if ($wanted && array_diff($wanted, app(\App\Services\KakoConnectDevices::class)->visibleIds(auth()->user(), $wanted))) {
+            abort(403, 'Je hebt geen toegang tot dit Connect-apparaat.');
+        }
+    }
+
     private function validatePayload(Request $request, bool $creating): array
     {
         $req = $creating ? 'required' : 'sometimes';
 
         abort_if(strlen((string) json_encode($request->input('settings'))) > self::MAX_SETTINGS_BYTES, 422, 'Instellingen zijn te groot');
 
-        return $request->validate([
+        $data = $request->validate([
             'title' => [$req, 'string', 'max:120'],
             'type' => ['sometimes', 'in:training,exam'],
             'expected_version' => ['sometimes', 'nullable', 'integer'],
@@ -545,6 +568,8 @@ class RouteAssignmentController extends Controller
             'participants.*.route_code' => ['nullable', 'string', 'max:16'],
             // course_first = 1A (koers, dan paden), paths_first = A1.
             'participants.*.order' => ['nullable', 'in:course_first,paths_first'],
+            // Gekoppeld Connect-apparaat (connect_allowed_devices.id); alleen een nieuw gekozen apparaat wordt op rechten getoetst.
+            'participants.*.device_id' => ['nullable', 'integer', 'distinct'],
             // Beoordeling: { posts: {postId: 0..1}, finish_time: "HH:MM", note }
             'participants.*.result' => ['nullable', 'array'],
 
@@ -577,6 +602,22 @@ class RouteAssignmentController extends Controller
             'routes.*.locations.*.via.*.lat' => ['required', 'numeric', 'between:-90,90'],
             'routes.*.locations.*.via.*.lon' => ['required', 'numeric', 'between:-180,180'],
         ]);
+
+        // device_id: altijd een getal, en zonder koppeling geen sleutel (de lijsten voor de productie-vergrendeling blijven vergelijkbaar).
+        // validated() zet bovendien leden zonder id/sleutel achteraan; terug in invoervolgorde.
+        if (isset($data['participants'])) {
+            $data['participants'] = collect($data['participants'])->sortKeys()->map(function (array $p) {
+                if (empty($p['device_id'])) {
+                    unset($p['device_id']);
+                } else {
+                    $p['device_id'] = (int) $p['device_id'];
+                }
+
+                return $p;
+            })->values()->all();
+        }
+
+        return $data;
     }
 
     /**

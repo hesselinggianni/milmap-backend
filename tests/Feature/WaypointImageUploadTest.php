@@ -48,6 +48,7 @@ class WaypointImageUploadTest extends TestCase
         });
         (require database_path('migrations/2026_06_16_100000_create_map_waypoints_table.php'))->up();
         (require database_path('migrations/2026_07_18_120000_create_map_waypoint_images_table.php'))->up();
+        (require database_path('migrations/2026_10_31_100000_create_map_waypoint_revisions_table.php'))->up();
         $userId = DB::table('users')->insertGetId(['name' => 'Upload test']);
         $user = User::findOrFail($userId);
         $this->actingAs($user);

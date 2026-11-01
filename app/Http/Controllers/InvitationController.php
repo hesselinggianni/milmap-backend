@@ -218,7 +218,7 @@ class InvitationController extends Controller
                 $events->push([
                     'type'    => 'invite_sent',
                     'title'   => $i->status === 'accepted' ? 'Your invitation was accepted' : 'Invitation sent',
-                    'subtitle' => $i->email . ' · ' . $i->resourceLabel() . ' "' . $i->resourceTitle() . '"',
+                    'subtitle' => $i->recipientLabelFor($user) . ' · ' . $i->resourceLabel() . ' "' . $i->resourceTitle() . '"',
                     'status'  => $i->status,
                     'resource_type' => $i->resourceType(),
                     'resource_id'   => $i->invitable_id,
@@ -358,7 +358,7 @@ class InvitationController extends Controller
         return [
             'id'             => $i->id,
             'token'          => $i->token,
-            'email'          => $i->email,
+            'email'          => $i->recipientLabelFor(Auth::id()),
             'role'           => $i->role,
             'status'         => $i->status,
             'resource_type'  => $i->resourceType(),

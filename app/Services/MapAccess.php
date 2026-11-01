@@ -95,7 +95,7 @@ class MapAccess
     {
         return Mission::query()
             ->where('missions.status', 'active')
-            ->whereIn('missions.linked_team_id', TeamMember::activeTeamIdsQuery($user->id))
+            ->linkedToTeams(TeamMember::activeTeamIdsQuery($user->id))
             ->where(fn ($m) => $m->whereNull('map->source')->orWhere('map->source', 'server'));
     }
 

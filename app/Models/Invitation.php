@@ -14,6 +14,7 @@ class Invitation extends Model
 
     protected $fillable = [
         'email',
+        'email_hidden',
         'invited_user_id',
         'invitable_type',
         'invitable_id',
@@ -27,6 +28,7 @@ class Invitation extends Model
     ];
 
     protected $casts = [
+        'email_hidden' => 'boolean',
         'accepted_at' => 'datetime',
         'expires_at'  => 'datetime',
     ];
@@ -84,6 +86,21 @@ class Invitation extends Model
     }
 
     // ── Helpers ─────────────────────────────────────────────────────
+
+    /**
+     * Hoe de uitnodiging de genodigde noemt voor $viewerId. Een uitnodiger die de
+     * ander alleen op gebruikersnaam kent ziet geen e-mailadres, maar @gebruikersnaam.
+     */
+    public function recipientLabelFor(?int $viewerId): string
+    {
+        if (! $this->email_hidden || $viewerId === null || (int) $this->invited_by !== $viewerId) {
+            return (string) $this->email;
+        }
+
+        $handle = PublicProfile::where('user_id', $this->invited_user_id)->value('handle');
+
+        return $handle ? '@' . $handle : '—';
+    }
 
     /**
      * Human-readable title of the invited resource ("name" for missions,

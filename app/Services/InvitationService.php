@@ -73,7 +73,7 @@ class InvitationService
      * @param  Mission|Map  $invitable
      * @return array{ok:bool,status?:int,error?:string,invitation?:Invitation,isNewUser?:bool,email_sent?:bool}
      */
-    public function createInvite($invitable, string $email, ?string $role, User $inviter): array
+    public function createInvite($invitable, string $email, ?string $role, User $inviter, bool $hideEmail = false): array
     {
         $email = mb_strtolower(trim($email));
         app(ConnectManagement::class)->assertInvitation($invitable, $inviter, $email);
@@ -103,6 +103,7 @@ class InvitationService
 
         $invite = Invitation::create([
             'email'           => $email,
+            'email_hidden'    => $hideEmail && $existingUser !== null,
             'invited_user_id' => $existingUser?->id,
             'invitable_type'  => get_class($invitable),
             'invitable_id'    => $invitable->id,

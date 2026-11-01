@@ -6,6 +6,7 @@ use App\Models\Map;
 use App\Models\Mission;
 use App\Models\RouteMap;
 use App\Models\MapShare;
+use App\Support\RouteGeometry;
 use Illuminate\Http\Request;
 use Illuminate\Support\Str;
 
@@ -67,6 +68,74 @@ class RouteMapController extends Controller
         return response()->json($this->presentRouteMap($routeMap));
     }
 
+    /**
+     * Velden waarmee een route later vindbaar en te beoordelen is: het gesnapte
+     * pad ([lat, lon]-paren), de sport, het hoogteprofiel ([afstand_m, hoogte_m])
+     * en stijgen/dalen. Allemaal optioneel; `source`/`attribution` zet alleen de server.
+     */
+    private function discoveryRules(): array
+    {
+        return [
+            'path' => ['nullable', 'array', 'max:4000'],
+            'path.*' => ['array', 'size:2'],
+            'path.*.0' => ['numeric', 'between:-90,90'],
+            'path.*.1' => ['numeric', 'between:-180,180'],
+
+            'sport' => ['nullable', 'in:hike,bike,mtb,run'],
+
+            'elevation_profile' => ['nullable', 'array', 'max:1000'],
+            'elevation_profile.*' => ['array', 'size:2'],
+            'elevation_profile.*.0' => ['numeric', 'min:0'],
+            'elevation_profile.*.1' => ['numeric', 'between:-500,9000'],
+
+            'ascent_m' => ['nullable', 'integer', 'between:0,30000'],
+            'descent_m' => ['nullable', 'integer', 'between:0,30000'],
+        ];
+    }
+
+    /**
+     * Zet het ruwe pad en profiel uit het verzoek om naar opslagwaarden:
+     * pad → vereenvoudigde encoded polyline, profiel → compact, en vul stijgen/dalen
+     * (en `total_elevation` als dat nog leeg is) aan.
+     */
+    private function applyDiscoveryInput(array $validated): array
+    {
+        $hasPath = array_key_exists('path', $validated);
+        $hasProfile = array_key_exists('elevation_profile', $validated);
+        $path = $validated['path'] ?? null;
+        $profile = $validated['elevation_profile'] ?? null;
+        unset($validated['path'], $validated['elevation_profile']);
+
+        if ($hasPath) {
+            $validated['path_polyline'] = $path ? RouteGeometry::encode(RouteGeometry::simplify($path)) : null;
+            if (! $path) {
+                $validated['elevation_profile'] = null;
+                $validated['ascent_m'] = null;
+                $validated['descent_m'] = null;
+            }
+        }
+
+        if ($hasProfile && $profile) {
+            $full = RouteGeometry::compactProfile($profile, 1000);
+            $validated['elevation_profile'] = RouteGeometry::compactProfile($profile) ?: null;
+
+            if (count($full) >= 2) {
+                [$up, $down] = RouteGeometry::ascentDescent($full);
+                $validated['ascent_m'] ??= $up;
+                $validated['descent_m'] ??= $down;
+            }
+        } elseif ($hasProfile) {
+            $validated['elevation_profile'] = null;
+        }
+
+        // `total_elevation` is de bestaande (waypoint-)som en daardoor vaak 0: vul aan met het echte stijgen.
+        if (($validated['ascent_m'] ?? null) !== null && (float) ($validated['total_elevation'] ?? 0) <= 0) {
+            $validated['total_elevation'] = $validated['ascent_m'];
+        }
+
+        return $validated;
+    }
+
     /** Shape a route map for the API response, including the linked mission summary. */
     private function presentRouteMap(RouteMap $routeMap): array
     {
@@ -82,7 +151,7 @@ class RouteMapController extends Controller
                     'status' => $mission->status,
                     'date'   => $mission->date?->toDateString(),
                     'time'   => $mission->time,
-                    'ogroup' => $mission->ogroup,
+                    'ogroup' => $mission->ogroupFor((int) auth()->id()),
                 ];
             }
         }
@@ -166,7 +235,9 @@ class RouteMapController extends Controller
             'sterkte' => ['nullable', 'integer'],
             'kaartblad' => ['nullable', 'string'],
             'vtv_vta' => ['nullable', 'string'],
-        ]);
+        ] + $this->discoveryRules());
+
+        $validated = $this->applyDiscoveryInput($validated);
 
         $this->authorizeMap($validated['map_id'], requireEdit: true);
 
@@ -232,7 +303,11 @@ class RouteMapController extends Controller
             'vtv_vta' => ['nullable', 'string'],
 
             'mission_id' => ['nullable', 'uuid', 'exists:missions,id'],
-        ]);
+        ] + $this->discoveryRules());
+
+        $validated = $this->applyDiscoveryInput($validated);
+
+        $this->guardLiveAssignment($routeMap, $validated['locations'] ?? null);
 
         // Ensure numeric fields are never null (DB columns are NOT NULL)
         if (array_key_exists('pause_time', $validated)) {
@@ -330,11 +405,34 @@ class RouteMapController extends Controller
 
         $this->authorize('update', $routeMap->map);
 
+        $this->guardLiveAssignment($routeMap, deleting: true);
+
         $routeMap->delete();
 
         return response()->json([
             'message' => 'RouteMap verwijderd',
         ]);
+    }
+
+    /**
+     * Routes van een KAKO-training in productie staan vast (zie
+     * RouteAssignmentController::lockedChange): deelnemer-app, check-ins en score leunen op
+     * deze benen. Zonder deze controle omzeilt een kaartbewerker de vergrendeling via de gewone
+     * routekaart-API (locaties aanpassen of de route verwijderen), zonder logregel.
+     */
+    private function guardLiveAssignment(RouteMap $routeMap, ?array $newLocations = null, bool $deleting = false): void
+    {
+        if (! $routeMap->route_assignment_id) {
+            return;
+        }
+        if (($routeMap->assignment?->settings['status'] ?? 'draft') !== 'live') {
+            return;
+        }
+        if (! $deleting && ($newLocations === null || $newLocations == $routeMap->locations)) {
+            return;
+        }
+
+        abort(423, 'Deze route hoort bij een training in productie: wijzigen of verwijderen kan niet. Zet de training eerst terug naar bewerken.');
     }
 
     /*

@@ -19,15 +19,25 @@ class PruneStaticMapCache extends Command
 
     protected $description = 'Verwijder gecachte Mapbox static-map-afbeeldingen ouder dan de cache-TTL';
 
+    /** KAKO-miniaturen (Top50PreviewController): publiek, elke bbox-variant is een eigen bestand. */
+    private const PREVIEW_TTL_DAYS = 30;
+
     public function handle(): int
     {
-        $root = storage_path('app/tiles/static');
+        $days = (int) ($this->option('days') ?: StaticMapController::CACHE_TTL_DAYS);
+        $removed = $this->prune(storage_path('app/tiles/static'), $days)
+            + $this->prune(storage_path('app/tiles/top50-preview'), self::PREVIEW_TTL_DAYS);
+
+        $this->info("{$removed} verlopen static-map-/preview-afbeeldingen verwijderd.");
+        return self::SUCCESS;
+    }
+
+    private function prune(string $root, int $days): int
+    {
         if (! is_dir($root)) {
-            $this->info('Geen static-map-cache aanwezig.');
-            return self::SUCCESS;
+            return 0;
         }
 
-        $days   = (int) ($this->option('days') ?: StaticMapController::CACHE_TTL_DAYS);
         $cutoff = now()->subDays($days)->getTimestamp();
         $removed = 0;
 
@@ -46,7 +56,6 @@ class PruneStaticMapCache extends Command
             }
         }
 
-        $this->info("{$removed} verlopen static-map-afbeeldingen verwijderd (> {$days} dagen).");
-        return self::SUCCESS;
+        return $removed;
     }
 }

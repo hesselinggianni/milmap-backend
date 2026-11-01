@@ -120,3 +120,61 @@ Bevindingen bij het inbouwen:
    die herbruik je daarna voor Litouwen.
 5. Litouwen (registratie TOP50LKS, anders basiskaart + reprojectie).
 6. Oekraïne: voorlopig alleen een generieke fallback-laag.
+
+## Uitbreiding 2026-10-29: CH/ES/AT/CZ/LU/EE/FR (naar aanleiding van Topo GPS)
+
+Aanleiding: het kaartaanbod van Topo GPS (topo-gps.com, rdzl) bekeken. Hun kaarten zelf
+zijn niet bruikbaar (in-app aankoop, voorwaarden: "may not be distributed in any way,
+except when the map license explicitly allows it"), maar ze noemen per land de nationale
+bron. Die zijn direct ingebouwd als basemap-thema's (zelfde patroon als NO/DE):
+
+| Thema | Dienst | Licentie / attributie | Tegel-URL-valkuil |
+|---|---|---|---|
+| `ch-topo` | swisstopo `pixelkarte-farbe`, 3857 | OGD, gratis ook commercieel; "© swisstopo" | `{z}/{x}/{y}.jpeg`; 400 buiten dekking |
+| `es-topo` | IGN España `mapa-raster` laag `MTN` | CC BY 4.0; IGN noemen | WMTS-KVP, `GoogleMapsCompatible` |
+| `at-basemap` | basemap.at `geolandbasemap` | CC BY 4.0; "Datenquelle: basemap.at" | `{z}/{y}/{x}.png`; 404 buiten Oostenrijk (geknipt op landsgrens) |
+| `cz-topo` | ČÚZK `ZTM_WM` (ArcGIS-cache) | CC BY 4.0; © ČÚZK | `{z}/{y}/{x}` zonder extensie; 404 onder z6 |
+| `lu-topo` | Geoportail.lu opendata `topo_20k` | CC0 | laag `topomap` geeft 400; `topo_20k`/`topo_50k` werken |
+| `ee-topo` | Maa-amet `kaart@GMC` (TMS) | open data; bron + jaar noemen | TMS → `{-y}`; 404 boven z18 |
+| `fr-plan` | IGN Géoplateforme `PLANIGNV2` | Licence Ouverte 2.0; © IGN | KVP-WMTS, `TILEMATRIXSET=PM`; géén SCAN25 |
+
+Alle zeven: CORS `*`, 256px, geen sleutel nodig. Visueel gecheckt via `/__basemaps`
+(ES/CZ/CH/FR op z14 met echt topo-detail). Licenties zijn uit secundaire bronnen
+bevestigd (catalogi/wiki/presentaties), niet uit de officiële voorwaardenpagina's van
+elke dienst — vóór commerciële promotie per land nalopen.
+
+**Bewust niet:** BE (NGI CartoWeb `cartoweb.wmts.ngi.be` werkt technisch, maar de
+gebruiksvoorwaarden zijn niet open — intern gebruik/commercieel beperkt). Mogelijk wel via
+regionale open data (Vlaanderen GRB, Wallonië) — nog niet onderzocht.
+**Vergen een gratis sleutel/registratie (niet gedaan):** FI (MML `maastokartta`, 401),
+DK (Dataforsyningen token), SE (Lantmäteriet), NZ (LINZ). **Niet gratis:** FR SCAN25.
+Niet gedaan omdat ver van de doelgroep: JP (GSI, werkt zonder sleutel), AU.
+Geen bulk-offline voor deze zeven (BULK_DOWNLOAD_COUNTRY_THEMES ongewijzigd, geen
+regio-opsplitsing in countryRegions.js).
+
+## België — onderzoek 2026-10-29 (geen thema gebouwd)
+
+Vier niveaus, elk met eigen voorwaarden. Geverifieerd uit de capabilities/voorwaardenpagina van de dienst zelf, tenzij anders vermeld.
+
+- **Federaal — NGI CartoWeb.be** (`https://cartoweb.wmts.ngi.be/1.0.0/topo/default/3857/{z}/{y}/{x}.png`, lagen `topo`, `topo_grey`, `overlay`; z8–16 echte tegels, daarbuiten 404).
+  Technisch bruikbaar, juridisch **niet gratis voor MilMap**: gratis alleen voor niet-commercieel gebruik (CC-BY-NC). Commercieel
+  gebruik vereist registratie + jaarvergoeding (tabel op [ngi.be](https://ngi.be/gebruiksvoorwaarden-cartoweb-be/): klein <50 pers./<€10 mln omzet = €60/jaar,
+  medium €240, middelgroot €960, groot €3.840, super €15.360) — **maar** wie CartoWeb.be "als basis wil gebruiken, informatie wil toevoegen en
+  als product aan klanten wil aanbieden" betaalt royalty's volgens een maatwerkovereenkomst (zo zou MilMap kunnen vallen; NGI beslist).
+  Verder: geen automatisch downloaden (botst met offline-cache/bulk), NGI-copyright verplicht (+ TomTom bij 1:2.500–1:10.000, EuroGeographics bij crossborder), niet groter dan A3 afdrukken.
+- **Vlaanderen — GRB basiskaart** (`https://geo.api.vlaanderen.be/GRB/wmts`, lagen `grb_bsk`, `grb_bsk_grijs`, TileMatrixSet `GoogleMapsVL` = 3857, 256px, KVP, z0–21):
+  capabilities zeggen "Het gebruik van de service is kosteloos"; licentie Gratis open data licentie Vlaanderen v1.02 (uit zoekresultaten, primaire tekst niet gelezen),
+  bronvermelding "Bron: Grootschalig Referentie Bestand Vlaanderen, Digitaal Vlaanderen". Tegels 200 + CORS `*` van z6 t/m z20.
+  ⚠️ Het is een **kadaster-/basiskaart** (gele grond, rode gebouwen, perceelgrenzen), géén topo — geen hoogtelijnen/bos.
+  Let op: `…/GRB-basiskaart/wmts` geeft een error.html; het juiste pad is `…/GRB/wmts`, en zonder browser-UA wordt soms geweigerd.
+- **Brussel — UrbIS** (`https://geoservices-urbis.irisnet.be/geoserver/gwc/service/wmts`, lagen `urbisFR/NL(+Gray)`, TileMatrixSet `EPSG:900913`, matrix-id `EPSG:900913:{z}`):
+  capabilities: Fees = **CC0** (publiek domein). Tegels 200 + CORS `*` vanaf z10 (z6/z8 = lege 788-byte tegels → minZoom 10). Straatkaart, geen topo; klein gebied (±[4.24,50.76,4.48,50.92]).
+- **Wallonië — SPW**: ArcGIS MapServers op `geoservices.wallonie.be/arcgis/rest/services/` (o.a. `IGN/TOP10s_NB`, `IGN/FOND_IGN_NB`, `FDC/FDC_SPW_LEGER`,
+  `DONNEES_BASE/FDC_SPW`, `TOPOGRAPHIE/PICC_VDIFF`). Alle in Lambert (EPSG:31370/3812) met eigen tegelraster (512px, aangepaste origin) — geen 3857, dus proj4 +
+  reprojectie nodig (zoals PL/LT), of dynamische WMS. **Licentie niet vastgesteld**: SPW hanteert eigen licenties per dataset (fiche descriptive op het
+  Géoportail; mailadres voor vragen: helpdesk.carto@spw.wallonie.be); de achtergrondkaarten bevatten bovendien IGN/AGDP-data ("(c) AGDP, IGN, SPW"), wat
+  NGI-rechten kan raken. Niet gebouwd; eerst bij SPW navragen.
+
+**Status 2026-10-29 (later):** Vlaanderen en Brussel zijn ingebouwd als `vl-grb` (GRB `grb_bsk`, z7–20) en `bx-urbis` (UrbIS `urbisFR`, z10–20) —
+zelfde plekken als de andere landen (baseLayers.js, View.vue-themalijst, shareThemes.js, MapShareController::BASE_THEMES + tests). Visueel gecheckt via `/__basemaps`
+(Gent z14, Brussel z16); backend-test `MapShareBaseThemeTest` 6/6 groen.

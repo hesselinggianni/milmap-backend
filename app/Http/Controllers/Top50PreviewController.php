@@ -4,6 +4,7 @@ namespace App\Http\Controllers;
 
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\File;
+use Illuminate\Support\Facades\RateLimiter;
 
 /** KAKO thumbnails composed exclusively from the permanent local TOP50 tiles. */
 class Top50PreviewController extends Controller
@@ -32,6 +33,9 @@ class Top50PreviewController extends Controller
         $y0 = max(0, (int) floor(($limit - $north) / $span));
         $y1 = min(2 ** $zoom - 1, (int) floor(($limit - $south) / $span));
         abort_unless(($x1 - $x0 + 1) * ($y1 - $y0 + 1) <= 64, 422);
+        // Route is publiek (een <img> kan geen token meesturen) en elke bbox-variant is een eigen
+        // cachebestand: de nieuwe previews per IP begrenzen zodat niemand de schijf/CPU kan vullen.
+        abort_unless(RateLimiter::attempt('top50-preview:' . $request->ip(), 60, fn () => true, 60), 429);
         $image = imagecreatetruecolor(640, 360);
         imagefill($image, 0, 0, imagecolorallocate($image, 245, 245, 240));
         for ($x = $x0; $x <= $x1; $x++) {
@@ -52,6 +56,11 @@ class Top50PreviewController extends Controller
         $temporary = tempnam(dirname($file), 'preview-');
         try {
             abort_unless(imagewebp($image, $temporary, 90), 500);
+            // Weinig schijfruimte over (zelfde grens als de tegelcache): wel tonen, niet bewaren.
+            $free = @disk_free_space(storage_path('app'));
+            if ($free !== false && $free < (float) config('services.pdok.min_free_gb', 3) * 1024 ** 3) {
+                return response(file_get_contents($temporary), 200, ['Content-Type' => 'image/webp', 'Cache-Control' => 'no-store']);
+            }
             rename($temporary, $file);
         } finally {
             imagedestroy($image);

@@ -26,14 +26,19 @@ per route (dag/nacht), starttijden en "iedereen binnen vóór".
   - **Padenroutes (letters A, B, C …)**: over de paden (OSRM-voetroute).
 - Per soort stel je apart in: **aantal waypoints (min/max)** en **km-band** (standaard 4–8 km).
 - Een deelnemer krijgt een **combinatie**: `1A` = eerst koersroute 1, daarna padenroute A;
-  `A1` = eerst padenroute A, daarna koersroute 1. De volgorde is per deelnemer (of
-  per groep) in te stellen, zodat sommigen eerst kaart/koers en anderen eerst paden lopen.
+  `A1` = eerst padenroute A, daarna koersroute 1. De volgorde wordt **automatisch**
+  verdeeld (afwisselend per deelnemer: 1A, B2, 3C …; wie wat eerst loopt maakt niet uit)
+  en is per deelnemer met een handmatige keuze te overschrijven. Er is geen
+  instelling "volgorde" meer (de oude `settings.orderMode` wordt genegeerd; bij een
+  oude training met een vaste volgorde blijft de opgeslagen volgorde per deelnemer
+  staan, zodat uitgedeelde codes nooit veranderen).
 - Tijd per deelnemer = tijd koersdeel + tijd padendeel (elk afstand × tempo, dag/nacht).
 - Eén **start/finish-waypoint** voor alle routes; "langste combinatie eerst starten" is een optie.
 
 ## Aantal deelnemers en combinaties
 
-- Vooraf geef je het **aantal deelnemers** op; daaruit volgt hoeveel koersroutes
+- Je typt of plakt de **namen** (één per regel); het aantal deelnemers is het aantal
+  namen. Daaruit volgt hoeveel koersroutes
   (cijfers) en padenroutes (letters) er gegenereerd moeten worden.
 - Combinaties worden met een **letter-offset** gekoppeld zodat niet iedereen dezelfde
   paar krijgt: 1B / 2C / 3D … (of omgekeerd B1 / C2 / D3 …). Offset instelbaar
@@ -62,6 +67,8 @@ per route (dag/nacht), starttijden en "iedereen binnen vóór".
 - Ook in de export (PDF/CSV) en een printbare **prikkerlijst** voor de instructeur.
 
 ## Lopen met papier of met de app
+
+> Uitgewerkt in [kako-app-modus.md](kako-app-modus.md) (deelnemer-API, check-ins, positie delen, privacy, afscherming). Onderstaande tekst is het oorspronkelijke plan.
 
 - Per opdracht kies je de uitvoering: **papier** (PDF/print per deelnemer: route, koersen,
   afstanden, starttijd, prikkerraster) of **app** (deelnemer wordt uitgenodigd), of beide.
@@ -180,6 +187,25 @@ per route (dag/nacht), starttijden en "iedereen binnen vóór".
   Type | Start | Verwacht binnen | Buffer`, met kop "Iedereen binnen vóór 23:00".
   Smal scherm: tabbladen Instellingen / Overzicht.
 - Export: PDF (A4 liggend) en CSV.
+
+## Deelnemersgroepen en Connect-apparaten (2026-10-31)
+
+- **Groepen** (`kako_groups`, `KakoGroupController`): persoonlijk per gebruiker en herbruikbaar over trainingen heen,
+  net als `kako_folders`. Leden staan als JSON `[{ id, name, device_id? }]` in de groep (altijd als geheel geladen/bewerkt).
+  Endpoints: `GET/POST /kako-groups`, `PUT/DELETE /kako-groups/{id}`. Naam uniek per gebruiker (hoofdletterongevoelig), max. 100
+  groepen, max. 500 leden. De training onthoudt alleen `settings.group = { id, name }` (label); de deelnemerslijst zelf blijft
+  per training aanpasbaar en wijkt af van de groep tot je "Groep bijwerken" kiest.
+- **Connect-apparaten als deelnemer**: `GET /kako-connect-devices?q=&organization_id=` geeft de vooraf toegestane apparaten
+  (`connect_allowed_devices`) van organisaties waarvan je actieve eigenaar/beheerder bent — dezelfde regel als het
+  Connect-portaal. Voor iedereen anders (gewoon lid, apparaataccount, geen Connect) is de lijst leeg en biedt de app de keuze niet
+  aan. Het UDID gaat nooit mee. `label` = toegewezen medewerker/leerling, anders de apparaatnaam.
+- **Koppeling in de training**: `participants.*.device_id` (kaal getal, geen foreign key; alleen aanwezig als er een apparaat is).
+  Een *nieuw* gekoppeld apparaat moet zichtbaar zijn voor de opslaande gebruiker (403 anders); een bestaande koppeling blijft
+  gewoon opslaan voor een bewerker zonder dat recht. Zelfde apparaat bij twee deelnemers/leden: 422. Koppelen/ontkoppelen
+  komt in het bewerkingslog. In productie vergrendeld met de rest van de deelnemers (lockedChange).
+- Tests: `tests/Feature/KakoGroupTest.php`, Bruno `milmap-api-tests/kako/43…68` (`run-local.sh` seedt een Connect-beheerder
+  `api-test3` met twee apparaten; die requests sturen `X-Milmap-Client: web`, anders eist de apparaatregistratie een installatie-id).
+- Pre-deploy: migratie `2026_10_31_100000_create_kako_groups` op prod draaien.
 
 ## Bewust (nog) niet in v1
 

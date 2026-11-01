@@ -48,6 +48,8 @@ class MissionController extends Controller
                 'collaborators.user:id,first_name,last_name,avatar_path',
                 'owner:id,first_name,last_name,avatar_path',
                 'linkedTeam' => fn ($q) => $q->withCount('members'),
+                // roleFor()/teamIds() lezen de teams van de missie; zo geen query per rij.
+                ...(Mission::teamsSupported() ? ['missionTeams'] : []),
             ])
             ->where('owner_id', $userId)
             ->orWhereHas('collaborators', function ($q) use ($userId) {
@@ -56,7 +58,7 @@ class MissionController extends Controller
             ->orWhere(function ($q) use ($teamIds) {
                 // Auto-viewer: active missions whose linked team includes the user
                 $q->where('status', 'active')
-                  ->whereIn('linked_team_id', $teamIds);
+                  ->linkedToTeams($teamIds);
             })
             ->latest('updated_at')
             ->get();
@@ -213,7 +215,8 @@ class MissionController extends Controller
                 'status' => 'planning',
                 'date' => $source->date,
                 'time' => $source->time,
-                'ogroup' => $source->ogroup,
+                // De versies van de teams horen bij de teams van de bron-missie.
+                'ogroup' => collect($source->ogroup ?? [])->except('team_plans')->all(),
                 'template_info' => $source->template_info,
                 'map' => $map,
                 'area' => $source->area,
@@ -350,6 +353,18 @@ class MissionController extends Controller
         // pakken de oude waarde vóór ->fill() — daarna is hij overschreven.
         $oldStatus = $mission->status;
         $newStatus = $data['status'] ?? $oldStatus;
+
+        // Een volledige ogroup-PUT (lokaal/legacy pad) mag de versies van de
+        // teams nooit wissen of overschrijven: die lopen alleen via /live.
+        if (array_key_exists('ogroup', $data)) {
+            $stored = is_array($mission->ogroup) ? $mission->ogroup : [];
+            $incoming = is_array($data['ogroup']) ? $data['ogroup'] : [];
+            unset($incoming['team_plans']);
+            if (array_key_exists('team_plans', $stored)) {
+                $incoming['team_plans'] = $stored['team_plans'];
+            }
+            $data['ogroup'] = $incoming;
+        }
 
         $mission->fill($data);
         $mission->save();
@@ -592,7 +607,7 @@ class MissionController extends Controller
             'status' => $mission->status,
             'date' => $mission->date?->toDateString(),
             'time' => $mission->time,
-            'ogroup' => $mission->ogroup,
+            'ogroup' => $mission->ogroupFor($userId),
             'template_info' => $mission->template_info,
             'map' => $mission->map,
             'area' => $mission->area,

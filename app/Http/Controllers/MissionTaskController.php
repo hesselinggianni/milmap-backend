@@ -33,6 +33,7 @@ class MissionTaskController extends Controller
         'assignee:id,first_name,last_name,email',
         'assignees:id,first_name,last_name,email',
         'team:id,name,color',
+        'teamProgress.team:id,name,color,owner_id',
     ];
 
     public function index(string $missionId)
@@ -60,17 +61,18 @@ class MissionTaskController extends Controller
     {
         $uid = Auth::id();
 
-        $teamIds = TeamMember::where('user_id', $uid)
-            ->pluck('team_id');
+        $teamIds = TeamMember::activeTeamIdsQuery($uid)->pluck('team_id')
+            ->merge(Team::where('owner_id', $uid)->pluck('id'))->unique();
 
         $tasks = MissionTask::query()
-            ->with(['mission:id,name,status'])
-            ->whereHas('mission')                       // missie bestaat nog
+            ->with(['mission:id,name,status', 'teamProgress' => fn ($p) => $p->whereIn('team_id', $teamIds)])
+            ->whereHas('mission', fn ($m) => $m->participatedBy($uid))
             ->where(function ($q) use ($uid, $teamIds) {
                 $q->where('assignee_user_id', $uid)
                   ->orWhereHas('assignees', fn ($a) => $a->where('users.id', $uid));
                 if ($teamIds->isNotEmpty()) {
-                    $q->orWhereIn('assigned_team_id', $teamIds);
+                    $q->orWhereIn('assigned_team_id', $teamIds)
+                      ->orWhereHas('teamProgress', fn ($p) => $p->whereIn('team_id', $teamIds));
                 }
             })
             ->orderByRaw('due_at IS NULL, due_at ASC')
@@ -81,7 +83,10 @@ class MissionTaskController extends Controller
             'tasks' => $tasks->map(fn ($t) => [
                 'id'       => $t->id,
                 'title'    => $t->title,
-                'status'   => $t->status,
+                'status'   => $t->teamProgress->isNotEmpty()
+                    ? ($t->teamProgress->every(fn ($p) => $p->status === 'done') ? 'done'
+                        : ($t->teamProgress->contains(fn ($p) => $p->status !== 'todo') ? 'doing' : 'todo'))
+                    : $t->status,
                 'priority' => $t->priority,
                 'due_at'   => optional($t->due_at)?->toIso8601String(),
                 'mission'  => $t->mission ? [
@@ -110,20 +115,23 @@ class MissionTaskController extends Controller
             ->where('parent_id', $parentId)
             ->max('order_index');
 
-        $task = MissionTask::create([
-            'mission_id'  => $mission->id,
-            'parent_id'   => $parentId,
-            'phase_key'   => $data['phase_key'] ?? null,
-            'title'       => $data['title'],
-            'description' => $data['description'] ?? null,
-            'due_at'      => $data['due_at'] ?? null,
-            'status'      => $data['status'] ?? 'todo',
-            'priority'    => $data['priority'] ?? 'normal',
-            'order_index' => $maxOrder + 1,
-            'created_by'  => $uid,
-        ]);
+        $task = DB::transaction(function () use ($mission, $parentId, $data, $maxOrder, $uid, $request) {
+            $task = MissionTask::create([
+                'mission_id'  => $mission->id,
+                'parent_id'   => $parentId,
+                'phase_key'   => $data['phase_key'] ?? null,
+                'title'       => $data['title'],
+                'description' => $data['description'] ?? null,
+                'due_at'      => $data['due_at'] ?? null,
+                'status'      => $data['status'] ?? 'todo',
+                'priority'    => $data['priority'] ?? 'normal',
+                'order_index' => $maxOrder + 1,
+                'created_by'  => $uid,
+            ]);
 
-        $this->applyAssignment($task, $request, $data);
+            $this->applyAssignment($task, $request, $data);
+            return $task;
+        });
 
         return response()->json(['task' => $this->present($task->fresh(self::WITH))], 201);
     }
@@ -138,12 +146,15 @@ class MissionTaskController extends Controller
 
         $data = $request->validate($this->rules(true));
 
-        // Alleen de echte kolommen via fill — assignment regelen we apart.
-        $task->fill(array_intersect_key($data, array_flip([
-            'title', 'description', 'due_at', 'status', 'priority', 'phase_key',
-        ])))->save();
-
-        $this->applyAssignment($task, $request, $data);
+        DB::transaction(function () use ($task, $request, $data) {
+            $task->setRawAttributes(MissionTask::whereKey($task->id)->lockForUpdate()->firstOrFail()->getAttributes(), true);
+            abort_if(isset($data['status']) && $task->teamProgress()->exists(), 422,
+                'Werk de status per team bij.');
+            $task->fill(array_intersect_key($data, array_flip([
+                'title', 'description', 'due_at', 'status', 'priority', 'phase_key',
+            ])))->save();
+            $this->applyAssignment($task, $request, $data);
+        });
 
         return response()->json(['task' => $this->present($task->fresh(self::WITH))]);
     }
@@ -220,10 +231,11 @@ class MissionTaskController extends Controller
         );
 
         $team = null;
-        if ($mission->linked_team_id) {
-            $team = Team::find($mission->linked_team_id);
+        $missionTeamIds = $mission->teamIds();
+        if ($missionTeamIds) {
+            $team = Team::find($mission->linked_team_id ?: $missionTeamIds[0]);
             $users = $users->merge(
-                TeamMember::where('team_id', $mission->linked_team_id)
+                TeamMember::whereIn('team_id', $missionTeamIds)
                     ->where('status', TeamMember::STATUS_ACTIVE)
                     ->whereNotNull('user_id')
                     ->with('user:id,first_name,last_name,email')
@@ -244,7 +256,13 @@ class MissionTaskController extends Controller
             ->values()
             ->all();
 
+        $teams = Team::whereIn('id', $missionTeamIds)->with(['activeMembers.user', 'owner'])->get();
         return response()->json([
+            'teams' => $teams->map(fn ($t) => [
+                'id' => $t->id, 'name' => $t->name, 'color' => $t->color,
+                'users' => $t->activeMembers->pluck('user')->push($t->owner)->filter()->unique('id')
+                    ->map(fn ($u) => ['id' => $u->id, 'name' => $this->userName($u)])->values(),
+            ])->values(),
             'users' => $people,
             'team'  => $team ? [
                 'id'    => $team->id,
@@ -287,6 +305,7 @@ class MissionTaskController extends Controller
         $created = [];
 
         $teamId   = $data['assigned_team_id'] ?? null;
+        abort_if($teamId && !in_array($teamId, $mission->teamIds(), true), 422, 'Selecteer een team dat aan deze missie is gekoppeld.');
         $singleId = $teamId ? null : ($data['assignee_user_id'] ?? null);
 
         DB::transaction(function () use ($template, $mission, $uid, $teamId, $singleId, &$maxOrder, &$created) {
@@ -303,6 +322,9 @@ class MissionTaskController extends Controller
                     'order_index'      => $maxOrder,
                     'created_by'       => $uid,
                 ]);
+                if ($teamId) {
+                    $task->teamProgress()->create(['team_id' => $teamId, 'status' => 'todo']);
+                }
                 if ($singleId) {
                     $task->assignees()->sync([$singleId]);
                 }
@@ -331,6 +353,52 @@ class MissionTaskController extends Controller
         ], 201);
     }
 
+    private function canUpdateTeam(Mission $mission, ?Team $team, int $uid): bool
+    {
+        if (!$team || !in_array($team->id, $mission->teamIds(), true)) return false;
+        return $mission->canEdit($uid) || (int) $team->owner_id === $uid
+            || TeamMember::activeTeamIdsQuery($uid)->where('team_id', $team->id)->exists();
+    }
+
+    private function aggregateTeamStatus(MissionTask $task): void
+    {
+        $statuses = $task->teamProgress()->pluck('status');
+        $task->status = $statuses->isNotEmpty() && $statuses->every(fn ($s) => $s === 'done')
+            ? 'done' : ($statuses->contains(fn ($s) => $s !== 'todo') ? 'doing' : 'todo');
+        $task->save();
+    }
+
+    public function updateTeamProgress(Request $request, string $missionId, string $taskId, string $teamId)
+    {
+        $mission = Mission::findOrFail($missionId);
+        $this->authorizeRead($mission, (int) Auth::id());
+        $task = MissionTask::where('mission_id', $mission->id)->findOrFail($taskId);
+        $team = Team::findOrFail($teamId);
+        abort_unless($this->canUpdateTeam($mission, $team, (int) Auth::id()), 403);
+        $data = $request->validate([
+            'status' => 'sometimes|required|in:todo,doing,done',
+            'comment' => 'sometimes|required|string|max:4000',
+        ]);
+        DB::transaction(function () use ($task, $teamId, $data) {
+            // Serialize all updates to a task, including status aggregation.
+            MissionTask::whereKey($task->id)->lockForUpdate()->firstOrFail();
+            $progress = $task->teamProgress()->where('team_id', $teamId)->lockForUpdate()->firstOrFail();
+            if (isset($data['status'])) $progress->status = $data['status'];
+            if (isset($data['comment']) && trim($data['comment']) !== '') {
+                $comments = $progress->comments ?? [];
+                $comments[] = [
+                    'id' => (string) \Illuminate\Support\Str::uuid(),
+                    'user_id' => Auth::id(), 'name' => $this->userName(Auth::user()),
+                    'body' => trim($data['comment']), 'created_at' => now()->toIso8601String(),
+                ];
+                $progress->comments = $comments;
+            }
+            $progress->save();
+            $this->aggregateTeamStatus($task);
+        });
+        return response()->json(['task' => $this->present($task->fresh(self::WITH))]);
+    }
+
     // ── Assignment ────────────────────────────────────────────
 
     /**
@@ -343,7 +411,7 @@ class MissionTaskController extends Controller
      */
     private function applyAssignment(MissionTask $task, Request $request, array $data): void
     {
-        $hasTeamKey  = $request->has('assigned_team_id');
+        $hasTeamKey  = $request->has('assigned_team_id') || $request->has('all_teams');
         $hasUsersKey = $request->has('assignee_user_ids') || $request->has('assignee_user_id');
         $hasPartKey  = $request->has('assignee_participants');
 
@@ -357,7 +425,17 @@ class MissionTaskController extends Controller
             $task->forceFill(['assignee_participants' => $this->normalizeParticipants($data['assignee_participants'] ?? [])]);
         }
 
+        $allTeams = $request->has('all_teams') ? (bool) ($data['all_teams'] ?? false) : ($hasTeamKey ? false : $task->all_teams);
         $teamId = $hasTeamKey ? ($data['assigned_team_id'] ?? null) : $task->assigned_team_id;
+        $teamIds = $allTeams ? $task->mission->teamIds() : ($teamId ? [$teamId] : []);
+        if ($allTeams || $teamId) {
+            abort_if(!$teamIds || array_diff($teamIds, $task->mission->teamIds()), 422,
+                'Selecteer een team dat aan deze missie is gekoppeld.');
+            // Keep the original recipient snapshot when editing an all-teams task.
+            if ($allTeams && $task->all_teams) {
+                $teamIds = $task->teamProgress()->pluck('team_id')->all();
+            }
+        }
 
         // Normaliseer de individuele leden naar een unieke int-lijst.
         $userIds = [];
@@ -372,17 +450,27 @@ class MissionTaskController extends Controller
             $userIds = $task->assignees()->pluck('users.id')->all();
         }
 
-        if ($teamId) {
+        if ($allTeams || $teamId) {
             // Heel team wint → individuele leden wissen.
             $task->assignees()->sync([]);
             $task->forceFill([
-                'assigned_team_id'      => $teamId,
+                'assigned_team_id'      => $allTeams ? null : $teamId,
+                'all_teams'             => $allTeams,
                 'assignee_user_id'      => null,
                 'assignee_participants' => null,
             ])->save();
+            $task->teamProgress()->whereNotIn('team_id', $teamIds)->delete();
+            foreach ($teamIds as $id) {
+                $task->teamProgress()->firstOrCreate(['team_id' => $id], ['status' => 'todo']);
+            }
+            $this->aggregateTeamStatus($task);
             return;
         }
 
+        $hadTeams = $task->teamProgress()->exists();
+        $task->teamProgress()->delete();
+        $task->all_teams = false;
+        if ($hadTeams) $task->status = 'todo';
         // Individuele leden (kan leeg zijn = niemand).
         $task->assignees()->sync($userIds);
         $task->forceFill([
@@ -416,6 +504,7 @@ class MissionTaskController extends Controller
             'assignee_user_ids.*' => 'integer|exists:users,id',
             'assignee_user_id'    => 'nullable|integer|exists:users,id', // legacy single
             'assigned_team_id'    => 'nullable|uuid|exists:teams,id',
+            'all_teams'           => 'sometimes|boolean',
             'assignee_participants'        => 'nullable|array|max:25',
             'assignee_participants.*.name' => 'required|string|max:120',
             'assignee_participants.*.role' => 'nullable|string|max:120',
@@ -497,6 +586,13 @@ class MissionTaskController extends Controller
                 ->map(fn ($p) => ['name' => $p['name'] ?? '', 'role' => $p['role'] ?? null])
                 ->filter(fn ($p) => $p['name'] !== '')
                 ->values()->all(),
+            'all_teams'    => (bool) $t->all_teams,
+            'team_progress' => $t->teamProgress->map(fn ($p) => [
+                'team_id' => $p->team_id, 'name' => $p->team?->name ?? 'Team',
+                'color' => $p->team?->color, 'status' => $p->status,
+                'comments' => $p->comments ?? [],
+                'can_update' => $this->canUpdateTeam($t->mission, $p->team, (int) Auth::id()),
+            ])->values()->all(),
             'team'         => $t->team ? [
                 'id'    => $t->team->id,
                 'name'  => $t->team->name,

@@ -8,6 +8,7 @@ use App\Http\Traits\AuthorizesMapAccess;
 use App\Models\Map;
 use App\Models\MapWaypoint;
 use App\Models\MapWaypointImage;
+use App\Models\MapWaypointRevision;
 use App\Models\UserUpload;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Auth;
@@ -18,6 +19,7 @@ use Illuminate\Support\Str;
 class MapWaypointController extends Controller
 {
     use AuthorizesMapAccess;
+    use \App\Http\Traits\ResolvesArrivalTasks; // alleen arrivalTaskTitles() voor de wijzigingslog
 
     /**
      * List all waypoints for a map (owner or accepted collaborator).
@@ -64,13 +66,13 @@ class MapWaypointController extends Controller
             'waypoints.*.note'     => 'nullable|string',
             'waypoints.*.props'    => 'nullable|array|max:50',
             'waypoints.*.props.*'  => 'nullable|string|max:500',
-        ]);
+        ] + $this->taskRules('waypoints.*.'));
 
         $userId = Auth::id();
         $saved = DB::transaction(function () use ($data, $mapId, $userId) {
             $out = [];
             foreach ($data['waypoints'] as $w) {
-                $out[] = MapWaypoint::updateOrCreate(
+                $saved = MapWaypoint::updateOrCreate(
                     ['map_id' => $mapId, 'local_id' => $w['local_id']],
                     [
                         'user_id' => $userId,
@@ -83,7 +85,12 @@ class MapWaypointController extends Controller
                         'type'    => $w['type'] ?? null,
                         'note'    => $w['note'] ?? null,
                     ] + (array_key_exists('props', $w) ? ['props' => $w['props']] : [])
-                )->toClientArray();
+                      + $this->taskAttributes($w, fn () => MapWaypoint::where('map_id', $mapId)->where('local_id', $w['local_id'])->first())
+                );
+                if ($saved->wasRecentlyCreated) {
+                    $this->logRevision($saved, 'created');
+                }
+                $out[] = $saved->toClientArray();
             }
             return $out;
         });
@@ -120,8 +127,9 @@ class MapWaypointController extends Controller
             'note'     => 'nullable|string',
             'props'    => 'nullable|array|max:50',
             'props.*'  => 'nullable|string|max:500',
-        ]);
+        ] + $this->taskRules());
 
+        $before = $this->snapshotBeforeSave($mapId, $data['local_id']);
         $waypoint = MapWaypoint::updateOrCreate(
             ['map_id' => $mapId, 'local_id' => $data['local_id']],
             [
@@ -135,7 +143,9 @@ class MapWaypointController extends Controller
                 'type'    => $data['type'] ?? null,
                 'note'    => $data['note'] ?? null,
             ] + (array_key_exists('props', $data) ? ['props' => $data['props']] : [])
+              + $this->taskAttributes($data, fn () => MapWaypoint::where('map_id', $mapId)->where('local_id', $data['local_id'])->first())
         );
+        $this->logWaypointSave($waypoint, $before);
 
         broadcast(new MapWaypointChanged($mapId, $waypoint->toClientArray(), 'created', Auth::id()))->toOthers();
 
@@ -169,9 +179,14 @@ class MapWaypointController extends Controller
             'note'  => 'nullable|string',
             'props'   => 'nullable|array|max:50',
             'props.*' => 'nullable|string|max:500',
-        ]);
+        ] + $this->taskRules());
 
-        $waypoint->update($data);
+        $before = $this->logSnapshot($waypoint);
+        $waypoint->update(
+            collect($data)->except(['tasks', 'task_radius'])->all()
+            + $this->taskAttributes($data, fn () => $waypoint)
+        );
+        $this->logWaypointSave($waypoint, $before);
 
         broadcast(new MapWaypointChanged($mapId, $waypoint->toClientArray(), 'updated', Auth::id()))->toOthers();
 
@@ -200,6 +215,307 @@ class MapWaypointController extends Controller
         broadcast(new MapWaypointChanged($mapId, $clientData, 'deleted', Auth::id()))->toOthers();
 
         return response()->json(['message' => 'Waypoint verwijderd.']);
+    }
+
+    // ── Wijzigingslog ─────────────────────────────────────────────────────────
+
+    /**
+     * Wijzigingsgeschiedenis van een waypoint, nieuwste eerst. Elke deelnemer
+     * van de kaart mag meekijken (zoals bij gemarkeerde gebieden). Waypoints van
+     * vóór het logboek hebben geen 'created'-regel: die vullen we aan uit het
+     * waypoint zelf, zodat 'Aangemaakt' altijd klopt.
+     * GET /api/v1/maps/{mapId}/waypoints/{localId}/revisions
+     */
+    public function revisions($mapId, $localId)
+    {
+        $map = Map::findOrFail($mapId);
+        if (! $this->authorizeMapAccess($map)) {
+            abort(403, 'Geen toegang tot deze kaart.');
+        }
+        $waypoint = MapWaypoint::with('user')->where('map_id', $mapId)->where('local_id', $localId)->firstOrFail();
+
+        $revisions = $waypoint->revisions()->with('user')->get()->map->toApiArray()->values()->all();
+        if (! collect($revisions)->contains('action', 'created')) {
+            $revisions[] = [
+                'id'         => 'created',
+                'action'     => 'created',
+                'changes'    => null,
+                'user'       => $waypoint->user ? ['id' => $waypoint->user->id, 'name' => $waypoint->user->full_name] : null,
+                'created_at' => optional($waypoint->created_at)->toIso8601String(),
+            ];
+        }
+
+        return response()->json([
+            'created_at' => optional($waypoint->created_at)->toIso8601String(),
+            'created_by' => $waypoint->user?->full_name,
+            'revisions'  => $revisions,
+        ]);
+    }
+
+    private function logRevision(MapWaypoint $waypoint, string $action, ?array $diff = null): void
+    {
+        MapWaypointRevision::create([
+            'map_waypoint_id' => $waypoint->id,
+            'user_id'         => Auth::id(),
+            'action'          => $action,
+            'diff'            => $diff ?: null,
+        ]);
+    }
+
+    /** Toestand voor het opslaan, of null als het waypoint nog niet bestaat. */
+    private function snapshotBeforeSave($mapId, $localId): ?array
+    {
+        $existing = MapWaypoint::where('map_id', $mapId)->where('local_id', $localId)->first();
+        return $existing ? $this->logSnapshot($existing) : null;
+    }
+
+    /** Nieuw → 'created'; bestaand → 'updated' met de veranderde velden (niets veranderd = geen regel). */
+    private function logWaypointSave(MapWaypoint $waypoint, ?array $before): void
+    {
+        if ($before === null) {
+            $this->logRevision($waypoint, 'created');
+            return;
+        }
+        $diff = $this->diffSnapshots($before, $this->logSnapshot($waypoint));
+        if ($diff) {
+            $this->logRevision($waypoint, 'updated', $diff);
+        }
+    }
+
+    /** De velden die in de log tellen (mgrs en tijdstempels zijn afgeleid, afvinken heeft een eigen regel). */
+    private function logSnapshot(MapWaypoint $w): array
+    {
+        return [
+            'lon'         => (float) $w->lon,
+            'lat'         => (float) $w->lat,
+            'label'       => $w->label ?: null,
+            'color'       => $w->color ?: null,
+            'icon'        => $w->icon ?: null,
+            'type'        => $w->type ?: null,
+            'note'        => $w->note ?: null,
+            'props'       => $w->props ?: [],
+            'tasks'       => $this->arrivalTaskTitles($w->tasks),
+            'task_radius' => $w->task_radius,
+        ];
+    }
+
+    /**
+     * Veld-voor-veld diff { veld: { from, to } }. De positie is één veld
+     * ('position'); eigen velden komen als 'props.<naam>'. De DB bewaart 7
+     * decimalen, dus een kleiner verschil is afrondruis en geen verplaatsing.
+     */
+    private function diffSnapshots(array $before, array $after): array
+    {
+        $cut = fn ($v) => is_string($v) ? Str::limit($v, 300) : $v;
+        $changes = [];
+
+        if (abs($before['lon'] - $after['lon']) > 1e-6 || abs($before['lat'] - $after['lat']) > 1e-6) {
+            $changes['position'] = [
+                'from' => ['lon' => $before['lon'], 'lat' => $before['lat']],
+                'to'   => ['lon' => $after['lon'], 'lat' => $after['lat']],
+            ];
+        }
+        foreach (['label', 'color', 'icon', 'type', 'note', 'tasks', 'task_radius'] as $key) {
+            if (json_encode($before[$key]) !== json_encode($after[$key])) {
+                $changes[$key] = ['from' => $cut($before[$key]), 'to' => $cut($after[$key])];
+            }
+        }
+        foreach (array_unique([...array_keys($before['props']), ...array_keys($after['props'])]) as $key) {
+            $from = $before['props'][$key] ?? null;
+            $to   = $after['props'][$key] ?? null;
+            if ($from !== $to) {
+                $changes['props.' . $key] = ['from' => $cut($from), 'to' => $cut($to)];
+            }
+        }
+
+        return $changes;
+    }
+
+    // ── Aankomsttaken ─────────────────────────────────────────────────────────
+
+    private const MAX_TASKS = 30;
+
+    /**
+     * Valideer-regels voor de taken van een waypoint. `$prefix` is 'waypoints.*.'
+     * bij de batch-endpoint. done_at/done_by/done_by_name komen bewust NIET uit
+     * het verzoek: die zet de server (zie resolveTasks), anders kan een client
+     * een ander als afvinker opgeven.
+     */
+    private function taskRules(string $prefix = ''): array
+    {
+        return [
+            $prefix . 'tasks'            => 'nullable|array|max:' . self::MAX_TASKS,
+            $prefix . 'tasks.*.id'       => ['required', 'string', 'max:64', 'regex:/^[A-Za-z0-9_-]+$/'],
+            // Leeg mag: lege titels worden in resolveTasks() gewoon weggelaten,
+            // zodat een half ingetypte regel het opslaan niet blokkeert.
+            $prefix . 'tasks.*.title'    => 'nullable|string|max:200',
+            $prefix . 'tasks.*.required' => 'nullable|boolean',
+            $prefix . 'tasks.*.done'     => 'nullable|boolean',
+            $prefix . 'task_radius'      => 'nullable|integer|between:10,1000',
+        ];
+    }
+
+    /**
+     * Kolommen om weg te schrijven voor de taak-velden in `$input` — leeg als
+     * het verzoek ze niet meestuurt, zodat oudere app-versies (die `tasks` niet
+     * kennen) de taken van een waypoint niet per ongeluk wissen.
+     *
+     * @param callable():(?MapWaypoint) $existing  haalt het bestaande waypoint lui op
+     */
+    private function taskAttributes(array $input, callable $existing): array
+    {
+        $out = [];
+        if (array_key_exists('tasks', $input)) {
+            $out['tasks'] = $this->resolveTasks($existing()?->tasks, $input['tasks'] ?? []);
+        }
+        if (array_key_exists('task_radius', $input)) {
+            $out['task_radius'] = $input['task_radius'];
+        }
+        return $out;
+    }
+
+    /**
+     * Maak van de door de client gestuurde taken de opgeslagen lijst: alleen de
+     * bekende velden, lege titels eruit, dubbele id's eruit, en afvink-gegevens
+     * (wanneer/door wie) door de server gezet. Een taak die al afgevinkt was en
+     * dat blijft, behoudt zijn oorspronkelijke tijdstip en afvinker.
+     */
+    private function resolveTasks(?array $existing, array $incoming): array
+    {
+        $before = collect($existing ?: [])->keyBy('id');
+        $now    = now()->toIso8601String();
+        $actor  = Auth::user();
+        $name   = $actor ? mb_substr((string) ($actor->first_name ?: ($actor->name ?? '')), 0, 80) : '';
+
+        $out  = [];
+        $seen = [];
+        foreach (array_slice($incoming, 0, self::MAX_TASKS) as $t) {
+            $title = trim((string) ($t['title'] ?? ''));
+            $id    = (string) ($t['id'] ?? '');
+            if ($title === '' || $id === '' || isset($seen[$id])) {
+                continue;
+            }
+            $seen[$id] = true;
+
+            $prev    = $before->get($id);
+            $done    = (bool) ($t['done'] ?? false);
+            $wasDone = (bool) ($prev['done'] ?? false);
+            $keep    = $done && $wasDone;
+
+            $out[] = [
+                'id'           => $id,
+                'title'        => mb_substr($title, 0, 200),
+                'required'     => (bool) ($t['required'] ?? false),
+                'done'         => $done,
+                'done_at'      => $done ? ($keep ? ($prev['done_at'] ?? $now) : $now) : null,
+                'done_by'      => $done ? ($keep ? ($prev['done_by'] ?? null) : $actor?->id) : null,
+                'done_by_name' => $done ? ($keep ? ($prev['done_by_name'] ?? null) : ($name !== '' ? $name : null)) : null,
+            ];
+        }
+        return $out;
+    }
+
+    /**
+     * Eén taak afvinken (of weer openzetten) zonder de rest van het waypoint
+     * te overschrijven: twee mensen die tegelijk verschillende taken afvinken
+     * wissen elkaar zo niet uit. Rij wordt vergrendeld voor lezen + schrijven.
+     *
+     * Toegang: iedereen met toegang tot de kaart, ook een 'viewer'. Afvinken is
+     * het uitvoeren van het plan, niet het wijzigen ervan — een teamlid dat
+     * alleen mag meekijken moet wél kunnen melden dat de taak gedaan is.
+     * POST /api/v1/maps/{mapId}/waypoints/{localId}/tasks/{taskId}  { done: bool }
+     */
+    public function setTaskDone(Request $request, $mapId, $localId, string $taskId)
+    {
+        $map = Map::findOrFail($mapId);
+
+        if (! $this->authorizeMapAccess($map)) {
+            abort(403, 'Geen toegang tot deze kaart.');
+        }
+
+        $data = $request->validate([
+            'done'     => 'required|boolean',
+            // Positie van de afvinker (optioneel; zonder GPS-fix wordt alleen wie/wanneer gelogd).
+            'lat'      => 'nullable|numeric|between:-90,90',
+            'lon'      => 'nullable|numeric|between:-180,180',
+            'accuracy' => 'nullable|numeric|min:0',
+        ]);
+
+        $waypoint = DB::transaction(function () use ($mapId, $localId, $taskId, $data) {
+            $waypoint = MapWaypoint::where('map_id', $mapId)
+                ->where('local_id', $localId)
+                ->lockForUpdate()
+                ->firstOrFail();
+
+            $tasks = $waypoint->tasks ?: [];
+            $index = collect($tasks)->search(fn ($t) => ($t['id'] ?? null) === $taskId);
+            abort_if($index === false, 404, 'Taak niet gevonden.');
+
+            $tasks[$index]['done'] = (bool) $data['done'];
+            $tasks = $this->resolveTasks($waypoint->tasks, $tasks);
+
+            $waypoint->update(['tasks' => $tasks]);
+            return $waypoint;
+        });
+
+        $this->logTaskEvent($request, $waypoint, $taskId, (bool) $data['done']);
+        $this->logRevision($waypoint, $data['done'] ? 'task_done' : 'task_reopened', [
+            'task' => ['title' => (string) (collect($waypoint->tasks ?: [])->firstWhere('id', $taskId)['title'] ?? '')],
+        ]);
+
+        broadcast(new MapWaypointChanged($mapId, $waypoint->toClientArray(), 'updated', Auth::id()))->toOthers();
+
+        return response()->json(['waypoint' => $waypoint->toClientArray()]);
+    }
+
+    /** Eén regel in het logboek: wie vinkte wat af, wanneer, en vanaf waar. */
+    private function logTaskEvent(Request $request, MapWaypoint $waypoint, string $taskId, bool $done): void
+    {
+        $user  = Auth::user();
+        $task  = collect($waypoint->tasks ?: [])->firstWhere('id', $taskId);
+        $lat   = $request->input('lat');
+        $lon   = $request->input('lon');
+        $dist  = null;
+        if ($lat !== null && $lon !== null) {
+            $r = 6371000;
+            $p1 = deg2rad((float) $lat); $p2 = deg2rad((float) $waypoint->lat);
+            $a = sin(($p2 - $p1) / 2) ** 2
+               + cos($p1) * cos($p2) * sin(deg2rad((float) $waypoint->lon - (float) $lon) / 2) ** 2;
+            $dist = (int) round($r * 2 * atan2(sqrt($a), sqrt(1 - $a)));
+        }
+
+        \Illuminate\Support\Facades\DB::table('map_waypoint_task_events')->insert([
+            'map_id'          => $waypoint->map_id,
+            'map_waypoint_id' => $waypoint->id,
+            'task_id'         => $taskId,
+            'task_title'      => mb_substr((string) ($task['title'] ?? ''), 0, 200),
+            'user_id'         => $user?->id,
+            'user_name'       => $user ? mb_substr((string) ($user->full_name ?? $user->name ?? ''), 0, 120) : null,
+            'done'            => $done,
+            'lat'             => $lat,
+            'lon'             => $lon,
+            'accuracy_m'      => $request->input('accuracy'),
+            'distance_m'      => $dist,
+            'ip'              => $request->ip(),
+            'created_at'      => now(),
+        ]);
+    }
+
+    /**
+     * Logboek van een waypoint, nieuwste eerst. Alleen voor wie de kaart mag
+     * bewerken: het bevat posities en IP-adressen van teamleden.
+     * GET /api/v1/maps/{mapId}/waypoints/{localId}/tasks-log
+     */
+    public function taskLog($mapId, $localId)
+    {
+        $map = Map::findOrFail($mapId);
+        if (! $this->authorizeMapAccess($map, editorRequired: true)) {
+            abort(403, 'Geen bewerkrechten op deze kaart.');
+        }
+        $waypoint = MapWaypoint::where('map_id', $mapId)->where('local_id', $localId)->firstOrFail();
+
+        return response()->json(['events' => DB::table('map_waypoint_task_events')
+            ->where('map_waypoint_id', $waypoint->id)->orderByDesc('id')->limit(200)->get()]);
     }
 
     // ── Waypoint-foto's ───────────────────────────────────────────────────────
@@ -298,6 +614,7 @@ class MapWaypointController extends Controller
         }
 
         UserUpload::record(Auth::id(), $path, (int) $file->getSize(), $file->getClientMimeType(), 'waypoint');
+        $this->logRevision($waypoint, 'image_added', ['image' => ['name' => mb_substr((string) $file->getClientOriginalName(), 0, 120)]]);
 
         $waypoint->load('images');
         try {
@@ -333,6 +650,7 @@ class MapWaypointController extends Controller
         $image = $waypoint->images()->where('id', $imageId)->firstOrFail();
 
         Storage::disk('public')->delete($image->path);
+        $this->logRevision($waypoint, 'image_removed', ['image' => ['name' => mb_substr((string) $image->original_name, 0, 120)]]);
         $image->delete();
 
         $waypoint->load('images');

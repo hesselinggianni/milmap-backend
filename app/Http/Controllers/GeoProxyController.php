@@ -183,7 +183,7 @@ class GeoProxyController extends Controller
         // aanroepers die alleen `elements` lezen niet breken).
         $resultaat = Cache::get($sleutel);
         if ($resultaat === null) {
-            $resultaat = $this->overpassUpstream($data['query']);
+            $resultaat = self::overpassUpstream($data['query']);
             if (empty($resultaat['error'])) {
                 // OSM-wegen en terreinkenmerken veranderen langzaam, en de publieke Overpass is vaak traag
                 // (tot ±30 s voor een klein gebied): één keer per week per gebied is genoeg.
@@ -203,7 +203,7 @@ class GeoProxyController extends Controller
     ];
 
     /** @return array{elements: array, error?: string} */
-    private function overpassUpstream(string $query): array
+    public static function overpassUpstream(string $query): array
     {
         // Totaalbudget onder de 60 s van nginx: de eerste instantie mag lang duren (Overpass is
         // soms druk), het vangnet krijgt wat er over is.

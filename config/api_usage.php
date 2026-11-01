@@ -98,7 +98,7 @@ return [
             'label'  => 'PDOK',
             'scope'  => 'none',
             'limits' => [],
-            'note'   => 'Open overheidsdata (NL); geen bekende limiet.',
+            'note'   => 'Open overheidsdata (NL, CC-BY 4.0); geen harde limiet, wel "normaal gebruik". Kaarttegels (BRT/TOPraster) gaan via onze cachende tegelproxy (PdokTileController), cache-hits tellen hier mee.',
             'hosts'  => ['service.pdok.nl', 'api.pdok.nl'],
         ],
 

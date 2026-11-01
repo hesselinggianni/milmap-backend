@@ -139,3 +139,7 @@ Schedule::job(new \App\Jobs\ServerStatusHeartbeat)->everyFiveMinutes();
 // "Te veel verzoeken"-meldingen: de admin toont maximaal 90 dagen, dus ouder dan dat opruimen.
 Schedule::call(fn () => \Illuminate\Support\Facades\DB::table('rate_limit_events')->where('last_seen_at', '<', now()->subDays(90))->delete())
     ->dailyAt('04:55')->name('rate-limit-events-prune');
+
+// KAKO app-modus: ruwe posities van deelnemers na de bewaartermijn van de opdracht wissen
+// (standaard 30 dagen na het venster, zie docs/kako-app-modus.md §9).
+Schedule::command('kako:purge-positions')->dailyAt('04:45')->withoutOverlapping();

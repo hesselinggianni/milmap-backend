@@ -31,9 +31,9 @@ class ActivityController extends Controller
             ->where('user_id', Auth::id())
             ->when($request->filled('map_id'), fn ($q) => $q->where('map_id', $request->query('map_id')))
             ->orderByDesc('started_at')
-            ->limit(100)
+            ->when(!$request->boolean('all'), fn ($q) => $q->limit(100))
             ->select([
-                'id', 'user_id', 'map_id', 'type', 'title', 'notes', 'notes_ciphertext', 'started_at', 'ended_at',
+                'id', 'user_id', 'map_id', 'route_map_id', 'type', 'title', 'notes', 'notes_ciphertext', 'started_at', 'ended_at',
                 'distance_m', 'moving_time_s', 'elapsed_time_s', 'elevation_gain_m',
                 'avg_pace_s_per_km', 'avg_speed_kmh', 'avg_power_w', 'calories',
                 'source', 'garmin_activity_id', 'garmin_device_name', 'created_at', 'updated_at',
@@ -76,6 +76,11 @@ class ActivityController extends Controller
         // zelf, dat zijn er duizenden) en gooien we 'm daarna gewoon door.
         try {
             $data = $this->validateActivity($request);
+            if (!empty($data['route_map_id'])) {
+                $route = \App\Models\RouteMap::findOrFail($data['route_map_id']);
+                abort_unless($this->authorizeMapAccess(Map::findOrFail($route->map_id)), 403);
+                $data['map_id'] = $route->map_id;
+            }
             if (!empty($data['map_id']) && !$this->authorizeMapAccess(Map::findOrFail($data['map_id']))) {
                 abort(403, 'Geen toegang tot deze kaart.');
             }
@@ -120,6 +125,7 @@ class ActivityController extends Controller
             // kende er maar drie — een navigatie in de auto liep daardoor
             // altijd op een 422 en werd nooit opgeslagen.
             'map_id' => ['nullable', 'string', 'exists:maps,id'],
+            'route_map_id' => ['nullable', 'uuid', 'exists:route_maps,id'],
             'type' => ['required', 'string', 'in:run,ride,walk,drive'],
             'title' => ['nullable', 'string', 'max:255'],
             'notes' => ['nullable', 'string', 'max:4000'],

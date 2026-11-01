@@ -22,6 +22,8 @@ class MapShareController extends Controller
     public const BASE_THEMES = [
         'outdoors-v12', 'streets-v11', 'satellite-v9', 'satellite-streets-v11',
         'top25', 'norge-top25', 'de-topplus', 'usa-topo', 'pl-topo', 'lt-topo',
+        'ch-topo', 'es-topo', 'at-basemap', 'cz-topo', 'lu-topo', 'ee-topo', 'fr-plan',
+        'vl-grb', 'bx-urbis',
     ];
 
     /**
@@ -243,6 +245,10 @@ class MapShareController extends Controller
                 ->get()
                 ->map(function (MapWaypoint $waypoint) use ($content) {
                     $data = $waypoint->toClientArray();
+                    // Aankomsttaken ("Bel de baas") zijn operationeel en nooit voor
+                    // een publieke deellink bedoeld.
+                    $data['tasks']       = [];
+                    $data['task_radius'] = null;
                     if (! $content['waypoint_notes']) {
                         $data['note'] = null;
                     }
@@ -277,6 +283,8 @@ class MapShareController extends Controller
                         'metadata'   => array_filter(
                             [
                                 'saluteGeometry' => $report->metadata['saluteGeometry'] ?? null,
+                                // Grid of straal waaruit het vlak is gemaakt: bepaalt waar het symbool staat.
+                                'saluteShape'    => $report->metadata['saluteShape'] ?? null,
                                 'salutePolygon'  => $report->metadata['salutePolygon'] ?? null,
                                 'approachRoute'  => $report->metadata['approachRoute'] ?? null,
                                 'title'          => $report->metadata['title'] ?? null,

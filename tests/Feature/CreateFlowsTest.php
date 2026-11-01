@@ -94,6 +94,7 @@ class CreateFlowsTest extends TestCase
             $t->integer('sterkte')->nullable();
             $t->string('kaartblad')->nullable();
             $t->string('vtv_vta')->nullable();
+            \Tests\Support\RouteMapDiscoveryColumns::add($t);
             $t->timestamps();
             $t->softDeletes();
         });

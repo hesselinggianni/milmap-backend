@@ -27,7 +27,9 @@ return [
 
     'allowed_headers' => ['*'],
 
-    'exposed_headers' => ['Content-Disposition', 'X-Milmap-Update-Requested', 'X-Milmap-Management'],
+    // Retry-After: tijdens een deploy (artisan down --retry) weet de app zo
+    // precies wanneer ze een mislukt verzoek opnieuw mag sturen (serverUnavailable.js).
+    'exposed_headers' => ['Content-Disposition', 'X-Milmap-Update-Requested', 'X-Milmap-Management', 'Retry-After'],
 
     'max_age' => 3600,
 

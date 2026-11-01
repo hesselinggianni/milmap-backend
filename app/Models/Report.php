@@ -28,6 +28,8 @@ class Report extends Model
         'weatherCondition',
         'description',
         'metadata',
+        'tasks',
+        'task_radius',
         'status',
     ];
 
@@ -37,6 +39,8 @@ class Report extends Model
         'activity' => 'array',
         'equipment' => 'array',
         'metadata' => 'array',
+        'tasks' => 'array',
+        'task_radius' => 'integer',
     ];
 
     /**

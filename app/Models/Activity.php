@@ -18,6 +18,9 @@ class Activity extends Model
     protected $fillable = [
         'user_id',
         'map_id',
+        'route_map_id',
+        'is_public',
+        'published_at',
         'type',
         'title',
         'notes',
@@ -41,6 +44,8 @@ class Activity extends Model
     ];
 
     protected $casts = [
+        'is_public' => 'boolean',
+        'published_at' => 'datetime',
         'started_at' => 'datetime',
         'ended_at' => 'datetime',
         'distance_m' => 'integer',

@@ -5,6 +5,7 @@ namespace App\Http\Controllers;
 use App\Models\Mission;
 use App\Models\User;
 use App\Models\MissionCollaborator;
+use App\Services\CollaboratorDirectory;
 use App\Services\InvitationService;
 use Illuminate\Http\Request;
 use Illuminate\Support\Str;
@@ -73,36 +74,24 @@ class MissionCollaboratorController extends Controller
         // Routed through the polymorphic invitations table so it works even
         // when the e-mail does not belong to a MilMap user yet.
         if ($request->filled('email')) {
-            $result = app(InvitationService::class)->createInvite(
-                $mission,
-                $request->email,
-                $request->input('role', 'viewer'),
-                Auth::user()
-            );
-
-            if (!$result['ok']) {
-                return response()->json(['error' => $result['error']], $result['status'] ?? 422);
-            }
-
-            $inv = $result['invitation'];
-
-            return response()->json([
-                'message' => $result['email_sent']
-                    ? 'Uitnodiging verzonden naar ' . $inv->email
-                    : 'Uitnodiging aangemaakt (e-mail kon niet worden verzonden).',
-                'email_sent' => $result['email_sent'],
-                'invitation' => [
-                    'id' => $inv->id,
-                    'email' => $inv->email,
-                    'role' => $inv->role,
-                    'status' => $inv->status,
-                    'is_new_user' => $result['isNewUser'],
-                ],
-            ], 201);
+            return $this->inviteByEmail($mission, $request->email, $request->input('role', 'viewer'));
         }
 
         // ── Direct add of a known contact (instant access) ──
         $user = User::findOrFail($request->user_id);
+
+        // Direct toevoegen mag alleen bij een eerdere samenwerker of een lid van de eigen
+        // Connect-organisatie. Iemand die alleen op gebruikersnaam is gevonden krijgt een
+        // uitnodiging (toegang pas na acceptatie); een willekeurig user_id is geen toegang.
+        $directory = app(CollaboratorDirectory::class);
+        if (! $directory->directScope(Auth::user(), (int) $user->id)) {
+            if (! $directory->isDiscoverable((int) $user->id)) {
+                return response()->json(['error' => 'Deze gebruiker kun je niet direct toevoegen. Nodig diegene uit via het e-mailadres.'], 422);
+            }
+
+            // Alleen op gebruikersnaam gevonden: het adres gaat naar de uitnodiging, niet naar de uitnodiger.
+            return $this->inviteByEmail($mission, $user->email, $request->input('role', 'editor'), true);
+        }
 
         // Owner cannot be added as collaborator.
         if ($mission->isOwnedBy($user->id)) {
@@ -148,6 +137,33 @@ class MissionCollaboratorController extends Controller
                 'email' => $user->email,
                 'role' => $collaborator->role,
                 'status' => $collaborator->status,
+            ],
+        ], 201);
+    }
+
+    /** Uitnodiging via de polymorfe invitations-tabel (bestaande gebruiker én nieuwe ontvanger). */
+    private function inviteByEmail(Mission $mission, string $email, string $role, bool $hideEmail = false)
+    {
+        $result = app(InvitationService::class)->createInvite($mission, $email, $role, Auth::user(), $hideEmail);
+
+        if (!$result['ok']) {
+            return response()->json(['error' => $result['error']], $result['status'] ?? 422);
+        }
+
+        $inv = $result['invitation'];
+        $recipient = $inv->recipientLabelFor((int) Auth::id());
+
+        return response()->json([
+            'message' => $result['email_sent']
+                ? 'Uitnodiging verzonden naar ' . $recipient
+                : 'Uitnodiging aangemaakt (e-mail kon niet worden verzonden).',
+            'email_sent' => $result['email_sent'],
+            'invitation' => [
+                'id' => $inv->id,
+                'email' => $recipient,
+                'role' => $inv->role,
+                'status' => $inv->status,
+                'is_new_user' => $result['isNewUser'],
             ],
         ], 201);
     }

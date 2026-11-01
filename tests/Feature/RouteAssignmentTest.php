@@ -36,6 +36,7 @@ class RouteAssignmentTest extends TestCase
             $t->string('color')->nullable(); $t->float('declination')->nullable(); $t->float('speed')->default(5);
             $t->json('locations')->nullable(); $t->json('meta')->nullable(); $t->bigInteger('pause_time')->default(0); $t->bigInteger('total_time')->default(0);
             $t->bigInteger('total_distance')->default(0); $t->bigInteger('total_elevation')->default(0);
+            \Tests\Support\RouteMapDiscoveryColumns::add($t);
             $t->timestamps(); $t->softDeletes();
         });
         // Het overzicht vraagt MapAccess om de toegankelijke kaarten.
@@ -336,8 +337,15 @@ class RouteAssignmentTest extends TestCase
         $this->assertSame(423, $locked(['settings' => array_replace_recursive($live, ['scoring' => ['pointsPerPost' => 99]])]), 'puntentelling');
         $this->assertSame(423, $locked(['routes' => [$this->route('1')]]), 'routes genereren');
         $this->assertSame(423, $locked(['title' => 'Andere naam']), 'naam');
-        $this->assertSame(423, $locked(['participants' => [['id' => 'p1', 'name' => 'Jansen', 'route_code' => '2B']]]), 'routekoppeling');
+        $this->assertSame(423, $locked(['participants' => [['id' => 'p1', 'name' => 'Andere naam', 'route_code' => '1A']]]), 'deelnemer hernoemen');
+        $this->assertSame(423, $locked(['participants' => [['id' => 'p1', 'name' => 'Jansen', 'route_code' => '1A', 'order' => 'paths_first']]]), 'volgorde');
+        $this->assertSame(423, $locked(['participants' => [['id' => 'p1', 'name' => 'Jansen', 'route_code' => '1A'], ['id' => 'p2', 'name' => 'De Vries', 'route_code' => '2B']]]), 'deelnemer toevoegen');
         $this->assertSame(423, $this->ctl()->destroy(Request::create('/', 'DELETE'), $data['id'])->getStatusCode(), 'verwijderen');
+
+        // Een deelnemer een andere route geven (Overzicht) mag ook in productie, en staat dan in het log.
+        $this->assertSame(200, $locked(['participants' => [['id' => 'p1', 'name' => 'Jansen', 'route_code' => '2B']]]), 'andere route');
+        $changes = json_decode(DB::table('route_assignment_logs')->where('action', 'updated')->orderByDesc('id')->value('changes'), true);
+        $this->assertContains('Jansen: route 1A → 2B', $changes);
 
         // A4-printopties zijn presentatie en blijven ook in productie aanpasbaar.
         $this->assertSame(200, $this->ctl()->update(Request::create('/', 'PUT', ['settings' => $live + ['print' => ['showMil' => false]]]), $data['id'])->getStatusCode());
@@ -350,6 +358,42 @@ class RouteAssignmentTest extends TestCase
         ]), $data['id']);
         $this->assertSame(200, $res->getStatusCode());
         $this->assertSame('22:10', json_decode(DB::table('route_assignments')->value('participants'), true)[0]['result']['finish_time']);
+    }
+
+    public function test_live_training_routes_cannot_be_changed_or_deleted_through_the_routemap_api(): void
+    {
+        $data = $this->store([
+            'title' => 'Prod',
+            'settings' => ['status' => 'draft'],
+            'routes' => [$this->route('1')],
+        ]);
+        $routeId = RouteMap::where('route_assignment_id', $data['id'])->value('id');
+        $routemaps = new \App\Http\Controllers\RouteMapController();
+        $status = function (callable $call): int {
+            try {
+                return $call()->getStatusCode();
+            } catch (\Symfony\Component\HttpKernel\Exception\HttpException $e) {
+                return $e->getStatusCode();
+            }
+        };
+        $moved = [['lat' => 51.6, 'lon' => 5.4], ['lat' => 51.7, 'lon' => 5.5]];
+
+        // In bewerkmodus mag de gewone routekaart-API gewoon.
+        $this->assertSame(200, $status(fn () => $routemaps->update(Request::create('/', 'PUT', ['title' => 'Nieuwe titel']), $routeId)));
+
+        $this->ctl()->update(Request::create('/', 'PUT', ['settings' => ['status' => 'live']]), $data['id']);
+
+        $this->assertSame(423, $status(fn () => $routemaps->update(Request::create('/', 'PUT', ['locations' => $moved]), $routeId)), 'locaties wijzigen');
+        $this->assertSame(423, $status(fn () => $routemaps->destroy($routeId)), 'route verwijderen');
+        $this->assertNull(RouteMap::findOrFail($routeId)->deleted_at);
+
+        // Dezelfde locaties opnieuw sturen en niet-vergrendelde velden blijven kunnen.
+        $same = RouteMap::findOrFail($routeId)->locations;
+        $this->assertSame(200, $status(fn () => $routemaps->update(Request::create('/', 'PUT', ['locations' => $same, 'color' => '#ff0000']), $routeId)));
+
+        // Terug naar bewerken: weer vrij.
+        $this->ctl()->update(Request::create('/', 'PUT', ['settings' => ['status' => 'draft']]), $data['id']);
+        $this->assertSame(200, $status(fn () => $routemaps->update(Request::create('/', 'PUT', ['locations' => $moved]), $routeId)));
     }
 
     public function test_only_the_owner_can_switch_modes(): void

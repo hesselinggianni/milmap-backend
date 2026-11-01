@@ -31,6 +31,32 @@ class OtaLatestBuildTest extends TestCase {
         $this->check(['version_build'=>'1.39','version_name'=>'1.39'])->assertJsonPath('version','1.39+20261016000800');
         $this->check(['channel'=>null,'defaultChannel'=>'beta'])->assertJsonPath('version','1.38+20261016000600');
     }
+    public function test_beta_channel_sees_beta_and_newer_production_but_production_never_sees_beta(): void {
+        $this->build('1.38+20261016000400');
+        $this->build('1.38+20261016000600',['channel'=>'beta']);
+        $this->check(['channel'=>'beta'])->assertJsonPath('version','1.38+20261016000600');
+        $this->check()->assertJsonPath('version','1.38+20261016000400');
+        // A production hotfix published after the beta reaches beta testers too.
+        $this->build('1.38+20261016000800');
+        $this->check(['channel'=>'beta'])->assertJsonPath('version','1.38+20261016000800');
+        // Once a tester runs the newest bundle there is nothing left to fetch.
+        $this->check(['channel'=>'beta','version_name'=>'1.38+20261016000800'])->assertJsonPath('message','No update available');
+    }
+    public function test_unknown_channel_falls_back_to_production(): void {
+        $this->build('1.38+20261016000400');
+        $this->build('1.38+20261016000600',['channel'=>'beta']);
+        $this->check(['channel'=>'staging'])->assertJsonPath('version','1.38+20261016000400');
+    }
+    public function test_publish_accepts_beta_and_rejects_unknown_channels(): void {
+        \Illuminate\Support\Facades\Storage::fake('public');
+        config(['services.ota.publish_token'=>'secret']);
+        $post = fn (string $channel) => $this->withHeaders(['X-Ota-Token'=>'secret'])->post('/api/v1/ota/publish',[
+            'version'=>'1.38+20261016000900','platform'=>'all','channel'=>$channel,
+            'bundle'=>\Illuminate\Http\UploadedFile::fake()->create('dist.zip',10,'application/zip'),
+        ],['Accept'=>'application/json']);
+        $post('beta')->assertCreated()->assertJsonPath('build.channel','beta');
+        $post('staging')->assertStatus(422);
+    }
     public function test_desktop_fallback_and_numeric_ordering(): void {
         $this->build('1.9+20261016000500');$this->build('1.10+20261016000400');
         $this->check(['platform'=>'electron','version_name'=>null,'version_build'=>'1.8.0'])->assertJsonPath('version','1.10+20261016000400');

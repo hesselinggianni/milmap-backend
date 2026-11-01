@@ -45,7 +45,7 @@ class MapShareBaseThemeTest extends TestCase
     {
         $owner = $this->owner();
         $map = Map::create(['owner_id' => $owner->id, 'title' => 'Kaart', 'status' => 'active']);
-        foreach (['outdoors-v12', 'streets-v11', 'satellite-v9', 'satellite-streets-v11', 'top25', 'norge-top25', 'de-topplus', 'usa-topo', 'pl-topo', 'lt-topo'] as $theme) {
+        foreach (['outdoors-v12', 'streets-v11', 'satellite-v9', 'satellite-streets-v11', 'top25', 'norge-top25', 'de-topplus', 'usa-topo', 'pl-topo', 'lt-topo', 'ch-topo', 'es-topo', 'at-basemap', 'cz-topo', 'lu-topo', 'ee-topo', 'fr-plan', 'vl-grb', 'bx-urbis'] as $theme) {
             $this->api($owner)->postJson("/api/v1/maps/{$map->id}/shares", ['settings' => ['baseTheme' => $theme]])
                 ->assertCreated()->assertJsonPath('settings.baseTheme', $theme);
         }

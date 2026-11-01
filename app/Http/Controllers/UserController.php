@@ -269,6 +269,110 @@ class UserController extends Controller
     }
 
     /**
+     * Vaste plek van het documentlogo van een gebruiker. Bewust afgeleid van
+     * het user-id en niet in `settings` bewaard: die JSON is door de client
+     * te schrijven, en een opgeslagen pad zou dan naar andermans bestand
+     * kunnen wijzen.
+     */
+    private function documentLogoPath(User $user): string
+    {
+        return "document-logos/{$user->id}/logo.png";
+    }
+
+    /**
+     * GET /api/v1/user/document-branding
+     * Huisstijl voor de papieren van de ingelogde gebruiker (routebladen, PDF-
+     * exports, afdrukken): het eigen logo als PNG-data-URL (via de API, dus
+     * zonder CORS-gedoe op de opslag) en of de MilMap-branding uit moet.
+     */
+    public function documentBranding()
+    {
+        $user = Auth::user();
+        if (! $user) {
+            return response()->json(['message' => 'Unauthorized'], 401);
+        }
+
+        $logo = null;
+        try {
+            $disk = Storage::disk('public');
+            $path = $this->documentLogoPath($user);
+            if ($disk->exists($path)) {
+                $bytes = $disk->get($path);
+                $size = @getimagesizefromstring($bytes);
+                if ($size) {
+                    $logo = [
+                        'data_url' => 'data:image/png;base64,' . base64_encode($bytes),
+                        'width'    => $size[0],
+                        'height'   => $size[1],
+                    ];
+                }
+            }
+        } catch (\Throwable $e) {
+            // Geen logo is geen reden om de papieren te blokkeren.
+        }
+
+        return response()->json([
+            'hide_branding' => (bool) (($user->settings ?? [])['document_hide_branding'] ?? false),
+            'logo'          => $logo,
+        ], 200);
+    }
+
+    /**
+     * POST /api/v1/user/document-logo
+     * Uploadt (of vervangt) het eigen logo voor op papier. De client maakt er
+     * eerst een PNG van (formaat en transparantie), de server accepteert alleen
+     * PNG. Boekt het verbruik in het opslag-grootboek (user_uploads).
+     */
+    public function uploadDocumentLogo(Request $request)
+    {
+        $user = Auth::user();
+        if (! $user) {
+            return response()->json(['message' => 'Unauthorized'], 401);
+        }
+
+        $request->validate([
+            'logo' => ['required', 'image', 'mimes:png', 'max:1024', 'dimensions:max_width=2000,max_height=2000'],
+        ]);
+
+        $file = $request->file('logo');
+        $path = $file->storeAs("document-logos/{$user->id}", 'logo.png', 'public');
+
+        try {
+            UserUpload::where('user_id', $user->id)->where('kind', 'document_logo')->delete();
+            UserUpload::record($user->id, $path, (int) $file->getSize(), $file->getMimeType(), 'document_logo', 'public');
+        } catch (\Throwable $e) {
+            // Boekhouding mag een geslaagde upload niet alsnog laten falen.
+        }
+
+        return $this->documentBranding();
+    }
+
+    /**
+     * DELETE /api/v1/user/document-logo
+     * Verwijdert het eigen documentlogo (papieren vallen terug op de standaard).
+     */
+    public function deleteDocumentLogo()
+    {
+        $user = Auth::user();
+        if (! $user) {
+            return response()->json(['message' => 'Unauthorized'], 401);
+        }
+
+        try {
+            Storage::disk('public')->delete($this->documentLogoPath($user));
+        } catch (\Throwable $e) {
+            // best-effort
+        }
+        try {
+            UserUpload::where('user_id', $user->id)->where('kind', 'document_logo')->delete();
+        } catch (\Throwable $e) {
+            // best-effort
+        }
+
+        return $this->documentBranding();
+    }
+
+    /**
      * PUT /api/v1/user/settings
      * Werkt de persoonlijke voorkeuren (settings-JSON) van de ingelogde
      * gebruiker bij. Alleen bekende sleutels worden gevalideerd en
@@ -302,8 +406,8 @@ class UserController extends Controller
             abort_if(array_is_list($prefs) && $prefs !== [], 422, 'Instellingen moeten een object zijn.');
             abort_if(strlen((string) json_encode($prefs)) > 65535, 422, 'Te veel instellingen.');
             $settings = array_merge($settings, $prefs);
-            // De twee sleutels die de server zelf leest blijven echte booleans.
-            foreach (['show_last_seen', 'notify_status_emails'] as $key) {
+            // De sleutels die de server zelf leest blijven echte booleans.
+            foreach (['show_last_seen', 'notify_status_emails', 'document_hide_branding'] as $key) {
                 if (array_key_exists($key, $prefs)) $settings[$key] = filter_var($prefs[$key], FILTER_VALIDATE_BOOLEAN);
             }
         }

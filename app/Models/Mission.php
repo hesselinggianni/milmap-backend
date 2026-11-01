@@ -75,6 +75,64 @@ class Mission extends Model
         return $this->belongsTo(Team::class, 'linked_team_id');
     }
 
+    /**
+     * De teams die aan deze missie hangen (commandant → teams). Elk team werkt
+     * zijn eigen versie van de uitvoering uit; zie teamScopeFor().
+     */
+    public function missionTeams()
+    {
+        return $this->hasMany(MissionTeam::class, 'mission_id')->orderBy('sort_order')->orderBy('created_at');
+    }
+
+    /** Tabel nog niet gemigreerd op deze omgeving? Dan werkt alles als voorheen (één gekoppeld team). */
+    public static function teamsSupported(): bool
+    {
+        return (bool) \Illuminate\Support\Facades\Cache::remember('schema:mission_teams', 600,
+            fn () => \Illuminate\Support\Facades\Schema::hasTable('mission_teams'));
+    }
+
+    /**
+     * Alle team-id's die aan deze missie hangen: de oude enkelvoudige koppeling
+     * (linked_team_id) plus de rijen in mission_teams. Strings, ontdubbeld.
+     *
+     * @return string[]
+     */
+    public function teamIds(): array
+    {
+        $ids = [];
+        if ($this->linked_team_id) {
+            $ids[] = (string) $this->linked_team_id;
+        }
+        if (static::teamsSupported()) {
+            $rows = $this->relationLoaded('missionTeams')
+                ? $this->missionTeams->pluck('team_id')
+                : $this->missionTeams()->pluck('team_id');
+            foreach ($rows as $teamId) {
+                $ids[] = (string) $teamId;
+            }
+        }
+
+        return array_values(array_unique($ids));
+    }
+
+    /**
+     * Scope: missies waaraan (via linked_team_id of mission_teams) een van de
+     * gegeven teams hangt. $teamIds is een collectie of subquery met team-id's.
+     */
+    public function scopeLinkedToTeams($query, $teamIds)
+    {
+        return $query->where(function ($q) use ($teamIds) {
+            $q->whereIn('missions.linked_team_id', $teamIds);
+            if (static::teamsSupported()) {
+                $q->orWhereExists(function ($s) use ($teamIds) {
+                    $s->selectRaw('1')->from('mission_teams')
+                        ->whereColumn('mission_teams.mission_id', 'missions.id')
+                        ->whereIn('mission_teams.team_id', $teamIds);
+                });
+            }
+        });
+    }
+
     public function briefing()
     {
         return $this->hasOne(MissionBriefing::class, 'mission_id');
@@ -238,9 +296,9 @@ class Mission extends Model
             return $collab->role;
         }
 
-        // Auto-viewer: member of the linked team while the mission is active
-        if ($this->status === 'active' && $this->linked_team_id) {
-            $isMember = TeamMember::where('team_id', $this->linked_team_id)
+        // Auto-viewer: member of a linked team while the mission is active
+        if ($this->status === 'active' && ($teamIds = $this->teamIds())) {
+            $isMember = TeamMember::whereIn('team_id', $teamIds)
                 ->where('user_id', $userId)
                 ->where('status', TeamMember::STATUS_ACTIVE)
                 ->exists();
@@ -278,10 +336,10 @@ class Mission extends Model
                 ->all()
         );
 
-        if ($this->status === 'active' && $this->linked_team_id) {
+        if ($this->status === 'active' && ($teamIds = $this->teamIds())) {
             $ids = array_merge(
                 $ids,
-                TeamMember::where('team_id', $this->linked_team_id)
+                TeamMember::whereIn('team_id', $teamIds)
                     ->where('status', TeamMember::STATUS_ACTIVE)
                     ->pluck('user_id')
                     ->map(fn ($id) => (int) $id)
@@ -290,6 +348,64 @@ class Mission extends Model
         }
 
         return array_values(array_unique(array_filter($ids)));
+    }
+
+    /**
+     * Wie ziet/bewerkt welke team-versies (ogroup.team_plans.<team_id>)?
+     *
+     * - 'all'  → wie de missie mag bewerken (commandant, editors): ziet en
+     *            bewerkt de versie van elk team en het gezamenlijke deel.
+     * - 'view' → team-id's waarvan de versie zichtbaar is.
+     * - 'edit' → team-id's die de gebruiker mag bewerken. Alleen actieve
+     *            teamleden van een ACTIEVE missie (zelfde voorwaarde als
+     *            roleFor); een gast (TeamMember::ROLE_GUEST) leest alleen mee.
+     *
+     * @return array{all: bool, view: string[], edit: string[]}
+     */
+    public function teamScopeFor(int $userId): array
+    {
+        $ids = $this->teamIds();
+        if ($this->canEdit($userId)) {
+            return ['all' => true, 'view' => $ids, 'edit' => $ids];
+        }
+        if (! $ids || $this->status !== 'active') {
+            return ['all' => false, 'view' => [], 'edit' => []];
+        }
+
+        $mine = TeamMember::whereIn('team_id', $ids)
+            ->where('user_id', $userId)
+            ->where('status', TeamMember::STATUS_ACTIVE)
+            ->get(['team_id', 'role']);
+
+        return [
+            'all'  => false,
+            'view' => $mine->pluck('team_id')->map(fn ($t) => (string) $t)->values()->all(),
+            'edit' => $mine->filter(fn ($m) => $m->role !== TeamMember::ROLE_GUEST)
+                ->pluck('team_id')->map(fn ($t) => (string) $t)->values()->all(),
+        ];
+    }
+
+    /**
+     * De ogroup-blob zoals deze gebruiker hem mag zien: de versies van andere
+     * teams (team_plans) vallen weg, tenzij hij de hele missie mag bewerken.
+     * Elke plek die de blob naar een client stuurt hoort hierlangs.
+     */
+    public function ogroupFor(int $userId): ?array
+    {
+        $blob = $this->ogroup;
+        if (! is_array($blob) || ! array_key_exists('team_plans', $blob)) {
+            return $blob;
+        }
+
+        $scope = $this->teamScopeFor($userId);
+        if ($scope['all']) {
+            return $blob;
+        }
+
+        $plans = is_array($blob['team_plans']) ? $blob['team_plans'] : [];
+        $blob['team_plans'] = array_intersect_key($plans, array_flip($scope['view']));
+
+        return $blob;
     }
 
     /**
@@ -324,8 +440,8 @@ class Mission extends Model
                     $c->where('user_id', $userId)->where('status', 'accepted');
                 })
                 ->orWhere(function ($c) use ($teamIds) {
-                    // Auto-viewer: active missions whose linked team includes the user.
-                    $c->where('status', 'active')->whereIn('linked_team_id', $teamIds);
+                    // Auto-viewer: active missions whose linked team(s) include the user.
+                    $c->where('status', 'active')->linkedToTeams($teamIds);
                 });
         });
     }

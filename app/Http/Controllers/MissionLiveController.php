@@ -31,6 +31,12 @@ use Illuminate\Support\Facades\Schema;
  * blob; alleen als die afwijkt van wat de client heeft sturen we 'm mee. Zo
  * vangen we ook volledige PUT's van oudere app-versies op, zonder extra kolom.
  *
+ * Teams: elk team werkt zijn eigen versie uit onder `team_plans.<team_id>` in
+ * dezelfde blob (Mission::teamScopeFor). Wie de missie mag bewerken ziet en
+ * bewerkt alles; een teamlid (viewer op de missie) mag alleen patchen op en
+ * locken binnen `team_plans.<eigen team_id>` en krijgt alleen die versies
+ * terug. Andere patches van hem worden stilzwijgend genegeerd.
+ *
  * Locks: veldpad (bv. "warning_order.situation") → houder + expires_at. De
  * client stuurt heartbeats (`held`) zolang de focus erop staat. Overname:
  * `takeover` zet een verzoek klaar, de houder antwoordt via `respond`; geen
@@ -64,7 +70,8 @@ class MissionLiveController extends Controller
     {
         $mission = Mission::findOrFail($id);
         $userId = (int) Auth::id();
-        if (! $mission->canEdit($userId)) {
+        $scope = $mission->teamScopeFor($userId);
+        if (! $mission->canEdit($userId) && ! $scope['edit']) {
             abort(403, 'You do not have permission to edit this mission');
         }
 
@@ -97,6 +104,10 @@ class MissionLiveController extends Controller
         if ($locksOn) {
             $this->housekeeping($missionId);
             foreach (array_unique($data['claim'] ?? []) as $field) {
+                // Buiten je eigen scope valt niets te locken (en dus ook niet te bewerken).
+                if (! $this->fieldInScope($field, $scope)) {
+                    continue;
+                }
                 if (! $this->claim($missionId, $field, $userId)) {
                     $claimFailed[] = $field;
                 }
@@ -109,7 +120,7 @@ class MissionLiveController extends Controller
         }
 
         if ($patches) {
-            $rejected = $this->applyPatches($missionId, $patches, $userId, $locksOn);
+            $rejected = $this->applyPatches($missionId, $patches, $userId, $locksOn, $scope);
             $mission->refresh();
         }
 
@@ -278,10 +289,29 @@ class MissionLiveController extends Controller
      *
      * @return string[]
      */
-    private function applyPatches(string $missionId, array $patches, int $userId, bool $locksOn): array
+    private function applyPatches(string $missionId, array $patches, int $userId, bool $locksOn, array $scope): array
     {
-        return DB::transaction(function () use ($missionId, $patches, $userId, $locksOn) {
+        return DB::transaction(function () use ($missionId, $patches, $userId, $locksOn, $scope) {
             $mission = Mission::whereKey($missionId)->lockForUpdate()->firstOrFail();
+
+            // Alleen patches binnen je scope; de rest wordt genegeerd (niet als
+            // "geweigerd" gemeld: dat is voor velden die een ander vasthoudt).
+            $teamIds = $mission->teamIds();
+            $patches = array_values(array_filter($patches, function ($p) use ($scope, $teamIds) {
+                if (($p['path'][0] ?? null) === 'team_plans') {
+                    $teamId = (string) ($p['path'][1] ?? '');
+                    if (count($p['path']) < 3 || ! in_array($teamId, $teamIds, true)) {
+                        return false;
+                    }
+
+                    return $scope['all'] || in_array($teamId, $scope['edit'], true);
+                }
+
+                return $scope['all'];
+            }));
+            if (! $patches) {
+                return [];
+            }
 
             $foreign = $locksOn
                 ? MissionFieldLock::where('mission_id', $missionId)->where('user_id', '!=', $userId)
@@ -306,6 +336,36 @@ class MissionLiveController extends Controller
 
             return $rejected;
         });
+    }
+
+    /** Mag deze gebruiker dit veldpad locken? (Alles voor de commandant; anders alleen het eigen team.) */
+    private function fieldInScope(string $field, array $scope): bool
+    {
+        if ($scope['all']) {
+            return true;
+        }
+        foreach ($scope['edit'] as $teamId) {
+            if (str_starts_with($field, 'team_plans.'.$teamId.'.')) {
+                return true;
+            }
+        }
+
+        return false;
+    }
+
+    /** Is dit lock-veld zichtbaar voor deze gebruiker? (Locks in de versie van een ander team niet.) */
+    private function lockVisible(string $field, array $scope): bool
+    {
+        if ($scope['all'] || ! str_starts_with($field, 'team_plans.')) {
+            return true;
+        }
+        foreach ($scope['view'] as $teamId) {
+            if (str_starts_with($field, 'team_plans.'.$teamId.'.')) {
+                return true;
+            }
+        }
+
+        return false;
     }
 
     /** Overlapt het pad met een vastgehouden veld (een van beide prefix van de ander)? */
@@ -337,7 +397,8 @@ class MissionLiveController extends Controller
 
     private function state(Mission $mission, int $userId, string $clientHash, array $rejected, array $claimFailed): array
     {
-        $blob = $mission->ogroup;
+        $scope = $mission->teamScopeFor($userId);
+        $blob = $mission->ogroupFor($userId);
         $hash = md5(json_encode($blob));
         $out = [
             'hash'         => $hash,
@@ -356,7 +417,8 @@ class MissionLiveController extends Controller
             return $out;
         }
 
-        $locks = MissionFieldLock::where('mission_id', $mission->id)->where('expires_at', '>=', now())->get();
+        $locks = MissionFieldLock::where('mission_id', $mission->id)->where('expires_at', '>=', now())->get()
+            ->filter(fn (MissionFieldLock $l) => $this->lockVisible($l->field, $scope))->values();
         $userIds = $locks->pluck('user_id')->merge($locks->pluck('takeover_user_id'))->filter()->unique();
         $users = User::whereIn('id', $userIds)->get(['id', 'first_name', 'last_name', 'email', 'avatar_path'])
             ->keyBy('id')

@@ -73,6 +73,8 @@ return [
         'clone' => [
             'brt'   => [0, 2, 4, 6, 8, 10, 12, 14],
             'top25' => [14],
+            // De NL-stafkaart als één laag (z6–14; z16 volgt lazy of via --layer=stafkaart --zoom=16).
+            'stafkaart' => [6, 8, 10, 12, 14],
             // TOP50 is generated offline by scripts/build-top50.py, never WMS-warmed.
         ],
     ],

@@ -74,6 +74,8 @@ class MissionTaskParticipantsTest extends TestCase
         $teamId = (string) Str::uuid();
         \DB::table('teams')->insert(array_merge(['id' => $teamId, 'name' => 'Alpha', 'created_at' => now(), 'updated_at' => now()], $this->teamDefaults()));
 
+        $mission->update(['linked_team_id' => $teamId]);
+
         $this->api($owner)->putJson("/api/v1/missions/{$mission->id}/tasks/{$task->id}", [
             'assigned_team_id' => $teamId, 'assignee_participants' => [['name' => 'Jan']],
         ])->assertOk()->assertJsonCount(0, 'task.participants')->assertJsonPath('task.team.id', $teamId);

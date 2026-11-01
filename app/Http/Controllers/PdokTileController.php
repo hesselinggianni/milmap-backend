@@ -3,6 +3,7 @@
 namespace App\Http\Controllers;
 
 use App\Services\ApiUsageMeter;
+use App\Support\RdGridStripper;
 use App\Support\TileWebp;
 use Illuminate\Contracts\Cache\LockTimeoutException;
 use Illuminate\Http\Client\PendingRequest;
@@ -68,6 +69,27 @@ class PdokTileController extends Controller
         'brt'   => ['type' => 'wmts', 'minZoom' => 0,  'maxZoom' => 19],
         'top25' => ['type' => 'wms',  'minZoom' => 13, 'maxZoom' => 16, 'layer' => 'top25raster'],
         'top50' => ['type' => 'wms',  'minZoom' => 0, 'maxZoom' => 14, 'layer' => 'top50raster'],
+        // De NL-stafkaart als één doorlopende afbeelding: per zoomniveau het passende product uit
+        // de TOPraster-reeks (zie STAFKAART_PRODUCTS), zodat de app één laag laadt i.p.v. een BRT-
+        // achtergrond met een TOPraster-overlay. Eronder (z<6) bestaat geen kaart: dat is boven
+        // de schaalgrens van de dienst en de app zoomt niet verder uit dan het hele land.
+        'stafkaart' => ['type' => 'wms', 'minZoom' => 6, 'maxZoom' => 16, 'layer' => null, 'composite' => true],
+    ];
+
+    /**
+     * TOPraster-product per even zoomniveau van de stafkaart: [WMS-laag, aangevraagde pixels].
+     * De keuze volgt de schaalgrenzen uit de GetCapabilities van de dienst (schaalnoemer op
+     * NL-breedte, 0,28 mm/px): top1000 1:240k–2,2M, top250 1:60k–500k, top100 1:24k–200k,
+     * top25 1:4k–50k. z6 (1:5,4M) ligt boven alle grenzen: daar vragen we 1024 px op (= de
+     * schaal van z8) en schalen we naar 256 terug, zie normalize().
+     */
+    public const STAFKAART_PRODUCTS = [
+        6  => ['top1000raster', 1024],
+        8  => ['top1000raster', 256],
+        10 => ['top250raster', 256],
+        12 => ['top100raster', 256],
+        14 => ['top25raster', 256],
+        16 => ['top25raster', 256],
     ];
 
     /** URL-template uit de WMTS-GetCapabilities (TileMatrixSet EPSG:3857, 00–19). */
@@ -81,7 +103,7 @@ class PdokTileController extends Controller
      * transparante tegel, dus OpenLayers/MapLibre én de offline-download
      * gedragen zich identiek — zonder upstream-call of schijfgebruik.
      */
-    private const BLANK_PNG = 'iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNkYPhfDwAChwGA60e6kgAAAABJRU5ErkJggg==';
+    private const BLANK_PNG = 'iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNgYGBgAAAABQABeqhXUAAAAABJRU5ErkJggg==';
 
     public function show(string $layer, int $z, int $x, int $y)
     {
@@ -103,7 +125,7 @@ class PdokTileController extends Controller
         // mag een kaartverzoek nooit een externe download starten.
         if ($layer === 'top50') {
             $file = self::cachedFile($base);
-            return $file ? $this->tileResponse($file) : $this->blankResponse();
+            return $file ? $this->tileResponse($this->gridlessTop50File($file, $z, $x, $y)) : $this->blankResponse();
         }
         $miss = "{$base}.404"; // marker: upstream gaf 404, niet blijven hameren
 
@@ -159,16 +181,17 @@ class PdokTileController extends Controller
             }
 
             if (self::isImage($resp)) {
+                $body = self::normalize($layer, $z, $resp->body(), $x, $y);
                 // Opslaan kan mislukken (schijf vol/bijna vol, schrijffout): de tegel is dan
                 // wel opgehaald, dus serveer hem gewoon zonder hem te bewaren.
                 $file = null;
                 try {
-                    $file = self::store($base, $resp->body());
+                    $file = self::store($base, $body);
                 } catch (Throwable $e) {
                     report($e);
                 }
 
-                return $file ? $this->tileResponse($file) : $this->bodyResponse($resp->body());
+                return $file ? $this->tileResponse($file) : $this->bodyResponse($body);
             }
 
             if ($resp->successful()) {
@@ -262,6 +285,46 @@ class PdokTileController extends Controller
         return "{$base}.{$ext}";
     }
 
+    /** Vanaf dit zoomniveau staat het gedrukte RD-kilometerraster duidelijk in de TOPraster-tegels. */
+    public const GRID_STRIP_MIN_ZOOM = 12;
+
+    /**
+     * Maakt van een opgehaalde WMS-tegel de tegel die we bewaren:
+     *  - het gedrukte RD-kilometerraster van het Kadaster wordt gewist (zie RdGridStripper): dat is
+     *    geen UTM/MGRS, dus het zou naast ons eigen MGRS-raster een tweede, afwijkend raster geven;
+     *  - z6 wordt met 1024 px opgevraagd (zie STAFKAART_PRODUCTS) en hier terugverkleind.
+     * Andere lagen/niveaus blijven zoals ze zijn. Gedeeld met tiles:warm-pdok.
+     */
+    public static function normalize(string $layer, int $z, string $png, ?int $x = null, ?int $y = null): string
+    {
+        if ($x !== null && $y !== null && (self::LAYERS[$layer]['type'] ?? '') === 'wms' && $z >= self::GRID_STRIP_MIN_ZOOM) {
+            $png = RdGridStripper::strip($png, self::tileBboxMercator($z, $x, $y));
+        }
+
+        $px = (self::LAYERS[$layer]['composite'] ?? false) ? (self::STAFKAART_PRODUCTS[$z - ($z % 2)][1] ?? self::TILE_SIZE) : self::TILE_SIZE;
+        if ($px === self::TILE_SIZE || ! function_exists('imagecreatefromstring')) {
+            return $png;
+        }
+
+        $src = @imagecreatefromstring($png);
+        if ($src === false) {
+            return $png;
+        }
+        $dst = imagecreatetruecolor(self::TILE_SIZE, self::TILE_SIZE);
+        imagealphablending($dst, false);
+        imagesavealpha($dst, true);
+        imagefill($dst, 0, 0, imagecolorallocatealpha($dst, 0, 0, 0, 127));
+        imagecopyresampled($dst, $src, 0, 0, 0, 0, self::TILE_SIZE, self::TILE_SIZE, imagesx($src), imagesy($src));
+
+        ob_start();
+        imagepng($dst);
+        $out = (string) ob_get_clean();
+        imagedestroy($src);
+        imagedestroy($dst);
+
+        return $out !== '' ? $out : $png;
+    }
+
     public static function isImage(\Illuminate\Http\Client\Response $resp): bool
     {
         return $resp->successful()
@@ -299,16 +362,23 @@ class PdokTileController extends Controller
             return [sprintf(self::WMTS_URL, $z, $x, $y), []];
         }
 
+        $wmsLayer = $def['layer'];
+        $px = self::TILE_SIZE;
+        if ($def['composite'] ?? false) {
+            // Even-only rasters: een oneven z komt niet voor; val terug op het niveau eronder.
+            [$wmsLayer, $px] = self::STAFKAART_PRODUCTS[$z - ($z % 2)];
+        }
+
         return [self::WMS_URL, [
             'SERVICE'     => 'WMS',
             'VERSION'     => '1.3.0',
             'REQUEST'     => 'GetMap',
-            'LAYERS'      => $def['layer'],
+            'LAYERS'      => $wmsLayer,
             'STYLES'      => '',
             'CRS'         => 'EPSG:3857',
             'BBOX'        => implode(',', self::tileBboxMercator($z, $x, $y)),
-            'WIDTH'       => self::TILE_SIZE,
-            'HEIGHT'      => self::TILE_SIZE,
+            'WIDTH'       => $px,
+            'HEIGHT'      => $px,
             'FORMAT'      => 'image/png',
             'TRANSPARENT' => 'TRUE',
         ]];
@@ -370,6 +440,41 @@ class PdokTileController extends Controller
     }
 
     // ── Responses ────────────────────────────────────────────────────
+
+    /**
+     * Geef de TOP50-tegel zonder het ingedrukte RD-kilometerraster terug.
+     * De permanente bron blijft ongewijzigd; de afgeleide PNG wordt één keer
+     * naast de broncache opgebouwd en daarna rechtstreeks geserveerd.
+     */
+    private function gridlessTop50File(string $source, int $z, int $x, int $y): string
+    {
+        if ($z < self::GRID_STRIP_MIN_ZOOM) {
+            return $source;
+        }
+
+        $clean = self::cacheBase('top50-gridless', $z, $x, $y) . '.png';
+        if (is_file($clean) && filemtime($clean) >= filemtime($source)) {
+            return $clean;
+        }
+
+        $raw = @file_get_contents($source);
+        if ($raw === false) {
+            return $source;
+        }
+        $stripped = RdGridStripper::strip($raw, self::tileBboxMercator($z, $x, $y));
+        if ($stripped === $raw) {
+            return $source;
+        }
+
+        File::ensureDirectoryExists(dirname($clean));
+        $temporary = $clean . '.' . bin2hex(random_bytes(5)) . '.tmp';
+        if (@file_put_contents($temporary, $stripped, LOCK_EX) === false || ! @rename($temporary, $clean)) {
+            @unlink($temporary);
+            return $source;
+        }
+
+        return $clean;
+    }
 
     private function tileResponse(string $path)
     {

@@ -7,10 +7,13 @@ use App\Models\Report;
 use App\Models\ReportRevision;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Auth;
+use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Facades\Validator;
 
 class ReportController extends Controller
 {
     use \App\Http\Traits\AuthorizesMapAccess;
+    use \App\Http\Traits\ResolvesArrivalTasks;
     // ── Autorisatie ──────────────────────────────────────────────────────────
     // Gemarkeerde gebieden zijn gedeeld op kaartniveau: de eigenaar en elke
     // geaccepteerde collaborator ziet ze; bewerken/verwijderen vereist een niet-
@@ -29,6 +32,39 @@ class ReportController extends Controller
         }
         // Persoonlijk report (geen kaart) → alleen de maker.
         return (int) $report->user_id === (int) Auth::id();
+    }
+
+    /**
+     * Gemarkeerde gebieden uit een waarde in plaats van getekend: een MGRS-grid
+     * (vierkante cel) of een straal rond een punt. Het vlak zelf staat in
+     * metadata.saluteGeometry; metadata.saluteShape onthoudt de waarde zodat de
+     * app het grid of de straal later kan aanpassen. Alleen als hij aanwezig is
+     * wordt hij gecontroleerd; oudere en getekende gebieden hebben hem niet.
+     *
+     * Bewust één regel op `metadata` zelf: geneste regels (metadata.saluteShape.*)
+     * zouden validated() de rest van metadata laten weggooien.
+     */
+    private function saluteShapeRule(): \Closure
+    {
+        return function (string $attribute, mixed $value, \Closure $fail): void {
+            if (! is_array($value) || ($value['saluteShape'] ?? null) === null) {
+                return;
+            }
+            $check = Validator::make(['metadata' => ['saluteShape' => $value['saluteShape']]], [
+                'metadata.saluteShape' => 'array',
+                'metadata.saluteShape.kind' => 'required|in:grid,circle',
+                'metadata.saluteShape.grid' => ['required_if:metadata.saluteShape.kind,grid', 'nullable', 'string', 'max:24',
+                    'regex:/^\d{1,2}[C-HJ-NP-X][A-HJ-NP-Z][A-HJ-NP-V](\d{2}){0,5}$/'],
+                'metadata.saluteShape.size' => 'nullable|numeric|min:1|max:100000',
+                'metadata.saluteShape.radius' => 'required_if:metadata.saluteShape.kind,circle|nullable|numeric|min:1|max:500000',
+                'metadata.saluteShape.center' => 'required_if:metadata.saluteShape.kind,circle|nullable|array|size:2',
+                'metadata.saluteShape.center.0' => 'numeric|between:-180,180',
+                'metadata.saluteShape.center.1' => 'numeric|between:-90,90',
+            ]);
+            foreach ($check->errors()->all() as $message) {
+                $fail($message);
+            }
+        };
     }
 
     /**
@@ -114,7 +150,7 @@ class ReportController extends Controller
             'roadCondition' => 'nullable|string|max:100',
             'weatherCondition' => 'nullable|string|max:100',
             'description' => 'nullable|string|max:1000',
-            'metadata' => 'nullable|array',
+            'metadata' => ['nullable', 'array', $this->saluteShapeRule()],
             'status' => 'nullable|string|in:active,resolved,archived',
         ]);
 
@@ -163,11 +199,7 @@ class ReportController extends Controller
         }
 
         // Wijzigingslog meesturen (met wie/wat/wanneer).
-        $report->setRelation('revisions', $report->revisions()->with('user')->get());
-        $data = $report->toArray();
-        $data['revisions'] = $report->revisions->map->toApiArray()->values();
-
-        return response()->json($data);
+        return response()->json($this->withRevisions($report));
     }
 
     /**
@@ -199,22 +231,78 @@ class ReportController extends Controller
             'roadCondition' => 'nullable|string|max:100',
             'weatherCondition' => 'nullable|string|max:100',
             'description' => 'nullable|string|max:1000',
-            'metadata' => 'nullable|array',
+            'metadata' => ['nullable', 'array', $this->saluteShapeRule()],
             'status' => 'nullable|string|in:active,resolved,archived',
-        ]);
+        ] + $this->arrivalTaskRules());
+
+        // Taken: de server zet wie/wanneer afvinkte. In de wijzigingslog staan
+        // alleen de titels, niet het afvinken (dat is een eigen regel).
+        $taskChange = null;
+        if (array_key_exists('tasks', $validated)) {
+            $validated['tasks'] = $this->resolveArrivalTasks($report->tasks, $validated['tasks'] ?? []);
+            $titlesBefore = $this->arrivalTaskTitles($report->tasks);
+            $titlesAfter  = $this->arrivalTaskTitles($validated['tasks']);
+            if ($titlesBefore !== $titlesAfter) {
+                $taskChange = ['from' => $titlesBefore, 'to' => $titlesAfter];
+            }
+        }
 
         // Diff bepalen vóór de update zodat de wijzigingslog van→naar kent.
-        $changes = $this->diffChanges($report, $validated);
+        $changes = $this->diffChanges($report, collect($validated)->except('tasks')->all());
+        if ($taskChange) {
+            $changes['tasks'] = $taskChange;
+        }
         $report->update($validated);
         if (! empty($changes)) {
             $this->logRevision($report, 'updated', $changes);
         }
 
+        return response()->json($this->withRevisions($report));
+    }
+
+    /**
+     * Eén taak afvinken (of weer openzetten) zonder de rest van het gebied te
+     * overschrijven: twee mensen die tegelijk verschillende taken afvinken
+     * wissen elkaar zo niet uit.
+     *
+     * Toegang: iedereen met toegang tot de kaart, ook een 'viewer'. Afvinken is
+     * het uitvoeren van het plan, niet het wijzigen ervan (net als bij waypoints).
+     * POST /api/v1/reports/{id}/tasks/{taskId}  { done: bool }
+     */
+    public function setTaskDone(Request $request, $id, string $taskId)
+    {
+        $data = $request->validate(['done' => 'required|boolean']);
+
+        $report = DB::transaction(function () use ($id, $taskId, $data) {
+            $report = Report::lockForUpdate()->findOrFail($id);
+
+            if (! $this->reportAccess($report)) {
+                abort(403, 'Geen toegang tot dit gebied.');
+            }
+
+            $tasks = $report->tasks ?: [];
+            $index = collect($tasks)->search(fn ($t) => ($t['id'] ?? null) === $taskId);
+            abort_if($index === false, 404, 'Taak niet gevonden.');
+
+            $title = (string) ($tasks[$index]['title'] ?? '');
+            $tasks[$index]['done'] = (bool) $data['done'];
+            $report->update(['tasks' => $this->resolveArrivalTasks($report->tasks, $tasks)]);
+
+            $this->logRevision($report, $data['done'] ? 'task_done' : 'task_reopened', ['task' => ['title' => $title]]);
+            return $report;
+        });
+
+        return response()->json($this->withRevisions($report));
+    }
+
+    /** Het gebied als array, met de wijzigingslog (wie/wat/wanneer) erbij. */
+    private function withRevisions(Report $report): array
+    {
         $report->setRelation('revisions', $report->revisions()->with('user')->get());
         $data = $report->toArray();
         $data['revisions'] = $report->revisions->map->toApiArray()->values();
 
-        return response()->json($data);
+        return $data;
     }
 
     /**

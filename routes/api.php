@@ -211,6 +211,22 @@ Route::prefix('v1')->middleware(['api'])->group(function () {
     // Public share endpoint (no auth required)
     Route::get('/share/{token}', [MapShareController::class, 'showByToken']);
 
+    // Openbaar profiel + gepubliceerde routes (lezen = geen login nodig; een
+    // profiel/route is alleen zichtbaar als de eigenaar dat zelf aanzette).
+    Route::middleware('throttle:60,1')->group(function () {
+        Route::get('/profiles/{handle}', [\App\Http\Controllers\PublicProfileController::class, 'show']);
+        // Ontdekken is publiek leesbaar (milmap.nl toont dezelfde routes): alleen wat de maker/OSM al openbaar maakte.
+        // Volledige openbare catalogus (gepagineerd) voor milmap.nl: sitebuild, sitemap en routeoverzicht.
+        Route::get('/routes/catalog', [\App\Http\Controllers\RouteCatalogController::class, 'index'])->middleware('throttle:60,1');
+        Route::get('/routes/discover', [\App\Http\Controllers\RouteDiscoveryController::class, 'index'])->middleware('throttle:180,1');
+        Route::get('/trail-routes/{slug}', [\App\Http\Controllers\TrailRouteController::class, 'show']);
+        Route::get('/profiles/{handle}/routes/{id}', [\App\Http\Controllers\PublicRouteController::class, 'showRoute']);
+        Route::get('/profiles/{handle}/tracks/{id}', [\App\Http\Controllers\PublicRouteController::class, 'showTrack'])->whereNumber('id');
+        Route::get('/profiles/{handle}/{kind}/{id}/comments', [\App\Http\Controllers\PublicCommentController::class, 'index'])->whereIn('kind', ['routes', 'tracks']);
+        Route::get('/trail-routes/{slug}/comments', [\App\Http\Controllers\PublicCommentController::class, 'indexTrail']);
+        Route::get('/trail-routes/{slug}/extras', [\App\Http\Controllers\TrailRouteController::class, 'extras'])->middleware('throttle:30,1');
+    });
+
     // Terrain-RGB DEM-tiles (bergterrein-lagen) — cachende proxy voor Mapbox.
     // Publiek: OpenLayers laadt tiles als <img> zonder auth-headers. Eigen ruime
     // throttle i.p.v. throttle:api — één kaart-pan is al tientallen tiles en zou
@@ -462,6 +478,10 @@ Route::prefix('v1')->middleware(['api'])->group(function () {
         Route::put('/user/password', [UserController::class, 'changePassword']);
         Route::post('/user/avatar', [UserController::class, 'uploadAvatar']);
         Route::delete('/user/avatar', [UserController::class, 'deleteAvatar']);
+        // Huisstijl voor papieren: eigen logo + MilMap-branding uit (zelf-bediening, ook voor Connect).
+        Route::get('/user/document-branding', [UserController::class, 'documentBranding']);
+        Route::post('/user/document-logo', [UserController::class, 'uploadDocumentLogo']);
+        Route::delete('/user/document-logo', [UserController::class, 'deleteDocumentLogo']);
 
         // E-mailvoorkeuren (Account → Meldingen): per-categorie af-/aanmelden.
         Route::get('/mail-preferences', [MailPreferenceController::class, 'index']);
@@ -492,6 +512,9 @@ Route::prefix('v1')->middleware(['api'])->group(function () {
 
         // Literal route MUST come before /users/{id} or "search" is captured as an id.
         Route::get('/users/search', [MapCollaboratorController::class, 'searchUsers']);
+        // Missie-delen: contacten + eigen Connect-organisatie + exacte gebruikersnaam. Throttle per gebruiker (NAT-veilig).
+        Route::get('/users/directory', [\App\Http\Controllers\UserDirectoryController::class, 'search'])
+            ->middleware('throttle:60,1');
 
         Route::get('/users/{id}', [UserController::class, 'show']);
         Route::put('/users/{id}', [UserController::class, 'update']);
@@ -518,6 +541,10 @@ Route::prefix('v1')->middleware(['api'])->group(function () {
         Route::middleware(RequiresPremium::class . ':weather')->group(function () {
             Route::post('/weather-alerts/access', fn () => response()->noContent());
         });
+
+        // Personal team compositions, independent of paid team memberships.
+        Route::get('/me/quick-teams', [\App\Http\Controllers\QuickTeamController::class, 'index']);
+        Route::post('/me/quick-teams', [\App\Http\Controllers\QuickTeamController::class, 'store']);
 
         // ── Teams (curated rosters → invite a whole group at once) ─────
         // Team aanmaken/beheren + gedeelde teamkaarten = premiumfunctie. Lezen
@@ -627,6 +654,44 @@ Route::prefix('v1')->middleware(['api'])->group(function () {
             ->middleware('throttle:30,1');
 
       
+        // ── Openbaar profiel: instellingen, routes publiceren, zoeken, route gebruiken (klonen) ──
+        Route::get('/user/public-profile', [\App\Http\Controllers\PublicProfileController::class, 'mine']);
+        Route::put('/user/public-profile', [\App\Http\Controllers\PublicProfileController::class, 'updateMine'])
+            ->middleware('throttle:20,1');
+        Route::get('/profiles', [\App\Http\Controllers\PublicProfileController::class, 'search'])
+            ->middleware('throttle:30,1');
+        // Routes van anderen ontdekken: gepubliceerde routes in een gebied (via PublicRoutePresenter).
+        // Het kaartpaneel zoekt vanzelf bij elke pan/zoom (ook na een mislukte poging): ruimer dan 60/min.
+        // Geïmporteerde OpenStreetMap-routes (trail_routes) in dezelfde lijst: detail en "opslaan als eigen route".
+        Route::post('/trail-routes/{slug}/clone', [\App\Http\Controllers\PublicRouteController::class, 'cloneTrailRoute'])
+            ->middleware(['throttle:20,1', RequiresPremium::class . ':route_maps']);
+        Route::post('/trail-routes/{slug}/comments', [\App\Http\Controllers\PublicCommentController::class, 'storeTrail'])->middleware('throttle:20,1');
+        Route::delete('/trail-routes/{slug}/comments/{commentId}', [\App\Http\Controllers\PublicCommentController::class, 'destroyTrail'])->whereNumber('commentId');
+        Route::put('/routemaps/{id}/visibility', [\App\Http\Controllers\PublicRouteController::class, 'setRouteVisibility'])
+            ->middleware(RequiresPremium::class . ':route_maps');
+        Route::post('/routemaps/{id}/photos', [\App\Http\Controllers\PublicRouteController::class, 'uploadRoutePhoto'])
+            ->middleware('throttle:20,1');
+        Route::delete('/routemaps/{id}/photos/{photoId}', [\App\Http\Controllers\PublicRouteController::class, 'deleteRoutePhoto'])
+            ->whereNumber('photoId');
+        Route::put('/activities/{id}/visibility', [\App\Http\Controllers\PublicRouteController::class, 'setActivityVisibility'])
+            ->middleware(RequiresPremium::class . ':tracks');
+        Route::post('/profiles/{handle}/follow', [\App\Http\Controllers\PublicProfileSocialController::class, 'follow'])->middleware('throttle:30,1');
+        Route::delete('/profiles/{handle}/follow', [\App\Http\Controllers\PublicProfileSocialController::class, 'unfollow'])->middleware('throttle:30,1');
+        Route::post('/profiles/{handle}/report', [\App\Http\Controllers\PublicProfileSocialController::class, 'report'])->middleware('throttle:5,60');
+        Route::post('/profiles/{handle}/block', [\App\Http\Controllers\PublicProfileSocialController::class, 'block'])->middleware('throttle:20,1');
+        Route::delete('/profiles/{handle}/block', [\App\Http\Controllers\PublicProfileSocialController::class, 'unblock'])->middleware('throttle:20,1');
+        // Een route "gebruiken" maakt een eigen routekaart aan → zelfde poort als POST /routemaps.
+        Route::post('/profiles/{handle}/routes/{id}/clone', [\App\Http\Controllers\PublicRouteController::class, 'cloneRoute'])
+            ->middleware(['throttle:20,1', RequiresPremium::class . ':route_maps']);
+        Route::post('/profiles/{handle}/tracks/{id}/clone', [\App\Http\Controllers\PublicRouteController::class, 'cloneTrack'])
+            ->whereNumber('id')
+            ->middleware(['throttle:20,1', RequiresPremium::class . ':route_maps']);
+
+        Route::post('/profiles/{handle}/{kind}/{id}/comments', [\App\Http\Controllers\PublicCommentController::class, 'store'])
+            ->whereIn('kind', ['routes', 'tracks'])->middleware('throttle:20,1');
+        Route::delete('/profiles/{handle}/{kind}/{id}/comments/{commentId}', [\App\Http\Controllers\PublicCommentController::class, 'destroy'])
+            ->whereIn('kind', ['routes', 'tracks'])->whereNumber('commentId');
+
         Route::get('/routemaps', [RouteMapController::class, 'index']);
         Route::post('/routemaps', [RouteMapController::class, 'store'])->middleware(RequiresPremium::class . ':route_maps');
         Route::get('/routemaps/{id}', [RouteMapController::class, 'show']);
@@ -643,6 +708,12 @@ Route::prefix('v1')->middleware(['api'])->group(function () {
         Route::patch('/kako-folders/{id}', [\App\Http\Controllers\KakoFolderController::class, 'update']);
         Route::delete('/kako-folders/{id}', [\App\Http\Controllers\KakoFolderController::class, 'destroy']);
         Route::put('/route-assignments/{id}/folder', [\App\Http\Controllers\KakoFolderController::class, 'assign']);
+        // Deelnemersgroepen (persoonlijk) + Connect-apparaten om leden uit te kiezen (alleen Connect-beheerders).
+        Route::get('/kako-groups', [\App\Http\Controllers\KakoGroupController::class, 'index']);
+        Route::post('/kako-groups', [\App\Http\Controllers\KakoGroupController::class, 'store']);
+        Route::put('/kako-groups/{id}', [\App\Http\Controllers\KakoGroupController::class, 'update']);
+        Route::delete('/kako-groups/{id}', [\App\Http\Controllers\KakoGroupController::class, 'destroy']);
+        Route::get('/kako-connect-devices', [\App\Http\Controllers\KakoGroupController::class, 'connectDevices']);
         Route::get('/route-assignments/{id}/log', [\App\Http\Controllers\RouteAssignmentController::class, 'logIndex']);
         Route::post('/route-assignments/{id}/collaborators', [\App\Http\Controllers\RouteAssignmentController::class, 'invite']);
         Route::patch('/route-assignments/{id}/collaborators/{userId}', [\App\Http\Controllers\RouteAssignmentController::class, 'changeRole']);
@@ -653,6 +724,34 @@ Route::prefix('v1')->middleware(['api'])->group(function () {
         Route::get('/route-assignments/{id}', [\App\Http\Controllers\RouteAssignmentController::class, 'show']);
         Route::put('/route-assignments/{id}', [\App\Http\Controllers\RouteAssignmentController::class, 'update']);
         Route::delete('/route-assignments/{id}', [\App\Http\Controllers\RouteAssignmentController::class, 'destroy']);
+
+        // KAKO app-modus (docs/kako-app-modus.md): deelnemers in de app + inzicht voor de instructeur.
+        // Deelnemer: eigen route, toestemming, check-in, positie delen, inzage/wissen.
+        Route::get('/kako/join/{code}', [\App\Http\Controllers\KakoAppController::class, 'joinPreview'])->middleware('throttle:10,1');
+        Route::post('/kako/join', [\App\Http\Controllers\KakoAppController::class, 'join'])->middleware('throttle:10,1');
+        Route::get('/kako/participations', [\App\Http\Controllers\KakoAppController::class, 'participations']);
+        Route::get('/route-assignments/{id}/participation', [\App\Http\Controllers\KakoAppController::class, 'participation']);
+        Route::post('/route-assignments/{id}/participation/consent', [\App\Http\Controllers\KakoAppController::class, 'consent'])->middleware('throttle:30,1');
+        Route::delete('/route-assignments/{id}/participation/consent', [\App\Http\Controllers\KakoAppController::class, 'withdraw']);
+        Route::delete('/route-assignments/{id}/participation/positions', [\App\Http\Controllers\KakoAppController::class, 'deleteMyPositions']);
+        Route::get('/route-assignments/{id}/participation/my-data', [\App\Http\Controllers\KakoAppController::class, 'myData'])->middleware('throttle:10,1');
+        Route::post('/route-assignments/{id}/participation/mode', [\App\Http\Controllers\KakoAppController::class, 'mode'])->middleware('throttle:30,1');
+        Route::post('/route-assignments/{id}/checkins', [\App\Http\Controllers\KakoAppController::class, 'checkin'])->middleware('throttle:60,1');
+        Route::get('/route-assignments/{id}/checkins/mine', [\App\Http\Controllers\KakoAppController::class, 'myCheckins']);
+        Route::post('/route-assignments/{id}/positions', [\App\Http\Controllers\KakoAppController::class, 'positions'])->middleware('throttle:60,1');
+        // Beheerder (eigenaar + expliciete editor): deelnemers, venster, live, check-ins, tracks.
+        Route::get('/route-assignments/{id}/participants', [\App\Http\Controllers\KakoAppController::class, 'participants']);
+        Route::post('/route-assignments/{id}/participants/invites', [\App\Http\Controllers\KakoAppController::class, 'invite'])->middleware('throttle:20,1');
+        Route::delete('/route-assignments/{id}/participants/{key}', [\App\Http\Controllers\KakoAppController::class, 'revoke']);
+        Route::get('/route-assignments/{id}/participants/{key}/preview', [\App\Http\Controllers\KakoAppController::class, 'preview']);
+        Route::put('/route-assignments/{id}/app-mode/window', [\App\Http\Controllers\KakoAppController::class, 'setWindow']);
+        Route::post('/route-assignments/{id}/app-mode/end', [\App\Http\Controllers\KakoAppController::class, 'endWindow']);
+        Route::get('/route-assignments/{id}/live', [\App\Http\Controllers\KakoAppController::class, 'live']);
+        Route::get('/route-assignments/{id}/checkins', [\App\Http\Controllers\KakoAppController::class, 'checkins']);
+        Route::get('/route-assignments/{id}/checkins/summary', [\App\Http\Controllers\KakoAppController::class, 'checkinSummary']);
+        Route::get('/route-assignments/{id}/positions', [\App\Http\Controllers\KakoAppController::class, 'track']);
+        Route::get('/route-assignments/{id}/participant-events', [\App\Http\Controllers\KakoAppController::class, 'events']);
+        Route::get('/route-assignments/{id}/tag-tokens', [\App\Http\Controllers\KakoAppController::class, 'tagTokens']);
 
         // Route generation routes
         Route::post('/routemaps/{routeMapId}/generate-route', [RouteGenerationController::class, 'generateRoute'])->middleware(RequiresPremium::class . ':route_maps');
@@ -684,6 +783,7 @@ Route::prefix('v1')->middleware(['api'])->group(function () {
         Route::get('/reports/{id}', [ReportController::class, 'show']);
         Route::put('/reports/{id}', [ReportController::class, 'update']);
         Route::delete('/reports/{id}', [ReportController::class, 'destroy']);
+        Route::post('/reports/{id}/tasks/{taskId}', [ReportController::class, 'setTaskDone']);
         Route::get('/reports/category/{category}', [ReportController::class, 'getByCategory']);
         Route::get('/reports/maps/{mapId}', [ReportController::class, 'getByMap']);
 
@@ -705,12 +805,20 @@ Route::prefix('v1')->middleware(['api'])->group(function () {
         Route::get('/workspace/layers/{mapId}', [WorkspaceController::class, 'layer']);
         Route::put('/workspace/layer-prefs', [WorkspaceController::class, 'updatePrefs']);
 
+        // Welke meldingsformulieren de gebruiker op deze kaart gebruikt (per gebruiker + kaart).
+        Route::get('/maps/{mapId}/report-form-prefs', [\App\Http\Controllers\MapReportFormPrefController::class, 'show']);
+        Route::put('/maps/{mapId}/report-form-prefs', [\App\Http\Controllers\MapReportFormPrefController::class, 'update']);
+
         // Map waypoints (collaboration sync)
         Route::get('/maps/{mapId}/waypoints', [MapWaypointController::class, 'index']);
         Route::post('/maps/{mapId}/waypoints', [MapWaypointController::class, 'store']);
         Route::post('/maps/{mapId}/waypoints/batch', [MapWaypointController::class, 'storeBatch']);
         Route::put('/maps/{mapId}/waypoints/{localId}', [MapWaypointController::class, 'update']);
         Route::delete('/maps/{mapId}/waypoints/{localId}', [MapWaypointController::class, 'destroy']);
+        Route::get('/maps/{mapId}/waypoints/{localId}/tasks-log', [MapWaypointController::class, 'taskLog']);
+        Route::get('/maps/{mapId}/waypoints/{localId}/revisions', [MapWaypointController::class, 'revisions']);
+        // Aankomsttaken: één taak afvinken/heropenen
+        Route::post('/maps/{mapId}/waypoints/{localId}/tasks/{taskId}', [MapWaypointController::class, 'setTaskDone']);
         // Waypoint-foto's
         Route::post('/maps/{mapId}/waypoints/{localId}/images', [MapWaypointController::class, 'uploadImage']);
         Route::delete('/maps/{mapId}/waypoints/{localId}/images/{imageId}', [MapWaypointController::class, 'deleteImage']);
@@ -740,6 +848,20 @@ Route::prefix('v1')->middleware(['api'])->group(function () {
         Route::post('/missions/{id}/live', [\App\Http\Controllers\MissionLiveController::class, 'sync'])
             ->withoutMiddleware('throttle:api')->middleware('throttle:240,1');
 
+        // Teams op een missie: elk team een eigen versie van de uitvoering + kaartlaag.
+        Route::get   ('/missions/{id}/teams',          [\App\Http\Controllers\MissionTeamController::class, 'index']);
+        Route::post  ('/missions/{id}/teams',          [\App\Http\Controllers\MissionTeamController::class, 'store']);
+        Route::put   ('/missions/{id}/teams/{teamId}', [\App\Http\Controllers\MissionTeamController::class, 'update']);
+        Route::delete('/missions/{id}/teams/{teamId}', [\App\Http\Controllers\MissionTeamController::class, 'destroy']);
+
+        // Mission Briefing Builder: separate documents, private media, revision-safe saves.
+        Route::get('/missions/{id}/briefing-documents', [\App\Http\Controllers\MissionBriefingDocumentController::class, 'index']);
+        Route::get('/missions/{id}/briefing-documents/{documentId}', [\App\Http\Controllers\MissionBriefingDocumentController::class, 'show']);
+        Route::put('/missions/{id}/briefing-documents/{documentId}', [\App\Http\Controllers\MissionBriefingDocumentController::class, 'save']);
+        Route::post('/missions/{id}/briefing-media/import', [\App\Http\Controllers\MissionBriefingDocumentController::class, 'importMedia']);
+        Route::post('/missions/{id}/briefing-media', [\App\Http\Controllers\MissionBriefingDocumentController::class, 'upload']);
+        Route::get('/missions/{id}/briefing-media/{mediaId}', [\App\Http\Controllers\MissionBriefingDocumentController::class, 'media']);
+
         // ── Mission briefing + presentation ──────────────────────────
         Route::get   ('/missions/{id}/presentation',                [MissionBriefingController::class, 'presentation']);
         Route::get   ('/missions/{id}/briefing',                    [MissionBriefingController::class, 'show']);
@@ -767,6 +889,7 @@ Route::prefix('v1')->middleware(['api'])->group(function () {
         // taak-ID wordt gelezen.
         Route::get   ('/missions/{id}/tasks/assignees',      [MissionTaskController::class, 'assignees']);
         Route::post  ('/missions/{id}/tasks',                [MissionTaskController::class, 'store']);
+        Route::put('/missions/{id}/tasks/{taskId}/teams/{teamId}', [MissionTaskController::class, 'updateTeamProgress']);
         Route::put   ('/missions/{id}/tasks/{taskId}',       [MissionTaskController::class, 'update']);
         Route::delete('/missions/{id}/tasks/{taskId}',       [MissionTaskController::class, 'destroy']);
         Route::post  ('/missions/{id}/tasks/reorder',        [MissionTaskController::class, 'reorder']);
@@ -941,6 +1064,7 @@ Route::prefix('v1')->middleware(['api'])->group(function () {
         Route::middleware('admin.auth')->group(function () {
             Route::get('/admin/stats', [AdminController::class, 'getDashboardStats']);
             Route::get('/admin/map-storage', [\App\Http\Controllers\AdminMapStorageController::class, 'index']);
+            Route::get('/admin/trail-routes/stats', [\App\Http\Controllers\AdminTrailRouteController::class, 'stats']);
             Route::get('/admin/revenue', [AdminController::class, 'getRevenue']);
 
             // ── App-gebruiksanalyse (meest bezochte routes + knoppen) ───
@@ -949,6 +1073,8 @@ Route::prefix('v1')->middleware(['api'])->group(function () {
             Route::get('/admin/api-usage', [\App\Http\Controllers\ApiUsageController::class, 'adminSummary']);
             Route::get('/admin/rate-limit-events', [\App\Http\Controllers\RateLimitEventController::class, 'adminIndex']);
             Route::delete('/admin/rate-limit-events', [\App\Http\Controllers\RateLimitEventController::class, 'adminClear']);
+            // ── Serverstatus (admin → Server): load, schijf, services, domeinen, back-ups, queue ─
+            Route::get('/admin/server-status', [\App\Http\Controllers\AdminServerStatusController::class, 'index']);
             Route::get('/admin/users/{userId}/api-usage', [\App\Http\Controllers\ApiUsageController::class, 'adminUser']);
 
             // ── Sales / CRM-pijplijn ────────────────────────────────────
@@ -972,8 +1098,6 @@ Route::prefix('v1')->middleware(['api'])->group(function () {
             Route::put   ('/admin/social/accounts/{platform}',   [\App\Http\Controllers\AdminSocialController::class, 'saveAccount']);
 
             // ── SEO-CMS (per milmap.nl-pagina × taal) ───────────────────
-            // ── Serverstatus (admin → Server): load, schijf, services, domeinen, back-ups, queue ─
-            Route::get('/admin/server-status', [\App\Http\Controllers\AdminServerStatusController::class, 'index']);
             Route::get ('/admin/seo',              [AdminSeoController::class, 'index']);
             Route::post('/admin/seo',              [AdminSeoController::class, 'upsert']);
             Route::post('/admin/seo/generate',     [AdminSeoController::class, 'generate']);

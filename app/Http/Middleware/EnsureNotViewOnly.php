@@ -68,7 +68,8 @@ class EnsureNotViewOnly
 
         // Sharing your OWN live position while on a mission (ephemeral, not
         // authored content). Marker writes (maps/{id}/locations) stay blocked.
-        if (preg_match('#^maps/\d+/user-locations#', $path)) {
+        // Map ids are UUIDs, so the id segment is matched as any non-slash run.
+        if (preg_match('#^maps/[^/]+/user-locations(?:/|$)#', $path)) {
             return $next($request);
         }
 

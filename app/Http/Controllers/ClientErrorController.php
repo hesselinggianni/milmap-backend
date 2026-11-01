@@ -178,6 +178,16 @@ class ClientErrorController extends Controller
                 && preg_match('#/(login|register|password|email/verif|account/deletion)#', $endpoint . ' ' . $message)) {
                 return true;
             }
+
+            // Server even niet beschikbaar: onderhoudsmodus tijdens een deploy
+            // (Laravel's "Service Unavailable") of een webserver zonder vrije
+            // PHP-worker (HTML-foutpagina). Een omstandigheid, geen defect.
+            // Nieuwe builds proberen het zelf opnieuw en melden dit niet meer;
+            // oude builds sturen het nog, dus het filter hoort ook hier.
+            if ((int) $status === 503
+                && preg_match('/Service Unavailable|<!DOCTYPE|<html/i', ($data['response'] ?? '') . ' ' . $message)) {
+                return true;
+            }
         }
 
         return false;

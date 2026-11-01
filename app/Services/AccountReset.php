@@ -49,7 +49,7 @@ class AccountReset
                 'media'      => DB::table('user_uploads')->where('user_id', $id)->delete(),
             ];
 
-            foreach (['generated_routes', 'search_histories', 'map_layer_prefs', 'user_locations', 'app_notifications'] as $table) {
+            foreach (['generated_routes', 'search_histories', 'map_layer_prefs', 'map_report_form_prefs', 'user_locations', 'app_notifications'] as $table) {
                 DB::table($table)->where('user_id', $id)->delete();
             }
             foreach (['ogroup_templates', 'mission_task_templates', 'exercise_sites'] as $table) {

@@ -118,7 +118,7 @@ class WarmPdokTiles extends Command
             foreach ($chunk as $i => [$layer, $z, $x, $y]) {
                 $r = $responses[$i] ?? null;
                 if ($r instanceof Response && PdokTileController::isImage($r)) {
-                    if (PdokTileController::store(PdokTileController::cacheBase($layer, $z, $x, $y), $r->body())) {
+                    if (PdokTileController::store(PdokTileController::cacheBase($layer, $z, $x, $y), PdokTileController::normalize($layer, $z, $r->body(), $x, $y))) {
                         $ok++;
                         $chunkOk++;
                     }

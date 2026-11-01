@@ -17,6 +17,7 @@ class MissionTask extends Model
         'phase_key',
         'assignee_user_id',
         'assigned_team_id',
+        'all_teams',
         'assignee_participants',
         'title',
         'description',
@@ -29,6 +30,7 @@ class MissionTask extends Model
 
     protected $casts = [
         'due_at'                => 'datetime',
+        'all_teams'             => 'boolean',
         // Handmatige deelnemers (zonder account): [{ name, role }].
         'assignee_participants' => 'array',
     ];
@@ -57,6 +59,11 @@ class MissionTask extends Model
     public function team()
     {
         return $this->belongsTo(Team::class, 'assigned_team_id');
+    }
+
+    public function teamProgress()
+    {
+        return $this->hasMany(MissionTaskTeamProgress::class);
     }
 
     /** Ouder-taak (null = top-level). */

@@ -115,6 +115,25 @@ class ImageUploadService
         return true;
     }
 
+    /** Store a gallery photo for a planned route. */
+    public function storeForRouteMap(UploadedFile $file, string $routeMapId): array
+    {
+        $this->validateFile($file);
+        $extension = strtolower($file->getClientOriginalExtension());
+        $filename = now()->format('YmdHis') . '-' . Str::random(8) . '.' . $extension;
+        $path = "routemaps/{$routeMapId}/photos/{$filename}";
+        Storage::disk('public')->put($path, $file->getContent());
+
+        return ['filename' => $filename, 'url' => Storage::disk('public')->url($path)];
+    }
+
+    public function deleteForRouteMap(string $routeMapId, string $filename): bool
+    {
+        $path = "routemaps/{$routeMapId}/photos/{$filename}";
+
+        return ! Storage::disk('public')->exists($path) || Storage::disk('public')->delete($path);
+    }
+
     /**
      * Validate uploaded file
      *
