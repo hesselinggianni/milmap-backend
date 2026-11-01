@@ -643,6 +643,10 @@ Route::prefix('v1')->middleware(['api'])->group(function () {
         // doorvallen naar hun eigen route.
         // Alles voor het openen van een kaart in één verzoek (zie MapBootstrapController).
         Route::get('/maps/{id}/bootstrap', [\App\Http\Controllers\MapBootstrapController::class, 'show']);
+        // Samen een kaart beheren: handtekening per onderdeel, elke paar seconden
+        // gepold (eigen cap i.p.v. het gedeelde throttle:api-budget op te eten).
+        Route::get('/maps/{id}/live', [\App\Http\Controllers\MapLiveController::class, 'show'])
+            ->withoutMiddleware('throttle:api')->middleware('throttle:240,1');
         Route::get('/maps/{id}/{lonlat}', [MapController::class, 'show'])
             ->where('lonlat', '[-0-9.,/]+');
         Route::post('/maps', [MapController::class, 'store']);
