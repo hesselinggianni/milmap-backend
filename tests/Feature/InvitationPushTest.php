@@ -17,7 +17,7 @@ class InvitationPushTest extends TestCase
     private ?string $saPath = null;
 
     protected function setUp(): void { parent::setUp(); Mail::fake(); Cache::flush(); }
-    protected function tearDown(): void { putenv('FCM_SERVICE_ACCOUNT_PATH'); if ($this->saPath) @unlink($this->saPath); parent::tearDown(); }
+    protected function tearDown(): void { if ($this->saPath) @unlink($this->saPath); parent::tearDown(); }
 
     private function user(string $tag, string $language = 'nl'): User
     {
@@ -59,7 +59,7 @@ class InvitationPushTest extends TestCase
         openssl_pkey_export($key, $pem);
         $this->saPath = tempnam(sys_get_temp_dir(), 'sa');
         file_put_contents($this->saPath, json_encode(['project_id' => 'milmap-test', 'client_email' => 'x@milmap-test.iam.gserviceaccount.com', 'private_key' => $pem]));
-        putenv('FCM_SERVICE_ACCOUNT_PATH=' . $this->saPath);
+        config(['push.fcm.service_account_path' => $this->saPath]);
     }
 
     public function test_message_is_localised_and_never_contains_an_email_address(): void
@@ -156,7 +156,7 @@ class InvitationPushTest extends TestCase
         $this->app->terminate();
         Http::assertNothingSent();
 
-        putenv('FCM_SERVICE_ACCOUNT_PATH');
+        config(['push.fcm.service_account_path' => null]);
         $ok = $this->user('Ok'); $this->loggedIn($ok);
         $this->assertSame(0, PushSender::alertToUser($ok->id, 't', 'b')); // geen config: stil overslaan
     }

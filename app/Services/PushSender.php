@@ -88,10 +88,10 @@ class PushSender
 
     private static function apnsAlert(Model $device, string $title, ?string $body, array $data): bool
     {
-        $keyPath = env('APNS_KEY_PATH');
-        $keyId   = env('APNS_KEY_ID');
-        $teamId  = env('APNS_TEAM_ID');
-        $bundle  = env('APNS_BUNDLE_ID', 'nl.milmap.app');
+        $keyPath = config('push.apns.key_path');
+        $keyId   = config('push.apns.key_id');
+        $teamId  = config('push.apns.team_id');
+        $bundle  = config('push.apns.bundle_id');
         if (!$keyPath || !$keyId || !$teamId || !is_readable($keyPath)) {
             Log::warning('[push] APNs niet geconfigureerd, melding overgeslagen');
             return false;
@@ -100,7 +100,7 @@ class PushSender
         $jwt = Cache::remember('apns-jwt', 40 * 60, fn () => JWT::encode(
             ['iss' => $teamId, 'iat' => time()], file_get_contents($keyPath), 'ES256', $keyId
         ));
-        $host = env('APNS_SANDBOX') ? 'api.sandbox.push.apple.com' : 'api.push.apple.com';
+        $host = config('push.apns.sandbox') ? 'api.sandbox.push.apple.com' : 'api.push.apple.com';
         $ch = curl_init("https://{$host}/3/device/{$device->push_token}");
         curl_setopt_array($ch, [
             CURLOPT_HTTP_VERSION => CURL_HTTP_VERSION_2_0,
@@ -132,7 +132,7 @@ class PushSender
 
     private static function fcmAlert(Model $device, string $title, ?string $body, array $data): bool
     {
-        $path = env('FCM_SERVICE_ACCOUNT_PATH');
+        $path = config('push.fcm.service_account_path');
         if (!$path || !is_readable($path)) {
             Log::warning('[push] FCM niet geconfigureerd, melding overgeslagen');
             return false;
@@ -192,10 +192,10 @@ class PushSender
         if ($device->push_platform !== 'ios') {
             return;
         }
-        $keyPath = env('APNS_KEY_PATH');
-        $keyId = env('APNS_KEY_ID');
-        $teamId = env('APNS_TEAM_ID');
-        $bundle = env('APNS_BUNDLE_ID', 'nl.milmap.app');
+        $keyPath = config('push.apns.key_path');
+        $keyId = config('push.apns.key_id');
+        $teamId = config('push.apns.team_id');
+        $bundle = config('push.apns.bundle_id');
         if (!$keyPath || !$keyId || !$teamId || !is_readable($keyPath)) {
             Log::warning('[push] APNs niet geconfigureerd, silent push overgeslagen');
             return;
@@ -209,7 +209,7 @@ class PushSender
                 'ES256',
                 $keyId
             ));
-            $host = env('APNS_SANDBOX') ? 'api.sandbox.push.apple.com' : 'api.push.apple.com';
+            $host = config('push.apns.sandbox') ? 'api.sandbox.push.apple.com' : 'api.push.apple.com';
             $ch = curl_init("https://{$host}/3/device/{$token}");
             curl_setopt_array($ch, [
                 CURLOPT_HTTP_VERSION => CURL_HTTP_VERSION_2_0,
@@ -241,7 +241,7 @@ class PushSender
      */
     private static function fcmSilent(string $token, array $data, int $deviceId): void
     {
-        $path = env('FCM_SERVICE_ACCOUNT_PATH');
+        $path = config('push.fcm.service_account_path');
         if (!$path || !is_readable($path)) {
             Log::warning('[push] FCM niet geconfigureerd, silent push overgeslagen');
             return;
