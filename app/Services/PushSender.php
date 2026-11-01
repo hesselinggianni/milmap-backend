@@ -3,9 +3,12 @@
 namespace App\Services;
 
 use App\Models\ConnectDevice;
+use App\Models\User;
 use Firebase\JWT\JWT;
+use Illuminate\Database\Eloquent\Model;
 use Illuminate\Support\Facades\Cache;
 use Illuminate\Support\Facades\Log;
+use Laravel\Sanctum\PersonalAccessToken;
 
 /**
  * STUB voor echte push-aflevering. Een melding naar een gesloten app vereist een
@@ -29,19 +32,18 @@ class PushSender
     }
 
     /**
-     * Zichtbare melding (titel + tekst) naar alle toestellen van een gebruiker die
-     * een push-token hebben gemeld. Faalt nooit hard; zonder APNs/FCM-config of
-     * zonder toestemming op het toestel gebeurt er niets. `$data` komt als
-     * custom payload mee (strings) zodat de app bij een tik de juiste route opent.
+     * Zichtbare melding (titel + tekst) naar alle toestellen waar de gebruiker nu
+     * ingelogd is en die een push-token hebben gemeld: elke actieve sessie, plus
+     * verbonden Connect-apparaten. Uitgelogd of ingetrokken = geen melding. Faalt nooit
+     * hard; zonder APNs/FCM-config of zonder toestemming op het toestel gebeurt er
+     * niets. `$data` komt als custom payload mee (strings) zodat de app bij een tik
+     * de juiste route opent.
      */
     public static function alertToUser(int $userId, string $title, ?string $body = null, array $data = []): int
     {
         $sent = 0;
-        $devices = ConnectDevice::where('user_id', $userId)
-            ->whereNotNull('push_token')->whereNull('revoked_at')
-            ->orderByDesc('last_seen_at')->limit(10)->get();
 
-        foreach ($devices as $device) {
+        foreach (self::activeDevices($userId) as $device) {
             try {
                 $ok = $device->push_platform === 'android'
                     ? self::fcmAlert($device, $title, $body, $data)
@@ -55,7 +57,36 @@ class PushSender
         return $sent;
     }
 
-    private static function apnsAlert(ConnectDevice $device, string $title, ?string $body, array $data): bool
+    /**
+     * Toestellen waar het account actief is, één per push-token (een Connect-apparaat
+     * met sessie heeft het token zowel op het apparaat als op de sessie staan).
+     *
+     * @return \Illuminate\Support\Collection<int, Model>
+     */
+    private static function activeDevices(int $userId)
+    {
+        $sessions = PersonalAccessToken::where('tokenable_type', (new User)->getMorphClass())
+            ->where('tokenable_id', $userId)
+            ->whereNotNull('push_token')
+            ->where(fn ($q) => $q->whereNull('expires_at')->orWhere('expires_at', '>', now()))
+            ->orderByDesc('last_used_at')->limit(10)->get();
+
+        $connect = ConnectDevice::where('user_id', $userId)->connected()
+            ->whereNotNull('push_token')
+            ->orderByDesc('last_seen_at')->limit(10)->get();
+
+        return $sessions->concat($connect)->unique('push_token')->take(10)->values();
+    }
+
+    /** Dood token (app verwijderd / ander toestel): overal wissen, niet blijven proberen. */
+    private static function forgetToken(string $token): void
+    {
+        $clear = ['push_token' => null, 'push_platform' => null];
+        PersonalAccessToken::where('push_token', $token)->update($clear);
+        ConnectDevice::where('push_token', $token)->update($clear);
+    }
+
+    private static function apnsAlert(Model $device, string $title, ?string $body, array $data): bool
     {
         $keyPath = env('APNS_KEY_PATH');
         $keyId   = env('APNS_KEY_ID');
@@ -93,13 +124,13 @@ class PushSender
         }
         // Token is niet meer geldig (app verwijderd / ander toestel): niet blijven proberen.
         if ($status === 410 || ($status === 400 && str_contains((string) $resp, 'BadDeviceToken'))) {
-            $device->forceFill(['push_token' => null, 'push_platform' => null])->save();
+            self::forgetToken((string) $device->push_token);
         }
         Log::warning('[push] APNs weigerde melding', ['status' => $status, 'body' => $resp, 'device' => $device->id]);
         return false;
     }
 
-    private static function fcmAlert(ConnectDevice $device, string $title, ?string $body, array $data): bool
+    private static function fcmAlert(Model $device, string $title, ?string $body, array $data): bool
     {
         $path = env('FCM_SERVICE_ACCOUNT_PATH');
         if (!$path || !is_readable($path)) {
@@ -136,7 +167,7 @@ class PushSender
             return true;
         }
         if ($res->status() === 404 || str_contains($res->body(), 'UNREGISTERED')) {
-            $device->forceFill(['push_token' => null, 'push_platform' => null])->save();
+            self::forgetToken((string) $device->push_token);
         }
         Log::warning('[push] FCM weigerde melding', ['status' => $res->status(), 'body' => $res->body(), 'device' => $device->id]);
         return false;
