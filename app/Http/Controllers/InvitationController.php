@@ -214,7 +214,7 @@ class InvitationController extends Controller
         Invitation::where('invited_by', $user)
             ->with(['invitable'])
             ->latest()->limit(40)->get()
-            ->each(function ($i) use (&$events) {
+            ->each(function ($i) use (&$events, $user) {
                 $events->push([
                     'type'    => 'invite_sent',
                     'title'   => $i->status === 'accepted' ? 'Your invitation was accepted' : 'Invitation sent',
