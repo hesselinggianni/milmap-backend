@@ -59,7 +59,8 @@ class StatusPageController extends Controller
      */
     public function publicUptime(\App\Services\StatusPageMonitor $monitor)
     {
-        return response()->json($monitor->uptimeReport());
+        // De monitor draait elke minuut; 30 s browser/CDN-cache scheelt herhaalde hits.
+        return response()->json($monitor->uptimeReport())->header('Cache-Control', 'public, max-age=30');
     }
 
     /**
@@ -68,7 +69,7 @@ class StatusPageController extends Controller
      */
     public function publicIncidents(\App\Services\StatusPageMonitor $monitor)
     {
-        return response()->json($monitor->publicIncidents());
+        return response()->json($monitor->publicIncidents())->header('Cache-Control', 'public, max-age=30');
     }
 
     // ── Admin ────────────────────────────────────────────────────────────

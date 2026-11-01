@@ -18,8 +18,14 @@ use Illuminate\Support\Str;
  * de data via publieke endpoints, die de statische pagina rechtstreeks ophaalt.
  *
  * Opslag volgt hetzelfde settings-patroon als de domeinen zelf (geen migratie):
- *   • status_page_checks     → { domainId: [ {timestamp,status,responseTime,…} ] }, 90d bewaard
+ *   • status_page_stats      → { domainId: { days: { 'Y-m-d': {up,degraded,down} }, latest: {…} } },
+ *                              90 dagen aan tellers + de laatste check (enkele kB)
  *   • status_page_incidents  → [ Incident ]
+ *
+ * Eerder stond hier elke losse check (1/min × 90 dagen × domeinen ≈ 36 MB JSON
+ * in één settings-rij, elke minuut volledig herschreven; zie LEGACY_CHECKS_KEY).
+ * De uptime-balken hebben alleen een percentage per dag nodig, dus bewaren we
+ * per dag tellers; `status_page_checks` wordt bij de eerste monitor-run omgezet.
  *
  * De data-shape spiegelt exact de Nuxt-interfaces (server/types/status.ts) zodat
  * de status-pagina niets hoeft aan te passen aan de vorm.
@@ -27,7 +33,9 @@ use Illuminate\Support\Str;
 class StatusPageMonitor
 {
     private const DOMAINS_KEY   = 'status_page_domains';
-    private const CHECKS_KEY    = 'status_page_checks';
+    private const STATS_KEY     = 'status_page_stats';
+    /** Oude opslag: elke check los. Wordt bij de eerste monitor-run omgezet en gewist. */
+    private const LEGACY_CHECKS_KEY = 'status_page_checks';
     private const INCIDENTS_KEY = 'status_page_incidents';
     private const RETENTION_DAYS = 90;
     private const MAX_INCIDENTS  = 200;
@@ -71,34 +79,88 @@ class StatusPageMonitor
         }
     }
 
-    // ── Checks-opslag ───────────────────────────────────────────────
-    private function allChecks(): array
+    // ── Statistieken-opslag ─────────────────────────────────────────
+    /**
+     * Per domein: { days: { 'Y-m-d': {up,degraded,down} }, latest: {timestamp,status,responseTime,statusCode?} }.
+     *
+     * $migrate zet de oude losse checks (status_page_checks, ~36 MB) om. Dat decodeert
+     * die hele rij en hoort alleen in de CLI-monitor (geen php-fpm-geheugenlimiet);
+     * de publieke endpoints tonen tot de eerste monitor-run gewoon 'unknown'.
+     */
+    private function loadStats(bool $migrate = false): array
     {
-        $m = Setting::get(self::CHECKS_KEY, []);
+        $stats = Setting::get(self::STATS_KEY);
+        if (is_array($stats)) {
+            return $stats;
+        }
 
-        return is_array($m) ? $m : [];
+        return $migrate ? $this->statsFromLegacyChecks() : [];
     }
 
-    public function checksFor(string $domainId): array
+    /** Eenmalige omzetting van de oude opslag; verandert zelf niets in de database. */
+    private function statsFromLegacyChecks(): array
     {
-        return $this->allChecks()[$domainId] ?? [];
+        $legacy = Setting::get(self::LEGACY_CHECKS_KEY, []);
+        $stats  = [];
+        foreach (is_array($legacy) ? $legacy : [] as $domainId => $checks) {
+            foreach (is_array($checks) ? $checks : [] as $check) {
+                if (isset($check['timestamp'], $check['status'])) {
+                    $this->tally($stats[$domainId], $check);
+                }
+            }
+        }
+
+        return $stats;
+    }
+
+    /** Verwerk één check in de dagteller van zijn domein en onthoud de laatste. */
+    private function tally(?array &$domainStats, array $check): void
+    {
+        $domainStats ??= ['days' => [], 'latest' => null];
+
+        $day    = substr($check['timestamp'], 0, 10);
+        $status = in_array($check['status'], ['up', 'degraded', 'down'], true) ? $check['status'] : 'down';
+        $domainStats['days'][$day] ??= ['up' => 0, 'degraded' => 0, 'down' => 0];
+        $domainStats['days'][$day][$status]++;
+
+        $latest = $domainStats['latest']['timestamp'] ?? null;
+        if ($latest === null || $check['timestamp'] >= $latest) {
+            $domainStats['latest'] = array_filter([
+                'timestamp'    => $check['timestamp'],
+                'status'       => $check['status'],
+                'responseTime' => $check['responseTime'] ?? null,
+                'statusCode'   => $check['statusCode'] ?? null,
+            ], fn ($v) => $v !== null);
+        }
+    }
+
+    /** Gooi dagen weg die buiten de getoonde RETENTION_DAYS vallen. */
+    private function pruneDays(array &$domainStats, Carbon $now): void
+    {
+        $oldest = $now->copy()->subDays(self::RETENTION_DAYS - 1)->format('Y-m-d');
+        foreach (array_keys($domainStats['days'] ?? []) as $day) {
+            if ($day < $oldest) {
+                unset($domainStats['days'][$day]);
+            }
+        }
     }
 
     // ── Uptime-berekening (poort van statusMonitor.ts) ──────────────
-    public function calcUptime(array $checks, int $days = 90): array
+    /** @param array<string,array{up?:int,degraded?:int,down?:int}> $dayTallies per datum 'Y-m-d' */
+    public function calcUptime(array $dayTallies, int $days = 90): array
     {
         $result = [];
         $now = Carbon::now('UTC');
         for ($i = $days - 1; $i >= 0; $i--) {
-            $dateStr   = $now->copy()->subDays($i)->format('Y-m-d');
-            $dayChecks = array_values(array_filter($checks, fn ($c) => substr($c['timestamp'], 0, 10) === $dateStr));
-            $total     = count($dayChecks);
+            $dateStr  = $now->copy()->subDays($i)->format('Y-m-d');
+            $tally    = $dayTallies[$dateStr] ?? [];
+            $up       = (int) ($tally['up'] ?? 0);
+            $degraded = (int) ($tally['degraded'] ?? 0);
+            $total    = $up + $degraded + (int) ($tally['down'] ?? 0);
             if ($total === 0) {
                 $result[] = ['date' => $dateStr, 'uptime' => 100, 'status' => 'nodata'];
                 continue;
             }
-            $up       = count(array_filter($dayChecks, fn ($c) => $c['status'] === 'up'));
-            $degraded = count(array_filter($dayChecks, fn ($c) => $c['status'] === 'degraded'));
             $pct      = (int) round((($up + $degraded * 0.5) / $total) * 100);
             $status   = $pct >= 99 ? 'up' : ($pct >= 80 ? 'degraded' : 'down');
             $result[] = ['date' => $dateStr, 'uptime' => $pct, 'status' => $status];
@@ -110,21 +172,25 @@ class StatusPageMonitor
     /** De volledige publieke uptime-rapportage per enabled domein. */
     public function uptimeReport(): array
     {
-        $out = [];
+        $stats = $this->loadStats();
+        $out   = [];
         foreach ($this->enabledDomains() as $d) {
-            $checks  = $this->checksFor($d['id']);
-            $latest  = count($checks) ? $checks[count($checks) - 1] : null;
-            $overall = count($checks) === 0
-                ? 100
-                : (int) round(count(array_filter($checks, fn ($c) => $c['status'] === 'up')) / count($checks) * 100);
+            $days   = $stats[$d['id']]['days'] ?? [];
+            $latest = $stats[$d['id']]['latest'] ?? null;
+            $total  = 0;
+            $up     = 0;
+            foreach ($days as $tally) {
+                $up    += (int) ($tally['up'] ?? 0);
+                $total += (int) ($tally['up'] ?? 0) + (int) ($tally['degraded'] ?? 0) + (int) ($tally['down'] ?? 0);
+            }
 
             $out[] = [
                 'domain'           => $d,
                 'currentStatus'    => $latest['status'] ?? 'unknown',
                 'lastChecked'      => $latest['timestamp'] ?? null,
                 'lastResponseTime' => $latest['responseTime'] ?? null,
-                'uptimePct'        => $overall,
-                'dailyBars'        => $this->calcUptime($checks, 90),
+                'uptimePct'        => $total === 0 ? 100 : (int) round($up / $total * 100),
+                'dailyBars'        => $this->calcUptime($days, self::RETENTION_DAYS),
             ];
         }
 
@@ -152,19 +218,17 @@ class StatusPageMonitor
     public function monitorAll(): array
     {
         $domains   = $this->enabledDomains();
-        $checksMap = $this->allChecks();
+        $stats     = $this->loadStats(migrate: true);
         $incidents = $this->incidents();
-        $cutoff    = Carbon::now('UTC')->subDays(self::RETENTION_DAYS)->toIso8601String();
+        $now       = Carbon::now('UTC');
         $results   = [];
 
         foreach ($domains as $d) {
-            $arr        = $checksMap[$d['id']] ?? [];
-            $prevStatus = count($arr) ? $arr[count($arr) - 1]['status'] : null;
+            $prevStatus = $stats[$d['id']]['latest']['status'] ?? null;
 
             $check = $this->checkDomain($d);
-            $arr[] = $check;
-            $arr   = array_values(array_filter($arr, fn ($c) => $c['timestamp'] >= $cutoff));
-            $checksMap[$d['id']] = $arr;
+            $this->tally($stats[$d['id']], $check);
+            $this->pruneDays($stats[$d['id']], $now);
 
             // Auto-incident: open bij overgang naar 'down', sluit bij herstel.
             if ($check['status'] === 'down' && $prevStatus !== 'down') {
@@ -209,8 +273,15 @@ class StatusPageMonitor
             usort($incidents, fn ($a, $b) => strcmp($b['timestamp'], $a['timestamp']));
             $incidents = array_slice($incidents, 0, self::MAX_INCIDENTS);
         }
-        Setting::put(self::CHECKS_KEY, $checksMap);
+        // Verwijderde domeinen laten hun historie niet eeuwig achter (uitgeschakelde wel).
+        $allDomains = Setting::get(self::DOMAINS_KEY, []);
+        $knownIds   = array_column(is_array($allDomains) ? $allDomains : [], 'id');
+        $stats      = array_intersect_key($stats, array_flip($knownIds));
+
+        Setting::put(self::STATS_KEY, $stats);
         Setting::put(self::INCIDENTS_KEY, array_values($incidents));
+        // Pas wissen nadat de tellers zijn opgeslagen; no-op als de oude rij er niet (meer) is.
+        Setting::where('key', self::LEGACY_CHECKS_KEY)->delete();
 
         return $results;
     }

@@ -292,6 +292,12 @@ Route::prefix('v1')->middleware(['api'])->group(function () {
     // fetches the enabled domains here. Managed via the admin routes below.
     Route::get('/status/domains', [StatusPageController::class, 'publicIndex'])
         ->middleware('throttle:120,1');
+    // Uptime-balken + incidenten die milmap.nl/status rechtstreeks ophaalt (de
+    // statische deploy heeft geen eigen Nitro-server); gevuld door `status:monitor`.
+    Route::get('/status/uptime', [StatusPageController::class, 'publicUptime'])
+        ->middleware('throttle:120,1');
+    Route::get('/status/incidents', [StatusPageController::class, 'publicIncidents'])
+        ->middleware('throttle:120,1');
 
     // Public feature requests (no auth required). Throttled against spam now
     // that submissions are persisted (admin-zicht onder /admin/feature-requests).
