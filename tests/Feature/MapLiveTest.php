@@ -4,6 +4,7 @@ namespace Tests\Feature;
 
 use App\Models\Map;
 use App\Models\MapCollaborator;
+use App\Models\Mission;
 use App\Models\User;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Str;
@@ -124,6 +125,31 @@ class MapLiveTest extends TestCase
         MapCollaborator::where('map_id', $this->map->id)->update(['status' => 'accepted']);
         $this->assertTrue($this->live($this->owner)['shared']);
         $this->assertTrue($this->live($this->editor)['shared']);
+    }
+
+    public function test_a_map_shared_through_a_mission_counts_as_shared_for_its_owner(): void
+    {
+        $this->assertFalse($this->live($this->owner)['shared']);
+
+        // Deelnemers van een missie hebben geen map_collaborators-rij; zonder deze regel
+        // pollt de eigenaar zo'n kaart op het rustige tempo en ziet hij wijzigingen pas na 30 s.
+        Mission::create([
+            'owner_id' => $this->owner->id, 'name' => 'Oefening', 'status' => 'active',
+            'map' => ['id' => $this->map->id, 'source' => 'server'],
+        ]);
+
+        $this->assertTrue($this->live($this->owner)['shared']);
+    }
+
+    public function test_a_mission_of_someone_else_does_not_make_the_map_shared(): void
+    {
+        $other = $this->makeUser('Andere');
+        Mission::create([
+            'owner_id' => $other->id, 'name' => 'Niet van de eigenaar', 'status' => 'active',
+            'map' => ['id' => $this->map->id, 'source' => 'server'],
+        ]);
+
+        $this->assertFalse($this->live($this->owner)['shared']);
     }
 
     public function test_a_viewer_can_follow_along_but_a_stranger_cannot(): void

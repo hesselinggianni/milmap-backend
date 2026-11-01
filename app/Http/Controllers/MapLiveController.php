@@ -5,6 +5,7 @@ namespace App\Http\Controllers;
 use App\Http\Traits\AuthorizesMapAccess;
 use App\Models\Map;
 use App\Models\MapWaypoint;
+use App\Models\Mission;
 use App\Models\Report;
 use App\Models\RouteMap;
 use Illuminate\Support\Facades\Auth;
@@ -72,13 +73,26 @@ class MapLiveController extends Controller
         return $sig;
     }
 
-    /** Eigenaar met accepted medewerkers, of zelf een medewerker/missiedeelnemer. */
+    /**
+     * Eigenaar met accepted medewerkers, of zelf een medewerker/missiedeelnemer.
+     * Een kaart kan ook via een missie gedeeld zijn (deelnemers of een gekoppeld
+     * team): die mensen hebben geen map_collaborators-rij. Zo'n kaart telt als
+     * gedeeld zodra de eigenaar er een missie aan koppelt, want vals "solo"
+     * betekent dat de eigenaar wijzigingen pas na 30 s ziet.
+     */
     private function isShared(Map $map): bool
     {
         if ((string) $map->owner_id !== (string) Auth::id()) {
             return true;
         }
 
-        return $map->collaborators()->where('status', 'accepted')->exists();
+        if ($map->collaborators()->where('status', 'accepted')->exists()) {
+            return true;
+        }
+
+        return Mission::query()
+            ->where('map_ref_id', (string) $map->getKey())
+            ->where('owner_id', $map->owner_id)
+            ->exists();
     }
 }
